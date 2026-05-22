@@ -1,0 +1,229 @@
+// ───────────────────────────────────────────────────────────────────────────
+// Núcleo contable del lado del cliente.
+// Funciones puras sobre (cuentas PUC, asientos, líneas). Reemplazables 1:1 por
+// castor_accounting.js (getSaldoCuenta, getSaldosPorClase, runPayroll, etc.)
+// cuando se conecte el motor real + Supabase.
+// ───────────────────────────────────────────────────────────────────────────
+
+import { PUC_BY_CODE } from '../data/pucCatalog';
+
+const _copFmt = new Intl.NumberFormat('es-CO', {
+  style: 'currency',
+  currency: 'COP',
+  maximumFractionDigits: 0,
+});
+
+export const fmtCOP = (n) => _copFmt.format(Math.round(n || 0));
+
+export const fmtNum = (n) =>
+  new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(Math.round(n || 0));
+
+// Saldo de una cuenta auxiliar según su naturaleza.
+// saldo = naturaleza 'debito' ? (debe - haber) : (haber - debe)
+export function saldoPorNaturaleza(code, debe, haber) {
+  const acc = PUC_BY_CODE[code];
+  const nature = acc?.nature || 'debito';
+  return nature === 'debito' ? debe - haber : haber - debe;
+}
+
+// Filtra líneas por periodo (si se pasa) usando la cabecera del asiento.
+function linesForPeriod(lines, entries, period) {
+  if (!period || period === 'all') return lines;
+  const ids = new Set(entries.filter((e) => e.period === period).map((e) => e.id));
+  return lines.filter((l) => ids.has(l.journalId));
+}
+
+// Movimientos (debe/haber) acumulados por cuenta auxiliar.
+export function movimientosPorCuenta(lines, entries, period) {
+  const scoped = linesForPeriod(lines, entries, period);
+  const map = {};
+  for (const l of scoped) {
+    if (!map[l.accountCode]) map[l.accountCode] = { debe: 0, haber: 0 };
+    map[l.accountCode].debe += l.debit;
+    map[l.accountCode].haber += l.credit;
+  }
+  return map;
+}
+
+// Balance de prueba: una fila por cuenta auxiliar con movimiento.
+// Columnas: saldo inicial, movimientos del periodo (debe/haber), saldo final.
+export function buildBalancePrueba(lines, entries, period) {
+  // Movimientos hasta el inicio del periodo (saldo inicial) y dentro del periodo.
+  const periodList = [...new Set(entries.map((e) => e.period))].sort();
+  const idx = period && period !== 'all' ? periodList.indexOf(period) : -1;
+  const prevPeriods = idx > 0 ? periodList.slice(0, idx) : [];
+
+  const movPeriodo = movimientosPorCuenta(lines, entries, period);
+
+  // Saldo inicial = suma de movimientos de periodos anteriores.
+  const movPrevios = {};
+  for (const p of prevPeriods) {
+    const m = movimientosPorCuenta(lines, entries, p);
+    for (const [code, v] of Object.entries(m)) {
+      if (!movPrevios[code]) movPrevios[code] = { debe: 0, haber: 0 };
+      movPrevios[code].debe += v.debe;
+      movPrevios[code].haber += v.haber;
+    }
+  }
+
+  const codes = new Set([...Object.keys(movPeriodo), ...Object.keys(movPrevios)]);
+  const rows = [];
+  for (const code of codes) {
+    const acc = PUC_BY_CODE[code];
+    if (!acc) continue;
+    const prev = movPrevios[code] || { debe: 0, haber: 0 };
+    const cur = movPeriodo[code] || { debe: 0, haber: 0 };
+    const saldoInicial = saldoPorNaturaleza(code, prev.debe, prev.haber);
+    const saldoFinal = saldoPorNaturaleza(code, prev.debe + cur.debe, prev.haber + cur.haber);
+    rows.push({
+      code,
+      name: acc.name,
+      classCode: acc.classCode,
+      saldoInicial,
+      debe: cur.debe,
+      haber: cur.haber,
+      saldoFinal,
+    });
+  }
+  rows.sort((a, b) => a.code.localeCompare(b.code));
+
+  const totals = rows.reduce(
+    (t, r) => {
+      t.debe += r.debe;
+      t.haber += r.haber;
+      return t;
+    },
+    { debe: 0, haber: 0 },
+  );
+  return { rows, totals, cuadra: Math.round(totals.debe - totals.haber) === 0 };
+}
+
+// Saldos por clase (1..7) y verificación de la ecuación contable.
+export function getSaldosPorClase(lines, entries, period) {
+  const mov = movimientosPorCuenta(lines, entries, period);
+  const porClase = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 };
+  for (const [code, v] of Object.entries(mov)) {
+    const acc = PUC_BY_CODE[code];
+    if (!acc || acc.level < 6) continue; // solo auxiliares (hojas)
+    porClase[acc.classCode] = (porClase[acc.classCode] || 0) + (v.debe - v.haber);
+  }
+  const activo = porClase[1];
+  const pasivo = -porClase[2];
+  const patrimonio = -porClase[3];
+  const ingresos = -porClase[4];
+  const gastos = porClase[5] + porClase[6] + porClase[7];
+  const utilidad = ingresos - gastos;
+  return {
+    activo,
+    pasivo,
+    patrimonio,
+    ingresos,
+    gastos,
+    utilidad,
+    ecuacionCuadra: Math.round(activo - (pasivo + patrimonio + utilidad)) === 0,
+    diferencia: activo - (pasivo + patrimonio + utilidad),
+  };
+}
+
+// KPIs del dashboard contable.
+export function getKPIs(lines, entries, period) {
+  const { ingresos, gastos, utilidad } = getSaldosPorClase(lines, entries, period);
+  const mov = movimientosPorCuenta(lines, entries, period);
+  // Egresos de caja/bancos = créditos netos de cuentas 1110.
+  let saldoBancos = 0;
+  const movTotal = movimientosPorCuenta(lines, entries, 'all');
+  for (const code of ['111005', '111010', '111015', '111020']) {
+    const m = movTotal[code] || { debe: 0, haber: 0 };
+    saldoBancos += m.debe - m.haber;
+  }
+  const numAsientos = (period && period !== 'all'
+    ? entries.filter((e) => e.period === period)
+    : entries
+  ).length;
+  return { ingresos, egresos: gastos, utilidad, saldoBancos, numAsientos, mov };
+}
+
+// Líneas agrupadas por asiento, para el Libro Diario.
+export function groupJournal(entries, lines, period, search) {
+  const term = (search || '').trim().toLowerCase();
+  return entries
+    .filter((e) => !period || period === 'all' || e.period === period)
+    .filter((e) => {
+      if (!term) return true;
+      return (
+        e.id.toLowerCase().includes(term) ||
+        e.concept.toLowerCase().includes(term) ||
+        (e.sourceId || '').toLowerCase().includes(term)
+      );
+    })
+    .map((e) => {
+      const eLines = lines.filter((l) => l.journalId === e.id);
+      const debe = eLines.reduce((a, l) => a + l.debit, 0);
+      const haber = eLines.reduce((a, l) => a + l.credit, 0);
+      return { ...e, lines: eLines, debe, haber };
+    })
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id.localeCompare(a.id)));
+}
+
+// ── Cálculo de nómina (preview) según parámetros editables ──
+// Reproduce las reglas PAYROLL_2026 + exoneración Ley 1607 (<10 SMMLV).
+export function calcPayrollPreview(employees, params) {
+  const topeExoneracion = params.exoneracionLey1607Smmlv * params.smmlv;
+  const topeAux = params.auxTransporteTopeSmmlv * params.smmlv;
+  const pct = (v) => (v || 0) / 100;
+
+  const filas = employees.map((emp) => {
+    const base = emp.salario;
+    const exonera = base < topeExoneracion;
+    const aux = base < topeAux ? params.auxTransporte : 0;
+
+    const saludEmp = base * pct(params.saludEmpleado);
+    const pensionEmp = base * pct(params.pensionEmpleado);
+    const totalDeduccionesEmp = saludEmp + pensionEmp;
+    const neto = base + aux - totalDeduccionesEmp;
+
+    const saludEmpr = exonera ? 0 : base * pct(params.saludEmpleador);
+    const pensionEmpr = base * pct(params.pensionEmpleador);
+    const arl = base * pct(params.arlPorcentaje);
+    const sena = exonera ? 0 : base * pct(params.sena);
+    const icbf = exonera ? 0 : base * pct(params.icbf);
+    const caja = base * pct(params.cajaCompensacion);
+    const aportesEmpr = saludEmpr + pensionEmpr + arl + sena + icbf + caja;
+
+    const baseProv = base + aux;
+    const provisiones =
+      baseProv * pct(params.provCesantias) +
+      baseProv * pct(params.provIntCesantias) +
+      baseProv * pct(params.provPrima) +
+      baseProv * pct(params.provVacaciones);
+
+    return {
+      id: emp.id,
+      name: emp.name,
+      area: emp.area,
+      base,
+      aux,
+      saludEmp,
+      pensionEmp,
+      neto,
+      aportesEmpr,
+      provisiones,
+      exonera,
+      costoTotal: base + aux + aportesEmpr + provisiones,
+    };
+  });
+
+  const totales = filas.reduce(
+    (t, f) => {
+      t.base += f.base;
+      t.aux += f.aux;
+      t.neto += f.neto;
+      t.aportesEmpr += f.aportesEmpr;
+      t.provisiones += f.provisiones;
+      t.costoTotal += f.costoTotal;
+      return t;
+    },
+    { base: 0, aux: 0, neto: 0, aportesEmpr: 0, provisiones: 0, costoTotal: 0 },
+  );
+  return { filas, totales };
+}

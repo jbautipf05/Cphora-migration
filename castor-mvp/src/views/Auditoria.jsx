@@ -1,58 +1,572 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
 import { KpiCard } from '../components/ui';
-import { DataTable, EstadoBadge, fmtDate } from '../components/widgets';
+import { EstadoBadge } from '../components/widgets';
+import { fmtCOP, fmtDate, today, addDays, nowISO } from '../lib/format';
+import { IconShield, IconBox, IconDoc } from '../components/icons';
+import Modal from '../components/Modal';
+import { Field, Input, Select, FormGrid } from '../components/form';
+import { useToast } from '../components/Toast';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Auditoría — espejo de PAGE_RENDERERS.auditoria (HTML líneas 7465-7610).
+// KPIs · botón "Crear pedido stock Castor" · pedidos pendientes por verificar
+// (modal detalle Crear OP / Rechazar / Editar) · productos nuevos · cierre OPs.
+// ─────────────────────────────────────────────────────────────────────────────
 export default function Auditoria() {
-  const { audits, orders, products } = useApp();
+  const {
+    orders, products, customers, payments, bankAccounts,
+    employees, invoiceRequests, supplies, finishedStock,
+    update, add, nextId, currentUser, pushNotification,
+  } = useApp();
+  const toast = useToast();
 
-  const kpis = useMemo(() => ({
-    pedidosSinOp: orders.filter((o) => o.estado === 'pendiente_op').length,
-    productosNuevos: products.filter((p) => !p.verified).length,
-    findings: audits.reduce((a, x) => a + x.findings, 0),
-    abiertas: audits.filter((a) => a.estado !== 'cerrada').length,
-  }), [audits, orders, products]);
+  const [detail, setDetail] = useState(null);   // pedido en modal detalle
+  const [comment, setComment] = useState('');
+  const [edit, setEdit] = useState(null);        // pedido en modal editar
+  const [stock, setStock] = useState(null);      // form pedido stock
 
-  const auditCols = [
-    { key: 'id', label: 'ID', render: (r) => <span className="font-mono text-xs text-gold-accent">{r.id}</span> },
-    { key: 'tipo', label: 'Tipo', render: (r) => <span className="capitalize text-muted">{r.tipo}</span> },
-    { key: 'area', label: 'Área', render: (r) => <span className="text-white">{r.area}</span> },
-    { key: 'findings', label: 'Hallazgos', align: 'right', render: (r) => <span className="text-white">{r.findings}</span> },
-    { key: 'open', label: 'Abiertos', align: 'right', render: (r) => <span className="text-red-300">{r.open}</span> },
-    { key: 'responsable', label: 'Responsable', render: (r) => <span className="text-muted">{r.responsable}</span> },
-    { key: 'date', label: 'Fecha', render: (r) => <span className="text-muted">{fmtDate(r.date)}</span> },
-    { key: 'estado', label: 'Estado', render: (r) => <EstadoBadge value={r.estado} /> },
-  ];
+  const prod = (id) => products.find((p) => p.id === id);
+  const cust = (id) => customers.find((c) => c.id === id);
 
-  const pendCols = [
-    { key: 'id', label: 'Pedido', render: (r) => <span className="font-mono text-xs text-gold-accent">{r.id}</span> },
-    { key: 'clientName', label: 'Cliente', render: (r) => <span className="text-white">{r.clientName}</span> },
-    { key: 'producto', label: 'Producto', render: (r) => <span className="text-muted">{products.find((p) => p.id === r.productId)?.name} ×{r.qty}</span> },
-    { key: 'asesor', label: 'Asesor', render: (r) => <span className="text-muted">{r.asesor}</span> },
-    {
-      key: 'acc', label: '', align: 'right',
-      render: () => <span className="rounded-lg border border-gold-accent/30 px-2 py-1 text-xs text-gold-accent">Crear OP · Rechazar · Editar</span>,
-    },
-  ];
+  const pendOp = useMemo(
+    () => orders.filter((o) => !o.verified && o.tipo !== 'stock' && o.estado === 'pendiente_op'),
+    [orders],
+  );
+  const newProds = useMemo(() => products.filter((p) => !p.verified), [products]);
+  const cierreOps = useMemo(
+    () => orders.filter((o) => o.verified && (o.estado === 'listo' || o.estado === 'op_cerrada') && !o.invoiced),
+    [orders],
+  );
+  const reqFactura = useMemo(
+    () => (invoiceRequests || []).filter((r) => r.estado === 'pendiente_auditoria'),
+    [invoiceRequests],
+  );
+  const stockOps = useMemo(() => orders.filter((o) => o.tipo === 'stock'), [orders]);
+
+  // Responsables candidatos para pedidos de producción interna.
+  const prodEmployees = useMemo(
+    () => employees.filter((e) => !['Comercial', 'Administrativo'].includes(e.area)),
+    [employees],
+  );
+
+  // ── Acciones sobre pedidos ──
+  const openDetail = (o) => { setDetail(o); setComment(o.auditComment || ''); };
+
+  const auditCreateOp = () => {
+    const o = detail;
+    const c = comment.trim();
+    update('orders', o.id, {
+      verified: true,
+      estado: 'produccion',
+      area: 'Programación',
+      opRejected: false,
+      opRejectedReason: null,
+      ...(c ? { auditComment: c } : {}),
+    });
+    toast(`OP ${o.id} creada · área inicial: Programación`, 'ok');
+    setDetail(null);
+  };
+
+  const auditRejectOp = () => {
+    const o = detail;
+    const reason = comment.trim();
+    if (!reason) return toast('Escribe el motivo del rechazo en el comentario', 'warn');
+    update('orders', o.id, {
+      opRejected: true,
+      opRejectedReason: reason,
+      opRejectedBy: currentUser?.name || 'Auditoría',
+      opRejectedAt: nowISO(),
+      auditComment: reason,
+    });
+    pushNotification({
+      type: 'warning',
+      text: `✗ Auditoría rechazó ${o.id}: ${reason.slice(0, 60)}${reason.length > 60 ? '…' : ''}`,
+      targetUser: o.asesor,
+      link: 'ventas',
+      key: `rej_${o.id}`,
+    });
+    toast('Pedido rechazado — comercial notificado', 'ok');
+    setDetail(null);
+  };
+
+  const verifyProduct = (id) => {
+    update('products', id, { verified: true, lifecycleStatus: 'Activo' });
+    toast('Producto verificado', 'ok');
+  };
+  const rejectProduct = (id) => {
+    update('products', id, { verified: false, rejectedForInnovation: true });
+    toast('Producto devuelto a Innovación', 'warn');
+  };
+
+  // ── Crear pedido stock Castor (producción interna) ──
+  const openStockForm = () =>
+    setStock({
+      productId: products[0]?.id || '',
+      qty: 1,
+      tiempo: 20,
+      asesor: prodEmployees[0]?.name || '',
+      notas: '',
+    });
+
+  const saveStockOrder = () => {
+    const p = prod(stock.productId);
+    if (!p) return toast('Producto no encontrado', 'warn');
+    const qty = Number(stock.qty) || 1;
+    const opId = nextId('OP', 'op', 0);
+    add('orders', {
+      id: opId,
+      productId: p.id,
+      qty,
+      clientName: 'Castor (stock interno)',
+      customerId: null,
+      tipo: 'stock',
+      estado: 'produccion',
+      area: (p.areas || [])[0] || 'Ebanistería',
+      verified: true,
+      orderDate: today(),
+      dueDate: addDays(today(), Number(stock.tiempo) || 20),
+      tiempo: Number(stock.tiempo) || 20,
+      asesor: stock.asesor,
+      total: (Number(p.price) || 0) * qty,
+      paid: 100,
+      notas: stock.notas || '',
+      docType: 'remisión',
+    });
+    toast(`${opId} creada para stock Castor`, 'ok');
+    setStock(null);
+  };
+
+  // ── Editar pedido antes de crear OP ──
+  const openEdit = () => { setEdit({ ...detail }); setDetail(null); };
+  const saveEdit = () => {
+    update('orders', edit.id, {
+      qty: Number(edit.qty) || 1,
+      total: Number(edit.total) || 0,
+      asesor: edit.asesor,
+      productId: edit.productId,
+    });
+    toast(`Pedido ${edit.id} actualizado`, 'ok');
+    setEdit(null);
+  };
+
+  // ── Datos derivados del pedido en detalle ──
+  const detailData = useMemo(() => {
+    if (!detail) return null;
+    const o = detail;
+    const c = cust(o.customerId);
+    const p = prod(o.productId);
+    const pays = payments.filter((x) => x.orderId === o.id || (x.orderIds || []).includes(o.id));
+    const totalPagado = pays.filter((x) => x.estado === 'confirmado').reduce((a, x) => a + (x.amount || 0), 0);
+    return { o, c, p, pays, totalPagado, saldo: Math.max(0, (o.total || 0) - totalPagado) };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail, customers, products, payments]);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
+      {/* KPIs */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Pedidos sin OP" value={kpis.pedidosSinOp} accent="#C9A961" />
-        <KpiCard label="Productos por validar" value={kpis.productosNuevos} accent="#a78bfa" />
-        <KpiCard label="Hallazgos totales" value={kpis.findings} accent="#f87171" />
-        <KpiCard label="Auditorías abiertas" value={kpis.abiertas} accent="#38bdf8" />
+        <KpiCard label="Pedidos S/OP" value={pendOp.length} hint="Esperando verificación" accent={pendOp.length ? '#ef4444' : '#10b981'} icon={<IconShield width={18} height={18} />} />
+        <KpiCard label="Productos nuevos" value={newProds.length} hint="Por validar" accent={newProds.length ? '#f59e0b' : '#10b981'} icon={<IconBox width={18} height={18} />} />
+        <KpiCard label="Solicitudes doc" value={reqFactura.length} hint="Factura/remisión" accent={reqFactura.length ? '#EAB308' : '#10b981'} icon={<IconDoc width={18} height={18} />} />
+        <KpiCard label="Pedidos stock Castor" value={stockOps.length} hint="Producción interna" accent="#C9A961" icon={<IconBox width={18} height={18} />} />
       </div>
 
-      <div>
-        <p className="mb-2 text-sm font-semibold text-white">Pedidos pendientes por verificar (crear OP)</p>
-        <DataTable columns={pendCols} rows={orders.filter((o) => o.estado === 'pendiente_op')} getKey={(r) => r.id} empty="Sin pedidos pendientes." />
+      {/* Botón crear pedido stock */}
+      <div className="flex justify-end">
+        <button className="btn-gold" onClick={openStockForm}>🏭 Crear pedido stock Castor</button>
       </div>
 
-      <div>
-        <p className="mb-2 text-sm font-semibold text-white">Hallazgos de auditoría</p>
-        <DataTable columns={auditCols} rows={audits} getKey={(r) => r.id} />
-      </div>
+      {/* Solicitudes de facturación pendientes */}
+      {reqFactura.length > 0 && (
+        <section>
+          <h3 className="mb-3 font-semibold gold-title">🧾 Solicitudes de facturación pendientes</h3>
+          <div className="panel overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="text-xs uppercase text-brand-muted">
+                <tr>
+                  <th className="px-3 py-3 text-left">Req</th>
+                  <th className="px-3 py-3 text-left">OP</th>
+                  <th className="px-3 py-3 text-left">Cliente</th>
+                  <th className="px-3 py-3 text-left">Doc</th>
+                  <th className="px-3 py-3 text-left">Solicitado</th>
+                  <th className="px-3 py-3 text-right">Acción</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reqFactura.map((r) => {
+                  const o = orders.find((x) => x.id === r.orderId);
+                  return (
+                    <tr key={r.id} className="border-b border-white/5">
+                      <td className="px-3 py-3 font-mono text-xs text-brand-gold">{r.id}</td>
+                      <td className="px-3 py-3 font-mono text-xs text-brand-gold">{r.orderId}</td>
+                      <td className="px-3 py-3 text-white">{o?.clientName || '—'}</td>
+                      <td className="px-3 py-3"><EstadoBadge value={r.docType} /></td>
+                      <td className="px-3 py-3 text-xs text-brand-muted">{fmtDate(r.requestedAt)} · {r.requestedBy || '—'}</td>
+                      <td className="px-3 py-3 text-right">
+                        <button className="btn-gold px-3 py-1 text-xs" onClick={() => { update('invoiceRequests', r.id, { estado: 'aprobada_auditoria' }); toast('OP cerrada y aprobada', 'ok'); }}>✓ Cerrar OP y aprobar</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {/* Pedidos pendientes por verificar */}
+      <section>
+        <h3 className="mb-1 font-semibold gold-title">🟧 Pedidos pendientes por verificar para crear OP</h3>
+        <p className="mb-2 text-xs italic text-brand-muted">
+          Doble clic en <b>Ver</b> para abrir el detalle con 3 opciones: Crear OP · Rechazar (con comentario) · Editar información.
+        </p>
+        <div className="panel overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="text-xs uppercase text-brand-muted">
+              <tr>
+                <th className="px-3 py-3 text-left">Pedido</th>
+                <th className="px-3 py-3 text-left">Cliente</th>
+                <th className="px-3 py-3 text-left">Producto</th>
+                <th className="px-3 py-3 text-right">Qty</th>
+                <th className="px-3 py-3 text-right">Total</th>
+                <th className="px-3 py-3 text-left">Asesor</th>
+                <th className="px-3 py-3 text-left">Estado</th>
+                <th className="px-3 py-3 text-right">Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pendOp.length ? pendOp.map((o) => {
+                const p = prod(o.productId);
+                return (
+                  <tr key={o.id} className="table-row border-b border-white/5" onDoubleClick={() => openDetail(o)}>
+                    <td className="px-3 py-3 font-mono text-xs font-semibold text-brand-gold">{o.id}</td>
+                    <td className="px-3 py-3 text-white">{o.clientName}</td>
+                    <td className="px-3 py-3 text-xs">{p ? p.name : '—'}</td>
+                    <td className="px-3 py-3 text-right text-white">{o.qty || 1}</td>
+                    <td className="px-3 py-3 text-right text-brand-gold-light">{fmtCOP(o.total)}</td>
+                    <td className="px-3 py-3 text-xs text-brand-muted">{o.asesor || ''}</td>
+                    <td className="px-3 py-3">
+                      {o.opRejected
+                        ? <span className="badge-danger rounded px-2 py-0.5 text-[11px]" title={o.opRejectedReason || ''}>✗ Rechazado</span>
+                        : <span className="badge-warn rounded px-2 py-0.5 text-[11px]">⏳ Pendiente</span>}
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      <button className="btn-gold px-3 py-1 text-xs" onClick={() => openDetail(o)}>👁 Ver (Crear / Rechazar / Editar)</button>
+                    </td>
+                  </tr>
+                );
+              }) : (
+                <tr><td colSpan={8} className="py-5 text-center text-xs italic text-brand-muted">Sin pedidos pendientes — todo verificado</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Productos nuevos por verificar */}
+      <section>
+        <h3 className="mb-3 font-semibold gold-title">🟨 Productos nuevos por verificar</h3>
+        <div className="panel overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="text-xs uppercase text-brand-muted">
+              <tr>
+                <th className="px-3 py-3 text-left">SKU</th>
+                <th className="px-3 py-3 text-left">Producto</th>
+                <th className="px-3 py-3 text-left">Categoría</th>
+                <th className="px-3 py-3 text-right">Costo</th>
+                <th className="px-3 py-3 text-right">Precio</th>
+                <th className="px-3 py-3 text-right">Margen</th>
+                <th className="px-3 py-3 text-right">Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              {newProds.length ? newProds.map((p) => {
+                const margen = p.price ? Math.round((p.price - p.cost) / p.price * 100) : 0;
+                return (
+                  <tr key={p.id} className="border-b border-white/5">
+                    <td className="px-3 py-3 font-mono text-xs text-brand-gold">{p.sku}</td>
+                    <td className="px-3 py-3 text-white">{p.photo || '📦'} {p.name}</td>
+                    <td className="px-3 py-3"><span className="badge-gold rounded px-2 py-0.5 text-[11px]">{p.category}</span></td>
+                    <td className="px-3 py-3 text-right text-brand-muted">{fmtCOP(p.cost)}</td>
+                    <td className="px-3 py-3 text-right text-brand-gold-light">{fmtCOP(p.price)}</td>
+                    <td className={`px-3 py-3 text-right font-semibold ${margen > 30 ? 'text-emerald-400' : margen > 15 ? 'text-amber-400' : 'text-red-400'}`}>{margen}%</td>
+                    <td className="px-3 py-3 text-right">
+                      <button className="btn-gold mr-1 px-2 py-1 text-xs" onClick={() => verifyProduct(p.id)}>✓ Aprobar</button>
+                      <button className="btn-outline px-2 py-1 text-xs" style={{ borderColor: '#ef4444', color: '#fca5a5' }} onClick={() => rejectProduct(p.id)}>✗ Rechazar</button>
+                    </td>
+                  </tr>
+                );
+              }) : (
+                <tr><td colSpan={7} className="py-5 text-center text-xs italic text-brand-muted">Sin productos pendientes de validación</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Cierre de OPs */}
+      <section>
+        <h3 className="mb-1 font-semibold gold-title">🟩 Cierre de OPs para que Contabilidad pueda facturar/remisionar</h3>
+        <p className="mb-2 text-xs italic text-brand-muted">
+          Flujo: <b className="text-amber-300">1) Ver</b> (revisar consumos · editar · cerrar OP) → <b className="text-emerald-300">2) Crear producto CEDI</b> → <b className="text-blue-300">3) Aprobar para facturar</b>.
+        </p>
+        <div className="panel overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="text-xs uppercase text-brand-muted">
+              <tr>
+                <th className="px-3 py-3 text-left">OP</th>
+                <th className="px-3 py-3 text-left">Cliente</th>
+                <th className="px-3 py-3 text-left">Producto</th>
+                <th className="px-3 py-3 text-right">Total</th>
+                <th className="px-3 py-3 text-right">Costo máster</th>
+                <th className="px-3 py-3 text-right">Costo real</th>
+                <th className="px-3 py-3 text-right">Desv.</th>
+                <th className="px-3 py-3 text-left">Estado</th>
+                <th className="px-3 py-3 text-right">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cierreOps.length ? cierreOps.map((o) => {
+                const p = prod(o.productId);
+                const qty = Number(o.qty) || 1;
+                const bom = p?.bom || [];
+                const costoUnit = bom.reduce((a, b) => {
+                  const s = supplies.find((x) => x.id === b.supplyId);
+                  return a + (s ? (Number(s.cost) || 0) * (Number(b.qty) || 0) : 0);
+                }, 0) || (Number(p?.cost) || 0);
+                const costoMaster = costoUnit * qty;
+                const aprobado = !!o.auditApproved;
+                const opCerrada = o.opClosed || o.estado === 'op_cerrada';
+                const productoCreado = !!(finishedStock || []).find((f) => f.orderId === o.id && f.source === 'produccion');
+                let estadoChip;
+                if (aprobado) estadoChip = <span className="badge-ok rounded px-2 py-0.5 text-[11px]">✓ Aprobada</span>;
+                else if (productoCreado) estadoChip = <span className="badge-gold rounded px-2 py-0.5 text-[11px]">📦 En CEDI</span>;
+                else if (opCerrada) estadoChip = <span className="badge-info rounded px-2 py-0.5 text-[11px]">🔒 OP cerrada</span>;
+                else estadoChip = <span className="text-[11px] italic text-brand-muted">Pendiente</span>;
+                return (
+                  <tr key={o.id} className="border-b border-white/5">
+                    <td className="px-3 py-3 font-mono text-xs font-semibold text-brand-gold">{o.id}</td>
+                    <td className="px-3 py-3 text-white">{o.clientName}</td>
+                    <td className="px-3 py-3 text-xs text-white">{p ? p.name : '—'} <span className="text-brand-muted">×{qty}</span></td>
+                    <td className="px-3 py-3 text-right text-brand-gold-light">{fmtCOP(o.total)}</td>
+                    <td className="px-3 py-3 text-right text-white">{fmtCOP(costoMaster)}</td>
+                    <td className="px-3 py-3 text-right text-emerald-400">{fmtCOP(0)}</td>
+                    <td className="px-3 py-3 text-right font-semibold text-emerald-400">0%</td>
+                    <td className="px-3 py-3">{estadoChip}</td>
+                    <td className="px-3 py-3 text-right text-xs text-brand-muted">—</td>
+                  </tr>
+                );
+              }) : (
+                <tr><td colSpan={9} className="py-5 text-center text-xs italic text-brand-muted">Sin OPs listas para auditoría</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* ── Modal: Detalle del pedido para auditoría (img 3) ── */}
+      <Modal
+        open={!!detail}
+        onClose={() => setDetail(null)}
+        title={detailData ? `Pedido ${detailData.o.id} · Detalle para auditoría` : ''}
+        size="lg"
+        footer={detailData && (
+          <div className="grid w-full grid-cols-3 gap-2">
+            <button className="btn-gold py-2 text-sm" onClick={auditCreateOp}>✓ Crear OP</button>
+            <button className="rounded py-2 text-sm font-semibold text-white" style={{ background: '#b91c1c' }} onClick={auditRejectOp}>✗ Rechazar</button>
+            <button className="btn-outline py-2 text-sm" style={{ borderColor: '#3b82f6', color: '#93c5fd' }} onClick={openEdit}>✎ Editar</button>
+          </div>
+        )}
+      >
+        {detailData && (() => {
+          const { o, c, p, pays, totalPagado, saldo } = detailData;
+          return (
+            <div className="space-y-5">
+              {/* Cliente + estado */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="rounded-lg border border-brand-border bg-[#0f1f36] p-4">
+                  <div className="mb-2 text-xs uppercase text-brand-muted">Cliente</div>
+                  <div className="font-semibold text-white">{o.clientName}</div>
+                  <div className="mt-1 text-xs text-brand-muted">{c?.doc || '—'} · {c?.phone || ''}</div>
+                  <div className="text-xs text-brand-muted">{c?.email || ''}</div>
+                  <div className="text-xs text-brand-muted">{c?.city || ''}</div>
+                </div>
+                <div className="rounded-lg border border-brand-border bg-[#0f1f36] p-4">
+                  <div className="mb-2 text-xs uppercase text-brand-muted">Estado del pedido</div>
+                  <div className="font-semibold text-white">
+                    {o.estado}{' '}
+                    {o.verified
+                      ? <span className="ml-2 text-xs text-emerald-400">✓ verificado</span>
+                      : <span className="ml-2 text-xs text-amber-400">⚠ sin verificar</span>}
+                  </div>
+                  <div className="mt-1 text-xs text-brand-muted">Área actual: {o.area || '—'}</div>
+                  <div className="text-xs text-brand-muted">Tipo: {o.tipo || 'producción'}</div>
+                  <div className="text-xs text-brand-muted">Asesor: {o.asesor || '—'}</div>
+                  <div className="text-xs text-brand-muted">Fecha: {fmtDate(o.orderDate || today())}</div>
+                </div>
+              </div>
+
+              {/* Producto */}
+              <div>
+                <h4 className="mb-2 text-sm font-semibold text-white">Producto</h4>
+                <div className="flex items-start justify-between rounded-lg border border-brand-border bg-[#0f1f36] p-4">
+                  <div>
+                    <div className="font-semibold text-white">{p ? `${p.photo || '📦'} ${p.name}` : '—'}</div>
+                    <div className="text-xs text-brand-muted">{p?.sku || '—'} · {p?.category || ''}</div>
+                    <div className="mt-1 text-xs text-brand-muted">{p?.description || ''}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-brand-muted">Cantidad</div>
+                    <div className="text-lg font-bold text-white">{o.qty || 1}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Totales */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-lg border border-brand-border bg-[#0f1f36] p-3 text-center">
+                  <div className="text-xs text-brand-muted">Total</div>
+                  <div className="text-base font-bold text-brand-gold-light">{fmtCOP(o.total || 0)}</div>
+                </div>
+                <div className="rounded-lg border border-brand-border bg-[#0f1f36] p-3 text-center">
+                  <div className="text-xs text-brand-muted">Pagado</div>
+                  <div className="text-base font-bold text-emerald-400">{fmtCOP(totalPagado)}</div>
+                </div>
+                <div className="rounded-lg border border-brand-border bg-[#0f1f36] p-3 text-center">
+                  <div className="text-xs text-brand-muted">Saldo</div>
+                  <div className={`text-base font-bold ${saldo > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>{fmtCOP(saldo)}</div>
+                </div>
+              </div>
+
+              {/* Pagos registrados */}
+              <div>
+                <h4 className="mb-2 text-sm font-semibold text-white">Pagos registrados</h4>
+                <div className="rounded-lg border border-brand-border bg-[#0f1f36] p-3">
+                  {pays.length ? (
+                    <table className="w-full text-xs">
+                      <thead className="text-brand-muted">
+                        <tr>
+                          <th className="py-1 text-left">ID</th>
+                          <th className="text-left">Fecha</th>
+                          <th className="text-left">Método</th>
+                          <th className="text-left">Cuenta</th>
+                          <th className="text-right">Monto</th>
+                          <th className="text-left">Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pays.map((pg) => {
+                          const b = bankAccounts.find((x) => x.id === pg.bankId);
+                          return (
+                            <tr key={pg.id}>
+                              <td className="py-1 font-mono text-brand-gold">{pg.id}</td>
+                              <td>{fmtDate(pg.date)}</td>
+                              <td className="text-white">{pg.method || '—'}</td>
+                              <td className="text-brand-muted">{b ? `${b.bank} ${b.number}` : '—'}</td>
+                              <td className="text-right text-brand-gold-light">{fmtCOP(pg.amount)}</td>
+                              <td><EstadoBadge value={pg.estado} /></td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <div className="py-3 text-center text-xs italic text-brand-muted">Sin pagos registrados</div>
+                  )}
+                </div>
+              </div>
+
+              {/* Rechazo previo */}
+              {o.opRejected && (
+                <div className="rounded p-3" style={{ borderLeft: '3px solid #ef4444', background: '#2a0e14' }}>
+                  <div className="text-xs font-semibold text-red-300">✗ Pedido rechazado previamente</div>
+                  <div className="mt-1 text-[11px] italic text-red-200">"{o.opRejectedReason || ''}"</div>
+                  <div className="mt-1 text-[10px] text-brand-muted">Por {o.opRejectedBy || '—'} · {fmtDate(o.opRejectedAt)}</div>
+                </div>
+              )}
+
+              {/* Comentario de auditoría */}
+              <div className="panel-2 rounded p-3">
+                <div className="mb-2 text-xs font-semibold gold-title">💬 Comentario de auditoría (se guarda en el pedido)</div>
+                <textarea
+                  rows={2}
+                  className="input-field text-xs"
+                  placeholder="Observaciones, motivo de rechazo, notas internas..."
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                />
+              </div>
+              <p className="text-right text-[11px] text-brand-muted">Rechazar → envía el pedido a corrección del comercial con el comentario.</p>
+            </div>
+          );
+        })()}
+      </Modal>
+
+      {/* ── Modal: Crear pedido stock Castor (img 4) ── */}
+      <Modal
+        open={!!stock}
+        onClose={() => setStock(null)}
+        title="🏭 Crear pedido stock Castor"
+        subtitle="Pedido de producción interna para reponer inventario (sin cliente). Al aprobarlo se crea la OP y pasa a Producción."
+        size="md"
+        footer={
+          <>
+            <button className="btn-outline" onClick={() => setStock(null)}>Cancelar</button>
+            <button className="btn-gold" onClick={saveStockOrder}>Crear y aprobar</button>
+          </>
+        }
+      >
+        {stock && (
+          <FormGrid cols={2}>
+            <Field label="Producto *" className="sm:col-span-2">
+              <Select value={stock.productId} onChange={(e) => setStock((s) => ({ ...s, productId: e.target.value }))}>
+                {products.map((p) => (
+                  <option key={p.id} value={p.id}>{p.photo || '📦'} {p.name} · {p.sku} · stock {p.stock || 0}</option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Cantidad *"><Input type="number" min="1" value={stock.qty} onChange={(e) => setStock((s) => ({ ...s, qty: e.target.value }))} /></Field>
+            <Field label="Tiempo (días) *"><Input type="number" min="1" value={stock.tiempo} onChange={(e) => setStock((s) => ({ ...s, tiempo: e.target.value }))} /></Field>
+            <Field label="Responsable *" className="sm:col-span-2">
+              <Select value={stock.asesor} onChange={(e) => setStock((s) => ({ ...s, asesor: e.target.value }))}>
+                {prodEmployees.map((e) => <option key={e.id} value={e.name}>{e.name}</option>)}
+              </Select>
+            </Field>
+            <Field label="Notas" className="sm:col-span-2">
+              <textarea rows={2} className="input-field" placeholder="Razón del pedido, urgencia, etc." value={stock.notas} onChange={(e) => setStock((s) => ({ ...s, notas: e.target.value }))} />
+            </Field>
+          </FormGrid>
+        )}
+      </Modal>
+
+      {/* ── Modal: Editar pedido ── */}
+      <Modal
+        open={!!edit}
+        onClose={() => setEdit(null)}
+        title={edit ? `✎ Editar pedido ${edit.id}` : ''}
+        subtitle="Auditoría puede corregir datos antes de crear la OP."
+        size="md"
+        footer={
+          <>
+            <button className="btn-outline" onClick={() => setEdit(null)}>Cancelar</button>
+            <button className="btn-gold" onClick={saveEdit}>Guardar cambios</button>
+          </>
+        }
+      >
+        {edit && (
+          <FormGrid cols={2}>
+            <Field label="Producto" className="sm:col-span-2">
+              <Select value={edit.productId} onChange={(e) => setEdit((s) => ({ ...s, productId: e.target.value }))}>
+                {products.filter((p) => p.verified).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </Select>
+            </Field>
+            <Field label="Cantidad"><Input type="number" min="1" value={edit.qty} onChange={(e) => setEdit((s) => ({ ...s, qty: e.target.value }))} /></Field>
+            <Field label="Total (COP)"><Input type="number" value={edit.total} onChange={(e) => setEdit((s) => ({ ...s, total: e.target.value }))} /></Field>
+            <Field label="Asesor" className="sm:col-span-2"><Input value={edit.asesor || ''} onChange={(e) => setEdit((s) => ({ ...s, asesor: e.target.value }))} /></Field>
+          </FormGrid>
+        )}
+      </Modal>
     </div>
   );
 }

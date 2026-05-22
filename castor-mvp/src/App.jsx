@@ -4,8 +4,15 @@ import Header from './components/Header';
 // Contabilidad
 import DashboardContable from './views/DashboardContable';
 import LibroDiario from './views/LibroDiario';
+import LibroMayor from './views/LibroMayor';
 import BalancePrueba from './views/BalancePrueba';
+import BalanceGeneral from './views/BalanceGeneral';
+import EstadoResultados from './views/EstadoResultados';
+import AuxIVA from './views/AuxIVA';
 import PlanPUC from './views/PlanPUC';
+import AsientosManuales from './views/AsientosManuales';
+import CentrosCosto from './views/CentrosCosto';
+import ConfigPerfilTributario from './views/ConfigPerfilTributario';
 import ConfiguracionNomina from './views/ConfiguracionNomina';
 // Inicio
 import Inicio from './views/Inicio';
@@ -32,9 +39,9 @@ import RRHH from './views/RRHH';
 
 const VIEWS = {
   inicio: (nav) => <Inicio onNavigate={nav} />,
-  leads: () => <Leads />,
+  leads: (nav) => <Leads onNavigate={nav} />,
   clientes: () => <Clientes />,
-  cotizaciones: () => <Cotizaciones />,
+  cotizaciones: (nav) => <Cotizaciones onNavigate={nav} />,
   'lista-precios': () => <ListaPrecios />,
   ventas: () => <Ventas />,
   postventa: () => <Postventa />,
@@ -51,8 +58,15 @@ const VIEWS = {
   // Contabilidad
   dashboard: (nav) => <DashboardContable onNavigate={nav} />,
   'libro-diario': (_, search) => <LibroDiario search={search} />,
+  'libro-mayor': () => <LibroMayor />,
   'balance-prueba': () => <BalancePrueba />,
+  'balance-general': () => <BalanceGeneral />,
+  'estado-resultados': () => <EstadoResultados />,
+  'aux-iva': () => <AuxIVA />,
   'plan-puc': () => <PlanPUC />,
+  'asientos-manuales': () => <AsientosManuales />,
+  'centros-costo': () => <CentrosCosto />,
+  'config-perfil': () => <ConfigPerfilTributario />,
   'config-nomina': () => <ConfiguracionNomina />,
 };
 
@@ -66,8 +80,10 @@ export default function App() {
     <div className="flex h-screen overflow-hidden bg-brand-bg text-white">
       <Sidebar view={view} setView={setView} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Header view={view} search={search} setSearch={setSearch} />
-        <main className="flex-1 overflow-y-auto p-8">{render(setView, search)}</main>
+        <Header view={view} search={search} setSearch={setSearch} setView={setView} />
+        <main key={view} className="page flex-1 overflow-y-auto p-8">
+          {render(setView, search)}
+        </main>
       </div>
     </div>
   );

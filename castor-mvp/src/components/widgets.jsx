@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Badge } from './ui';
 
 // ── Formato de fecha es-CO ──
@@ -18,6 +18,22 @@ export const daysUntil = (d) => {
 // ── Barra de herramientas (búsqueda + filtros) ──
 export function Toolbar({ children }) {
   return <div className="mb-4 flex flex-wrap items-center gap-3">{children}</div>;
+}
+
+// ── Botón "× Limpiar" — visible sólo si hay filtros activos.
+// `active` es bool o un array de booleanos (cualquiera true muestra el botón).
+export function ClearFiltersButton({ active, onClear, label = '× Limpiar' }) {
+  const isActive = Array.isArray(active) ? active.some(Boolean) : !!active;
+  if (!isActive) return null;
+  return (
+    <button
+      type="button"
+      onClick={onClear}
+      className="text-xs text-red-300 transition hover:text-red-200 hover:underline"
+    >
+      {label}
+    </button>
+  );
 }
 
 export function SearchBox({ value, onChange, placeholder = 'Buscar…' }) {
@@ -98,30 +114,75 @@ export function SlidePanel({ open, onClose, title, subtitle, children }) {
   );
 }
 
-// ── Tabla genérica (columns: {key,label,align,render}) ──
+// ── Tabla genérica (columns: {key,label,align,render,sortable,sortValue}) ──
+// Ordenamiento clickeable en headers (espejo de toggleSort/applySort del demo).
+// Cada columna acepta:
+//  - sortable: bool (default true salvo que render sea custom sin sortValue)
+//  - sortValue(row): valor crudo a comparar (si no se da, usa row[c.key])
 export function DataTable({ columns, rows, onRowClick, getKey, empty = 'Sin registros.' }) {
+  const [sort, setSort] = useState({ by: null, dir: 'asc' });
+
+  const sortedRows = useMemo(() => {
+    if (!sort.by) return rows;
+    const col = columns.find((c) => c.key === sort.by);
+    if (!col) return rows;
+    const valueOf = col.sortValue || ((r) => r[col.key]);
+    const dir = sort.dir === 'asc' ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      const va = valueOf(a);
+      const vb = valueOf(b);
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
+      return String(va).localeCompare(String(vb), 'es', { numeric: true }) * dir;
+    });
+  }, [rows, sort, columns]);
+
+  const toggleSort = (key) => {
+    setSort((s) => {
+      if (s.by !== key) return { by: key, dir: 'asc' };
+      if (s.dir === 'asc') return { by: key, dir: 'desc' };
+      return { by: null, dir: 'asc' };
+    });
+  };
+
   return (
     <div className="panel overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="border-b border-white/10 text-left text-[11px] uppercase tracking-wide text-muted">
-              {columns.map((c) => (
-                <th
-                  key={c.key}
-                  className={`px-4 py-3 font-medium ${c.align === 'right' ? 'text-right' : ''}`}
-                >
-                  {c.label}
-                </th>
-              ))}
+              {columns.map((c) => {
+                const isSortable = c.sortable !== false;
+                const isActive = sort.by === c.key;
+                return (
+                  <th
+                    key={c.key}
+                    onClick={isSortable ? () => toggleSort(c.key) : undefined}
+                    className={`px-4 py-3 font-medium ${c.align === 'right' ? 'text-right' : ''} ${
+                      isSortable ? 'cursor-pointer select-none transition hover:text-white' : ''
+                    } ${isActive ? 'text-brand-gold-light' : ''}`}
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      {c.label}
+                      {isSortable && (
+                        <span className="text-[9px] opacity-60">
+                          {isActive ? (sort.dir === 'asc' ? '▲' : '▼') : '↕'}
+                        </span>
+                      )}
+                    </span>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {sortedRows.map((row) => (
               <tr
                 key={getKey(row)}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
-                className={`border-b border-white/5 transition hover:bg-white/5 ${
+                className={`border-b border-white/5 transition hover:bg-[rgba(201,169,97,0.06)] ${
                   onRowClick ? 'cursor-pointer' : ''
                 }`}
               >
@@ -135,7 +196,7 @@ export function DataTable({ columns, rows, onRowClick, getKey, empty = 'Sin regi
                 ))}
               </tr>
             ))}
-            {rows.length === 0 && (
+            {sortedRows.length === 0 && (
               <tr>
                 <td colSpan={columns.length} className="px-4 py-10 text-center text-muted">
                   {empty}

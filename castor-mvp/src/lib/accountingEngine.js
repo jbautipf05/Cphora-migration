@@ -1,0 +1,468 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// accountingEngine.js — Motor contable + hooks de dominio (versión React).
+// Portado y compactado desde `castor_accounting.js` (~líneas 590-1100). A
+// diferencia del original, todas las funciones son puras: NO usan `window`,
+// NO mutan estado externo y NO hacen render. Reciben el slice mínimo necesario
+// y devuelven `{ ok, journalEntry, lines }` o `{ error, message }`.
+//
+// Convenciones (espejo del seed React):
+//   journalEntry  = { id, date, period, source, sourceId, concept, status, totalDebit, totalCredit, createdAt }
+//   journalLine   = { id, journalId, accountCode, debit, credit, thirdParty?, costCenter? }
+//
+// Para integrarlo, el caller (AppContext) hace algo como:
+//   const res = postJournalEntry({...payload}, { pucAccounts, journalEntries, fiscalPeriods, counters });
+//   if (res.ok) dispatch({ type: 'APPEND_JE', je: res.journalEntry, lines: res.lines, counters: res.counters });
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { PUC_BY_CODE } from '../data/pucCatalog';
+import { nowISO, today } from './format';
+
+// ── utils ────────────────────────────────────────────────────────────────────
+const round = (n) => Math.round((+n || 0) * 100) / 100;
+const eqMoney = (a, b, tol = 0.5) => Math.abs((+a || 0) - (+b || 0)) <= tol;
+
+export function yyyymm(dateStr) {
+  if (!dateStr) return '';
+  const m = String(dateStr).match(/^(\d{4})-(\d{2})/);
+  return m ? `${m[1]}-${m[2]}` : '';
+}
+
+function findAccount(code, pucAccounts) {
+  // Permite buscar primero en pucAccounts del state, fallback al catálogo importado.
+  if (pucAccounts && pucAccounts.length) {
+    return pucAccounts.find((a) => a.code === code) || PUC_BY_CODE[code] || null;
+  }
+  return PUC_BY_CODE[code] || null;
+}
+
+function findPeriod(date, fiscalPeriods) {
+  const id = yyyymm(date);
+  return (fiscalPeriods || []).find((p) => p.id === id) || null;
+}
+
+// ── postJournalEntry ────────────────────────────────────────────────────────
+// payload: { date, source, sourceId, concept|description, lines, force?, status? }
+// ctx:     { pucAccounts?, journalEntries, fiscalPeriods?, counters }
+// Retorna: { ok, journalEntry, lines, counters } | { error, message } | { warning, journalId }
+export function postJournalEntry(payload, ctx) {
+  if (!payload) return { error: 'no_payload', message: 'Falta el payload' };
+  const { date, source, sourceId } = payload;
+  const concept = payload.concept || payload.description || '';
+  const lines = Array.isArray(payload.lines) ? payload.lines : [];
+
+  if (!date) return { error: 'missing_date', message: 'Falta la fecha del asiento' };
+  if (!source) return { error: 'missing_source', message: 'Falta el origen del asiento' };
+  if (!sourceId) return { error: 'missing_sourceId', message: 'Falta el ID de origen' };
+  if (lines.length < 2)
+    return { error: 'too_few_lines', message: 'Se requieren al menos 2 líneas' };
+
+  const { pucAccounts, journalEntries = [], fiscalPeriods = [], counters = {} } = ctx || {};
+
+  // Idempotencia: ya existe asiento posted con ese source/sourceId?
+  const dup = journalEntries.find(
+    (j) => j.source === source && j.sourceId === sourceId && j.status === 'posted',
+  );
+  if (dup) return { warning: 'already_posted', journalId: dup.id };
+
+  // Validar partida doble
+  let totDebit = 0;
+  let totCredit = 0;
+  for (const ln of lines) {
+    totDebit += +ln.debit || 0;
+    totCredit += +ln.credit || 0;
+  }
+  if (!eqMoney(totDebit, totCredit)) {
+    return {
+      error: 'unbalanced',
+      message: `DB ${totDebit.toFixed(0)} ≠ CR ${totCredit.toFixed(0)}`,
+    };
+  }
+  if (totDebit <= 0) return { error: 'zero_total', message: 'Totales en cero' };
+
+  // Validar cada línea
+  for (let i = 0; i < lines.length; i++) {
+    const ln = lines[i];
+    if (!ln.accountCode)
+      return { error: 'line_missing_account', message: `Línea ${i + 1} sin cuenta` };
+    const acc = findAccount(ln.accountCode, pucAccounts);
+    if (!acc) return { error: 'unknown_account', message: `Cuenta ${ln.accountCode} no existe` };
+    if (acc.type && acc.type !== 'auxiliar')
+      return {
+        error: 'titulo_account',
+        message: `Cuenta ${ln.accountCode} es título; no admite movimiento`,
+      };
+    if (acc.active === false)
+      return { error: 'inactive_account', message: `Cuenta ${ln.accountCode} inactiva` };
+    const d = +ln.debit || 0;
+    const c = +ln.credit || 0;
+    if (d > 0 && c > 0)
+      return {
+        error: 'line_both_sides',
+        message: `Línea ${i + 1} no puede tener débito y crédito a la vez`,
+      };
+    if (d <= 0 && c <= 0)
+      return { error: 'line_zero', message: `Línea ${i + 1} con valor 0` };
+    if (acc.requiresThirdParty && !ln.thirdParty) {
+      return {
+        error: 'missing_third_party',
+        message: `Cuenta ${ln.accountCode} requiere tercero (línea ${i + 1})`,
+      };
+    }
+  }
+
+  // Validar periodo
+  const period = findPeriod(date, fiscalPeriods);
+  const periodStatus = period?.estado || period?.status;
+  if (period && periodStatus === 'cerrado' && !payload.force) {
+    return { error: 'closed_period', message: `Periodo ${period.id} cerrado` };
+  }
+  const periodId = period ? period.id : yyyymm(date);
+
+  // Asignar JE-ID
+  const nextJe = (counters.je || 0) + 1;
+  const jeId = 'JE-' + String(nextJe).padStart(6, '0');
+
+  const journalEntry = {
+    id: jeId,
+    date,
+    period: periodId,
+    source,
+    sourceId,
+    concept,
+    status: payload.status || 'posted',
+    totalDebit: round(totDebit),
+    totalCredit: round(totCredit),
+    createdAt: nowISO(),
+  };
+
+  const journalLines = lines.map((ln, idx) => ({
+    id: `${jeId}-L${idx + 1}`,
+    journalId: jeId,
+    lineNumber: idx + 1,
+    accountCode: ln.accountCode,
+    debit: round(ln.debit || 0),
+    credit: round(ln.credit || 0),
+    thirdParty: ln.thirdParty || null,
+    costCenter: ln.costCenter || payload.costCenter || null,
+    description: ln.description || concept || '',
+  }));
+
+  return {
+    ok: true,
+    journalEntry,
+    lines: journalLines,
+    counters: { ...counters, je: nextJe },
+  };
+}
+
+// ── postManualEntry ─────────────────────────────────────────────────────────
+// Wrapper para asientos manuales (mismo formato, source='manual').
+export function postManualEntry(payload, ctx) {
+  return postJournalEntry(
+    {
+      ...payload,
+      source: 'manual',
+      sourceId: payload.sourceId || `MAN-${Date.now().toString(36)}`,
+    },
+    ctx,
+  );
+}
+
+// ── reverseJournalEntry ─────────────────────────────────────────────────────
+// Crea un asiento espejo (intercambia debe/haber) y marca el original como reversed.
+export function reverseJournalEntry(jeId, reason, ctx) {
+  const { journalEntries = [], journalLines = [] } = ctx || {};
+  const je = journalEntries.find((j) => j.id === jeId);
+  if (!je) return { error: 'not_found' };
+  if (je.status === 'reversed') return { error: 'already_reversed' };
+
+  const lines = journalLines.filter((l) => l.journalId === jeId);
+  const mirror = lines.map((l) => ({
+    accountCode: l.accountCode,
+    debit: l.credit,
+    credit: l.debit,
+    thirdParty: l.thirdParty,
+    costCenter: l.costCenter,
+    description: `Reverso: ${l.description || ''}`,
+  }));
+
+  const res = postJournalEntry(
+    {
+      date: today(),
+      source: 'reversal',
+      sourceId: jeId + ':REV',
+      concept: `Reverso de ${jeId}${reason ? ' · ' + reason : ''}`,
+      lines: mirror,
+      force: true,
+    },
+    ctx,
+  );
+
+  if (!res.ok) return res;
+  return {
+    ok: true,
+    journalEntry: res.journalEntry,
+    lines: res.lines,
+    counters: res.counters,
+    reversedOriginalId: jeId,
+  };
+}
+
+// ── postSale (versión simplificada) ─────────────────────────────────────────
+// invoice: { id, date, type:'factura'|'remisión', customerId, customerName, base, iva, total, costoVenta? }
+// Genera un asiento estándar: CxR DR / Ingresos CR / IVA CR  + (opcional) Costo DR / Inventario CR.
+export function postSale(invoice, ctx) {
+  if (!invoice || !invoice.id || !invoice.total)
+    return { error: 'invalid_invoice', message: 'Factura incompleta' };
+
+  const isRemision = invoice.type === 'remisión' || invoice.type === 'remision';
+  const ivaRate = isRemision ? 0 : 0.19;
+  const base = invoice.base ?? invoice.total / (1 + ivaRate);
+  const iva = invoice.iva ?? invoice.total - base;
+  const total = invoice.total;
+  const cuentaIngreso = invoice.cuentaIngreso || '413505';
+  const cuentaIVA = '240805';
+  const cuentaCxR = '130505';
+
+  const lines = [
+    {
+      accountCode: cuentaCxR,
+      debit: total,
+      credit: 0,
+      thirdParty: invoice.customerId || invoice.customerName,
+    },
+    { accountCode: cuentaIngreso, debit: 0, credit: round(base) },
+  ];
+  if (iva > 0) lines.push({ accountCode: cuentaIVA, debit: 0, credit: round(iva) });
+
+  return postJournalEntry(
+    {
+      date: invoice.date || today(),
+      source: 'sale',
+      sourceId: invoice.id,
+      concept: `${isRemision ? 'Remisión' : 'Factura'} ${invoice.id}`,
+      lines,
+    },
+    ctx,
+  );
+}
+
+// ── postCustomerCollection ──────────────────────────────────────────────────
+// payment: { id, date, customerId, bankAccountId|bankPucCode, amount, invoiceId? }
+export function postCustomerCollection(payment, ctx) {
+  if (!payment || !payment.amount)
+    return { error: 'invalid_payment', message: 'Pago incompleto' };
+  const bankPuc = payment.bankPucCode || resolveBankPuc(payment.bankAccountId, ctx);
+  if (!bankPuc) return { error: 'missing_bank', message: 'Cuenta bancaria no resuelta' };
+
+  return postJournalEntry(
+    {
+      date: payment.date || today(),
+      source: 'payment_in',
+      sourceId: payment.id,
+      concept: `Cobro ${payment.id}${payment.invoiceId ? ' · ' + payment.invoiceId : ''}`,
+      lines: [
+        { accountCode: bankPuc, debit: payment.amount, credit: 0 },
+        {
+          accountCode: '130505',
+          debit: 0,
+          credit: payment.amount,
+          thirdParty: payment.customerId,
+        },
+      ],
+    },
+    ctx,
+  );
+}
+
+function resolveBankPuc(bankId, ctx) {
+  const b = (ctx?.bankAccounts || []).find((x) => x.id === bankId);
+  return b?.pucCode || null;
+}
+
+// ── postSupplyPurchase ──────────────────────────────────────────────────────
+// Recibe `receipt = { id, date, supplierId, supplierName, items:[{qty,cost}]|amount, ivaRate? }`.
+// Genera: Inventario MP DR / IVA descontable DR (si aplica) / Retenciones CR / CxP CR.
+// Versión simplificada del original: usa cuentas 140505 (MP), 240810 (IVA desc),
+// 236540 (Rete compras), 220505 (CxP nacionales).
+export function postSupplyPurchase(receipt, ctx) {
+  if (!receipt) return { error: 'no_receipt' };
+  const items = Array.isArray(receipt.items)
+    ? receipt.items
+    : Array.isArray(receipt.detalle)
+      ? receipt.detalle
+      : [];
+  let base = 0;
+  for (const it of items) {
+    const q = +it.qty || +it.cantidad || 0;
+    const c = +it.cost || +it.unitCost || +it.unitPrice || 0;
+    base += q * c;
+  }
+  if (!base && receipt.amount) base = +receipt.amount || 0;
+  if (base <= 0) return { error: 'no_base', message: 'Base imponible cero' };
+
+  const ivaRate = receipt.ivaRate ?? 0.19;
+  const reteRate = receipt.reteRate ?? 0.025; // Rete-fte compras 2.5% por defecto
+  const iva = round(base * ivaRate);
+  const reteFte = round(base * reteRate);
+  const totalNeto = round(base + iva - reteFte);
+
+  const thirdParty = receipt.supplierId || receipt.supplierName || null;
+  const supplierLabel = receipt.supplierName || receipt.supplierId || 'Proveedor';
+
+  const lines = [
+    {
+      accountCode: '140505',
+      debit: round(base),
+      credit: 0,
+      description: `MP ${receipt.id || ''}`,
+    },
+  ];
+  if (iva > 0) {
+    lines.push({
+      accountCode: '240810',
+      debit: iva,
+      credit: 0,
+      description: `IVA descontable ${receipt.id || ''}`,
+    });
+  }
+  if (reteFte > 0) {
+    lines.push({
+      accountCode: '236540',
+      debit: 0,
+      credit: reteFte,
+      thirdParty,
+      description: 'Retención compras',
+    });
+  }
+  lines.push({
+    accountCode: '220505',
+    debit: 0,
+    credit: totalNeto,
+    thirdParty,
+    description: `CxP ${supplierLabel}`,
+  });
+
+  return postJournalEntry(
+    {
+      date: receipt.date || today(),
+      source: 'purchase',
+      sourceId: receipt.id,
+      concept: `Compra MP · ${supplierLabel}`,
+      lines,
+    },
+    ctx,
+  );
+}
+
+// ── postSupplierPayment ─────────────────────────────────────────────────────
+// outgoing: { id, date, beneficiario, beneficiarioId, bankAccountId|bankPucCode, amount, purchaseOrderId? }
+export function postSupplierPayment(outgoing, ctx) {
+  if (!outgoing || !outgoing.amount)
+    return { error: 'invalid_payment', message: 'Pago incompleto' };
+  const amount = +outgoing.amount;
+  const bankPuc = outgoing.bankPucCode || resolveBankPuc(outgoing.bankAccountId, ctx);
+  if (!bankPuc) return { error: 'missing_bank', message: 'Cuenta bancaria no resuelta' };
+
+  // Si está ligado a OC descarga CxP, si no carga gasto general.
+  const debitAccount = outgoing.purchaseOrderId ? '220505' : '510550'; // Gasto otros (fallback)
+  const thirdParty = outgoing.beneficiarioId || outgoing.beneficiario || null;
+
+  return postJournalEntry(
+    {
+      date: outgoing.date || today(),
+      source: 'payment_out',
+      sourceId: outgoing.id,
+      concept: `Pago a ${outgoing.beneficiario || 'tercero'}`,
+      lines: [
+        {
+          accountCode: debitAccount,
+          debit: amount,
+          credit: 0,
+          thirdParty,
+          description: `Pago ${outgoing.id || ''}`,
+        },
+        { accountCode: bankPuc, debit: 0, credit: amount, description: 'Egreso banco' },
+      ],
+    },
+    ctx,
+  );
+}
+
+// ── postPayroll ─────────────────────────────────────────────────────────────
+// run: { id, periodId, total, totalNeto, totalAportes, totalProvisiones }
+// Genera asiento simplificado: Gasto nómina DR / Pasivo a pagar CR (neto + retenciones).
+// Versión muy reducida del runPayroll/postPayroll del original (líneas 1629-1842).
+export function postPayroll(run, ctx) {
+  if (!run || !run.id) return { error: 'invalid_run', message: 'Run de nómina inválido' };
+  const totalSalarios = round(run.totalSalarios || run.total || 0);
+  const totalNeto = round(run.totalNeto || totalSalarios);
+  const totalAportes = round(run.totalAportes || 0);
+  const totalProvisiones = round(run.totalProvisiones || 0);
+  if (totalSalarios <= 0)
+    return { error: 'zero_amount', message: 'Total de nómina cero' };
+
+  const gasto = totalSalarios + totalAportes + totalProvisiones;
+  const aportesPorPagar = totalAportes;
+  const provisionesPorPagar = totalProvisiones;
+  const retencionEmp = round(gasto - totalNeto - aportesPorPagar - provisionesPorPagar);
+
+  const lines = [
+    {
+      accountCode: '510506',
+      debit: round(gasto),
+      credit: 0,
+      description: 'Gasto nómina periodo',
+    },
+    {
+      accountCode: '250505',
+      debit: 0,
+      credit: totalNeto,
+      description: 'Salarios por pagar',
+    },
+  ];
+  if (aportesPorPagar > 0)
+    lines.push({
+      accountCode: '237005',
+      debit: 0,
+      credit: aportesPorPagar,
+      description: 'Aportes EPS/Pensión',
+    });
+  if (provisionesPorPagar > 0)
+    lines.push({
+      accountCode: '251005',
+      debit: 0,
+      credit: provisionesPorPagar,
+      description: 'Provisión cesantías/prima/vacaciones',
+    });
+  if (retencionEmp > 0)
+    lines.push({
+      accountCode: '236505',
+      debit: 0,
+      credit: retencionEmp,
+      description: 'Retención laboral',
+    });
+
+  return postJournalEntry(
+    {
+      date: run.date || today(),
+      source: 'payroll',
+      sourceId: run.id,
+      concept: `Nómina ${run.periodId || ''}`,
+      lines,
+    },
+    ctx,
+  );
+}
+
+// ── Aplicador genérico — actualiza estado del AppContext de forma inmutable ─
+// Útil cuando el caller solo quiere "aplicar" el resultado al setState reducer.
+export function applyJournalResult(state, res) {
+  if (!res?.ok) return state;
+  return {
+    ...state,
+    journalEntries: [res.journalEntry, ...(state.journalEntries || [])],
+    journalLines: [...(state.journalLines || []), ...res.lines],
+    counters: { ...state.counters, ...(res.counters || {}) },
+  };
+}

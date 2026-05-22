@@ -3,9 +3,16 @@
 export const CONTAB_SUBVIEWS = [
   { id: 'dashboard', label: 'Dashboard Contable' },
   { id: 'libro-diario', label: 'Libro Diario' },
+  { id: 'libro-mayor', label: 'Libro Mayor' },
   { id: 'balance-prueba', label: 'Balance de Prueba' },
+  { id: 'balance-general', label: 'Balance General' },
+  { id: 'estado-resultados', label: 'Estado de Resultados' },
+  { id: 'aux-iva', label: 'Auxiliar IVA' },
   { id: 'plan-puc', label: 'Plan PUC' },
-  { id: 'config-nomina', label: 'Nómina y Perfil Tributario' },
+  { id: 'asientos-manuales', label: 'Asientos Manuales' },
+  { id: 'centros-costo', label: 'Centros de Costo' },
+  { id: 'config-perfil', label: 'Perfil Tributario' },
+  { id: 'config-nomina', label: 'Nómina' },
 ];
 
 export const NAV = [
@@ -71,3 +78,48 @@ for (const node of NAV) {
 
 export const navInfo = (id) => FLAT[id] || { label: id, icon: '•', group: null };
 export const CONTAB_IDS = CONTAB_SUBVIEWS.map((s) => s.id);
+
+// Títulos y breadcrumb por página (espejo de PAGE_META del demo).
+// Cada entrada: { title, bc } — copiada 1:1 del HTML Demo6 (línea ~998).
+const PAGE_META = {
+  inicio: { title: 'Panel de Control', bc: 'Inicio' },
+  leads: { title: 'Gestión de Leads', bc: 'Comercial · Leads' },
+  clientes: { title: 'Clientes', bc: 'Comercial · Clientes' },
+  cotizaciones: { title: 'Cotizaciones', bc: 'Comercial · Cotizaciones' },
+  'lista-precios': { title: 'Lista de Precios', bc: 'Comercial · Lista de Precios' },
+  ventas: { title: 'Ventas y Pedidos', bc: 'Comercial · Ventas' },
+  postventa: { title: 'Postventa', bc: 'Comercial · Postventa' },
+  marketing: { title: 'Marketing', bc: 'Comercial · Marketing' },
+  produccion: { title: 'Producción', bc: 'Operación · Producción' },
+  inventario: { title: 'Inventario Terminado', bc: 'Operación · Producto terminado' },
+  despacho: { title: 'Despacho', bc: 'Operación · Despacho' },
+  almacen: { title: 'Almacén · Bodegas', bc: 'Operación · Almacén' },
+  garantias: { title: 'Garantías', bc: 'Operación · Garantías' },
+  tesoreria: { title: 'Tesorería', bc: 'Finanzas · Tesorería' },
+  auditoria: { title: 'Auditoría', bc: 'Admin · Auditoría' },
+  innovacion: { title: 'Innovación', bc: 'Admin · Innovación' },
+  rrhh: { title: 'Recursos Humanos', bc: 'Admin · RRHH' },
+  // Submódulos de Contabilidad (cuelgan de Finanzas · Contabilidad)
+  dashboard: { title: 'Dashboard Contable', bc: 'Finanzas · Contabilidad · Dashboard' },
+  'libro-diario': { title: 'Libro Diario', bc: 'Finanzas · Contabilidad · Libro Diario' },
+  'libro-mayor': { title: 'Libro Mayor', bc: 'Finanzas · Contabilidad · Libro Mayor' },
+  'balance-prueba': { title: 'Balance de Prueba', bc: 'Finanzas · Contabilidad · Balance de Prueba' },
+  'balance-general': { title: 'Balance General', bc: 'Finanzas · Contabilidad · Balance General' },
+  'estado-resultados': { title: 'Estado de Resultados', bc: 'Finanzas · Contabilidad · P&L' },
+  'aux-iva': { title: 'Auxiliar IVA', bc: 'Finanzas · Contabilidad · Aux IVA' },
+  'plan-puc': { title: 'Plan PUC', bc: 'Finanzas · Contabilidad · Plan PUC' },
+  'asientos-manuales': { title: 'Asientos Manuales', bc: 'Finanzas · Contabilidad · Asientos Manuales' },
+  'centros-costo': { title: 'Centros de Costo', bc: 'Finanzas · Contabilidad · Centros de Costo' },
+  'config-perfil': { title: 'Perfil Tributario', bc: 'Finanzas · Contabilidad · Perfil Tributario' },
+  'config-nomina': { title: 'Nómina y Parámetros', bc: 'Finanzas · Contabilidad · Nómina' },
+};
+
+export function pageMeta(id) {
+  const info = navInfo(id);
+  const meta = PAGE_META[id];
+  if (meta) return { title: meta.title, breadcrumb: meta.bc, icon: info.icon };
+  // Fallback: si no hay meta explícita, deriva del grupo.
+  const title = info.label;
+  const breadcrumb = info.group ? `${info.group} · ${info.label}` : 'Inicio';
+  return { title, breadcrumb, icon: info.icon };
+}

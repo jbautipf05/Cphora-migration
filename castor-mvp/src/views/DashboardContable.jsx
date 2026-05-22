@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
-import { getKPIs, getSaldosPorClase, fmtCOP } from '../lib/accounting';
+import { getKPIs, getSaldosPorClase, accountingStatus, fmtCOP } from '../lib/accounting';
 import { KpiCard, Panel, Badge, CLASS_LABELS, CLASS_COLORS } from '../components/ui';
 import PeriodFilter from '../components/PeriodFilter';
-import { IconBook, IconScale, IconLayers, IconArrow } from '../components/icons';
+import { IconBook, IconScale, IconLayers, IconArrow, IconCheck } from '../components/icons';
 
 export default function DashboardContable({ onNavigate }) {
-  const { journalEntries, journalLines } = useApp();
+  const app = useApp();
+  const { journalEntries, journalLines } = app;
+  const status = useMemo(() => accountingStatus(app), [app]);
   const [period, setPeriod] = useState('all');
 
   const kpis = useMemo(
@@ -35,6 +37,29 @@ export default function DashboardContable({ onNavigate }) {
 
   return (
     <div className="space-y-6">
+      {/* Estado del motor contable (reemplaza la alerta "no cargado") */}
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
+        <span className="grid h-8 w-8 place-items-center rounded-lg bg-emerald-500/20 text-emerald-300">
+          <IconCheck width={18} height={18} />
+        </span>
+        <div>
+          <p className="text-sm font-semibold text-emerald-200">
+            Motor contable PUC activo · {status.version}
+          </p>
+          <p className="text-xs text-emerald-300/70">
+            {status.cuentas} cuentas ({status.auxiliares} auxiliares) · {status.asientos} asientos ·{' '}
+            {status.bancos.join(', ')}
+          </p>
+        </div>
+        <div className="ml-auto">
+          {status.ecuacionCuadra ? (
+            <Badge tone="green">✓ Ecuación contable cuadrada</Badge>
+          ) : (
+            <Badge tone="red">✗ Revisar cuadre</Badge>
+          )}
+        </div>
+      </div>
+
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted">
           Resumen contable reactivo · cambia el periodo para recalcular los KPIs.

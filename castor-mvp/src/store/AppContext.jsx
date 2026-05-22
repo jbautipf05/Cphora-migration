@@ -9,31 +9,65 @@ import {
   SEED_JOURNAL_ENTRIES,
   SEED_JOURNAL_LINES,
 } from '../data/seed';
-
-// Empleados (Demo6 seed) — alimentan el preview de nómina.
-const SEED_EMPLOYEES = [
-  { id: 'E-001', name: 'Alexander Vivas', role: 'Gerente Comercial', area: 'Ventas', salario: 6500000 },
-  { id: 'E-002', name: 'Thalia Cifuentes', role: 'Asesora Comercial', area: 'Ventas', salario: 3500000 },
-  { id: 'E-003', name: 'Nelson Díaz', role: 'Jefe de Taller', area: 'Producción', salario: 4200000 },
-  { id: 'E-004', name: 'Yolanda Reyes', role: 'Contadora', area: 'Contabilidad', salario: 4800000 },
-  { id: 'E-005', name: 'Mario Estrada', role: 'Auxiliar Almacén', area: 'Almacén', salario: 1900000 },
-  { id: 'E-006', name: 'Luisa Ortega', role: 'Coord. Bodega Ctg', area: 'Almacén', salario: 2600000 },
-  { id: 'E-007', name: 'Héctor Pulido', role: 'Coord. Bodega Volcanes', area: 'Almacén', salario: 2600000 },
-];
+import {
+  WAREHOUSES,
+  PRODUCTS,
+  SUPPLIERS,
+  SUPPLIES,
+  PURCHASE_ORDERS,
+  CUSTOMERS,
+  INVOICES,
+  LEADS,
+  QUOTES,
+  ORDERS,
+  FINISHED_STOCK,
+  PAYMENTS,
+  OUTGOING_PAYMENTS,
+  WARRANTIES,
+  POST_SALES,
+  EMPLOYEES,
+  STOCK_MOVES,
+  INNOVATION,
+  AUDITS,
+  MARKETING_ASSETS,
+  DISPATCH_REQUESTS,
+} from '../data/erpSeed';
 
 const STORAGE_KEY = 'castor_cphora_contab_v1';
 
 function buildInitialState() {
   return {
+    // Contabilidad
     pucAccounts: PUC_CATALOG,
     journalEntries: SEED_JOURNAL_ENTRIES,
     journalLines: SEED_JOURNAL_LINES,
     bankAccounts: SEED_BANK_ACCOUNTS,
     fiscalPeriods: SEED_FISCAL_PERIODS,
     costCenters: SEED_COST_CENTERS,
-    employees: SEED_EMPLOYEES,
     companyTaxProfile: SEED_TAX_PROFILE,
     payrollParams: SEED_PAYROLL_PARAMS,
+    // ERP — Comercial / Operación / Finanzas / Admin
+    warehouses: WAREHOUSES,
+    products: PRODUCTS,
+    suppliers: SUPPLIERS,
+    supplies: SUPPLIES,
+    purchaseOrders: PURCHASE_ORDERS,
+    customers: CUSTOMERS,
+    invoices: INVOICES,
+    leads: LEADS,
+    quotes: QUOTES,
+    orders: ORDERS,
+    finishedStock: FINISHED_STOCK,
+    payments: PAYMENTS,
+    outgoingPayments: OUTGOING_PAYMENTS,
+    warranties: WARRANTIES,
+    postSales: POST_SALES,
+    employees: EMPLOYEES,
+    stockMoves: STOCK_MOVES,
+    innovation: INNOVATION,
+    audits: AUDITS,
+    marketingAssets: MARKETING_ASSETS,
+    dispatchRequests: DISPATCH_REQUESTS,
     currentUser: { id: 'u1', name: 'Alexander Vivas', role: 'gerencia' },
   };
 }

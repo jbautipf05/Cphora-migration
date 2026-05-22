@@ -5,7 +5,33 @@
 // cuando se conecte el motor real + Supabase.
 // ───────────────────────────────────────────────────────────────────────────
 
-import { PUC_BY_CODE } from '../data/pucCatalog';
+import { PUC_BY_CODE, PUC_CATALOG } from '../data/pucCatalog';
+
+// ── Constante de nómina Colombia 2026 (defaults reales del negocio · §7.11) ──
+// Es la fuente de verdad del cálculo de nómina. El usuario puede sobrescribir
+// estos valores desde Configuración → state.payrollParams (paramsSnapshot).
+export const PAYROLL_2026 = Object.freeze({
+  smmlv: 1423500,
+  auxTransporte: 200000,
+  auxTransporteTopeSmmlv: 2,
+  saludEmpleado: 4,
+  saludEmpleador: 8.5,
+  pensionEmpleado: 4,
+  pensionEmpleador: 12,
+  arlPorcentaje: 0.522,
+  arlNivelRiesgo: 'III',
+  sena: 2,
+  icbf: 3,
+  cajaCompensacion: 4,
+  exoneracionLey1607Smmlv: 10,
+  provCesantias: 8.33,
+  provIntCesantias: 1,
+  provPrima: 8.33,
+  provVacaciones: 4.17,
+});
+
+// ── Bancos por defecto v1.1 (§7.8) — referencia del núcleo ──
+export const DEFAULT_BANKS_V11 = ['Bancolombia', 'BBVA', 'Bold', 'Lulo Bank'];
 
 const _copFmt = new Intl.NumberFormat('es-CO', {
   style: 'currency',
@@ -226,4 +252,43 @@ export function calcPayrollPreview(employees, params) {
     { base: 0, aux: 0, neto: 0, aportesEmpr: 0, provisiones: 0, costoTotal: 0 },
   );
   return { filas, totales };
+}
+
+// ── Saldo de una cuenta (incluye padres por prefijo) ──
+export function getSaldoCuenta(code, lines, entries, period = 'all') {
+  const mov = movimientosPorCuenta(lines, entries, period);
+  const acc = PUC_BY_CODE[code];
+  if (!acc) return 0;
+  if (acc.level >= 6) {
+    const m = mov[code] || { debe: 0, haber: 0 };
+    return saldoPorNaturaleza(code, m.debe, m.haber);
+  }
+  // Cuenta padre: suma de auxiliares con su prefijo.
+  let total = 0;
+  for (const [c, m] of Object.entries(mov)) {
+    if (c.startsWith(code)) total += saldoPorNaturaleza(c, m.debe, m.haber);
+  }
+  return total;
+}
+
+// ── Estado del motor contable (reemplaza la alerta "no cargado") ──
+// Devuelve OK siempre que el catálogo PUC y los asientos estén presentes.
+export function accountingStatus(state) {
+  const cuentas = (state?.pucAccounts || PUC_CATALOG).length;
+  const auxiliares = (state?.pucAccounts || PUC_CATALOG).filter((a) => a.level >= 6).length;
+  const asientos = (state?.journalEntries || []).length;
+  const { ecuacionCuadra } = getSaldosPorClase(
+    state?.journalLines || [],
+    state?.journalEntries || [],
+    'all',
+  );
+  return {
+    ok: cuentas > 0 && asientos > 0,
+    version: 'v1.1',
+    cuentas,
+    auxiliares,
+    asientos,
+    ecuacionCuadra,
+    bancos: DEFAULT_BANKS_V11,
+  };
 }

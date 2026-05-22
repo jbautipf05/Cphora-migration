@@ -7,6 +7,8 @@
 // ecuación contable A = P + Patrimonio + Utilidad cuadra por construcción.
 // Cuando llegue Supabase, este objeto se reemplaza por la hidratación en login.
 
+import { PAYROLL_2026 } from '../lib/accounting';
+
 // ── Cuentas bancarias por defecto (corrección v1.1 del brief §7.8) ──
 export const SEED_BANK_ACCOUNTS = [
   { id: 'B-01', bank: 'Bancolombia', type: 'Corriente', number: '****4521', holder: 'Castor SAS', balance: 148500000, color: '#FFCC00', pucCode: '111005' },
@@ -30,25 +32,8 @@ export const SEED_TAX_PROFILE = {
 };
 
 // ── Parámetros de nómina (defaults PAYROLL_2026, totalmente editables · §7.11) ──
-export const SEED_PAYROLL_PARAMS = {
-  smmlv: 1423500,
-  auxTransporte: 200000,
-  auxTransporteTopeSmmlv: 2, // aplica si salario < 2 SMMLV
-  saludEmpleado: 4,
-  saludEmpleador: 8.5,
-  pensionEmpleado: 4,
-  pensionEmpleador: 12,
-  arlPorcentaje: 0.522, // Riesgo III
-  arlNivelRiesgo: 'III',
-  sena: 2,
-  icbf: 3,
-  cajaCompensacion: 4,
-  exoneracionLey1607Smmlv: 10, // < 10 SMMLV exonera salud 8.5% + SENA + ICBF
-  provCesantias: 8.33,
-  provIntCesantias: 1,
-  provPrima: 8.33,
-  provVacaciones: 4.17,
-};
+// Se siembran desde la constante real del núcleo contable.
+export const SEED_PAYROLL_PARAMS = { ...PAYROLL_2026 };
 
 // ── Periodos fiscales (2026-01..04; primeros tres cerrados) ──
 export const SEED_FISCAL_PERIODS = [

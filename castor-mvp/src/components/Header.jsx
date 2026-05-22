@@ -1,16 +1,24 @@
-import { ACCOUNTING_VIEWS } from './Sidebar';
+import { navInfo } from '../nav';
 import { IconSearch, IconBell, IconPlus } from './icons';
 
 export default function Header({ view, search, setSearch }) {
-  const current = ACCOUNTING_VIEWS.find((v) => v.id === view);
+  const info = navInfo(view);
   return (
     <header className="sticky top-0 z-10 flex items-center gap-4 border-b border-white/5 bg-brand-bg/80 px-8 py-4 backdrop-blur">
       <div className="min-w-0">
         <p className="text-[11px] font-medium text-muted">
-          Contabilidad <span className="text-muted/50">/</span>{' '}
-          <span className="text-gold-accent/80">{current?.label}</span>
+          {info.group ? (
+            <>
+              {info.group} <span className="text-muted/50">/</span>{' '}
+              <span className="text-gold-accent/80">{info.label}</span>
+            </>
+          ) : (
+            <span className="text-gold-accent/80">Castor · Cphora</span>
+          )}
         </p>
-        <h1 className="truncate text-xl font-bold text-white">{current?.label}</h1>
+        <h1 className="truncate text-xl font-bold text-white">
+          {info.icon} {info.label}
+        </h1>
       </div>
 
       <div className="ml-auto flex items-center gap-3">
@@ -23,7 +31,7 @@ export default function Header({ view, search, setSearch }) {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar asiento, cuenta, tercero…"
+            placeholder="Buscar…"
             className="w-72 rounded-lg border border-white/10 bg-panel-bg/60 py-2 pl-9 pr-3 text-sm text-white placeholder-muted/60 outline-none transition focus:border-gold-accent/60"
           />
         </div>
@@ -35,7 +43,7 @@ export default function Header({ view, search, setSearch }) {
         </button>
         <button className="btn-gold">
           <IconPlus width={16} height={16} />
-          Nuevo asiento
+          Nuevo
         </button>
       </div>
     </header>

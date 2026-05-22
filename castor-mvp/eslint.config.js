@@ -17,5 +17,11 @@ export default defineConfig([
       globals: globals.browser,
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
+    rules: {
+      // Regla solo de HMR/Fast-Refresh; archivos compartidos (ui, widgets,
+      // store) exportan helpers junto a componentes a propósito. No afecta
+      // build ni runtime, así que la dejamos como advertencia.
+      'react-refresh/only-export-components': 'warn',
+    },
   },
 ])

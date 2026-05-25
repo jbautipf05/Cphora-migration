@@ -1,70 +1,92 @@
-# Castor · Cphora — MVP Frontend (Módulo de Contabilidad)
+# CASTOR · Cphora — MVP
 
-Migración del prototipo `Castor_Dashboard_Demo6.html` a React + Vite + Tailwind.
-Esta primera fase entrega el **módulo de Contabilidad** como un MVP reactivo (estado
-en memoria con hooks de React), listo para sustituir los datos simulados por
-Supabase en la siguiente fase.
+ERP + módulo de **Contabilidad** para **Castor SAS** (fábrica de muebles premium,
+Colombia). SPA en React + Vite migrada desde un prototipo monolítico HTML. Datos
+en memoria con persistencia en `localStorage`; **sin backend** (aún).
+
+> Estado: **MVP funcional**. La contabilidad (partida doble, libros, balances,
+> nómina) está implementada de forma nativa en React. Ver el alcance real y la
+> deuda conocida en [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) y
+> [docs/adr/](docs/adr/).
 
 ## Stack
 
-- **Vite + React 19** (JavaScript)
-- **Tailwind CSS v3** con la paleta del brief: `brand-bg #0A1628`, `panel-bg #152943`,
-  `gold-accent #C9A961`, `muted #8A9BB8`, fuente **Inter**.
-- Estado global con **Context + `useState`/`useEffect`**, persistido en `localStorage`
-  (simula el `save()` del demo).
+| Capa | Tecnología |
+|------|-----------|
+| UI | React 19 |
+| Build/dev | Vite 8 |
+| Estilos | Tailwind CSS 3.4 (paleta `brand.*`, navy + gold; fuente Inter) |
+| Gráficos | Chart.js 4 |
+| Lint | ESLint 10 (react-hooks, react-refresh) |
+| Gestor de paquetes | **pnpm** (NO npm) |
 
-## Cómo correr
+JavaScript plano (sin TypeScript · ver [ADR-004](docs/adr/ADR-004-sin-typescript.md)),
+ESM, sin router (la vista es un string en `App.jsx` · ver
+[ADR-005](docs/adr/ADR-005-sin-router.md)). Locale `es-CO`.
+
+## Correr en local
 
 ```bash
 cd castor-mvp
-npm install        # solo la primera vez
-npm run dev        # http://localhost:5173
-npm run build      # build de producción
+pnpm install        # o: corepack pnpm install  (si pnpm no está en PATH)
+pnpm dev            # http://localhost:5173
+pnpm build          # build de producción → dist/  (bundle ~719 KB / ~199 KB gzip)
+pnpm preview        # sirve el build
+pnpm lint           # eslint
 ```
 
-## Vistas del módulo (sidebar)
+> Si `pnpm` no está en el PATH, anteponer `corepack` (p. ej. `corepack pnpm dev`).
 
-1. **Dashboard Contable** — KPIs reactivos (ingresos, egresos, utilidad, bancos),
-   ecuación contable con verificación de cuadre y composición de egresos. Filtro por periodo.
-2. **Libro Diario** — tabla dinámica de asientos de doble partida, expandibles a líneas,
-   con filtro por periodo y búsqueda global.
-3. **Balance de Prueba** — 8 columnas (saldo inicial · debe · haber · saldo final) por
-   cuenta auxiliar, con verificación visual del cuadre y de la ecuación contable.
-4. **Plan PUC** — catálogo jerárquico (clases 1-7), colapsable, con saldos que se agregan
-   hacia las cuentas padre. Búsqueda y filtro "solo con saldo".
-5. **Nómina y Perfil Tributario** — formulario 100% controlado y funcional. Todos los
-   parámetros (`PAYROLL_2026`: SMMLV, auxilio, %, provisiones), el perfil tributario y las
-   **cuentas bancarias por defecto (Bancolombia, BBVA, Bold, Lulo Bank)** son editables.
-   "Guardar cambios" actualiza el estado en memoria. Incluye preview de nómina que
-   **recalcula en vivo** al editar cualquier parámetro.
+## Correr tests
 
-## Arquitectura (preparada para Supabase)
+**Aún no hay tests ni framework de testing instalado.** El plan de pruebas
+(Vitest + Testing Library, foco en `src/lib/`) está definido pero no ejecutado.
+Una vez configurado, los comandos previstos serán:
 
-```
-src/
-  data/
-    pucCatalog.js   # catálogo PUC clases 1-7 (cuentas auxiliares del brief)
-    seed.js         # bancos v1.1, perfil tributario, PAYROLL_2026, asientos seed
-  lib/
-    accounting.js   # motor de cálculo cliente: saldos, balance de prueba,
-                    #   getSaldosPorClase (ecuación contable), KPIs, nómina
-  store/
-    AppContext.jsx  # estado + handlers (saveTaxAndPayroll, CRUD bancos, resetDemo)
-  components/        # Sidebar, Header, UI, PeriodFilter, iconos
-  views/            # las 5 vistas
+```bash
+pnpm test           # vitest (watch)        ← pendiente de configurar
+pnpm coverage       # vitest run --coverage ← pendiente de configurar
 ```
 
-Los **handlers** (`saveTaxAndPayroll`, `addBankAccount`, `updateBankAccount`,
-`removeBankAccount`) y las funciones de `lib/accounting.js` están aislados para que en
-la Fase 2 solo se reemplace la fuente de datos (seed → consultas Supabase) y los
-handlers escriban vía `upsert`, sin tocar las vistas.
+Prioridad de cobertura: `src/lib/` (motor contable puro) primero. Ver el plan y
+el porqué en [docs/adr/](docs/adr/) y el resumen de arquitectura.
 
-## Nota importante sobre el motor contable
+## Estructura de carpetas
 
-El motor real `castor_accounting.js` (7.259 líneas) **no venía incluido** en el repo —
-en `Castor_Dashboard_Demo6.html` sus funciones (`seedPucCatalog`, `getSaldoCuenta`,
-`runPayroll`, …) se invocan con `typeof === 'function'` pero su definición vive en ese
-archivo aparte. Mientras se obtiene, `lib/accounting.js` reproduce fielmente la lógica
-documentada en `CASTOR_1.PDF` (Doc 2): naturaleza de cuentas, saldos por clase, ecuación
-`A = P + Patrimonio + Utilidad`, y el cálculo de nómina con exoneración Ley 1607. Cuando
-se entregue el motor oficial, se importa como módulo y se reemplazan estas funciones 1:1.
+```
+castor-mvp/
+├── index.html              # entry HTML (carga Inter por CDN)
+├── vite.config.js          # config Vite (solo plugin react)
+├── tailwind.config.js      # paleta brand.* + fuente Inter
+├── eslint.config.js        # reglas eslint
+├── PROJECT_CONTEXT.md      # contexto técnico extenso (estado real del código)
+├── docs/                   # documentación de proyecto (este baseline)
+│   ├── adr/                # Architecture Decision Records (001–009)
+│   ├── ARCHITECTURE.md     # vista de alto nivel + flujos + diagramas
+│   └── RUNBOOK.md          # operación: build, deploy, rollback, incidentes
+└── src/
+    ├── main.jsx            # render raíz + árbol de providers
+    ├── App.jsx             # mapa de vistas (VIEWS) + layout
+    ├── nav.js              # estructura del menú, breadcrumbs y metadatos de página
+    ├── index.css           # clases base clonadas del prototipo (.panel, .kpi-card…)
+    ├── store/              # estado global (AppContext) + acciones + hidratación
+    ├── lib/                # lógica pura: motor contable, reportes, persistencia, formato
+    ├── data/               # seeds (ERP + contable) y catálogo PUC
+    ├── components/         # UI compartida (tablas, modales, formularios, iconos)
+    └── views/              # 29 vistas (17 ERP + 12 contabilidad)
+```
+
+`src/lib/` tiene su propio [README](src/lib/README.md) con el contrato y los
+*gotchas* del motor contable (lectura obligatoria antes de tocarlo).
+
+## Documentación
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — diseño del sistema y flujos críticos.
+- [docs/adr/](docs/adr/) — decisiones arquitectónicas (por qué las cosas son como son).
+- [docs/RUNBOOK.md](docs/RUNBOOK.md) — operación y respuesta a incidentes.
+- [src/lib/README.md](src/lib/README.md) — motor contable: entradas/salidas y riesgos.
+- [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) — contexto técnico detallado y deuda conocida.
+
+## Repositorio
+
+`github.com/jbautipf05/Cphora-migration` · rama `main` · el proyecto vive en `castor-mvp/`.

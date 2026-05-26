@@ -124,7 +124,16 @@ export default function Clientes() {
       key: 'tipo',
       label: 'Tipo',
       sortValue: (r) => r.tipo,
-      render: (r) => <Chip variant={TIPO_LEAD[r.tipo] || 'gray'}>{r.tipo}</Chip>,
+      // Demo6 (clientes): institucional → badge-info (azul) "Institucional"; resto → badge-ok
+      // (verde) "Persona", con mayúscula inicial (sin uppercase). Ver Demo6:4312.
+      render: (r) => {
+        const inst = r.tipo === 'institucional';
+        return (
+          <Chip variant={inst ? 'info' : 'ok'} uppercase={false}>
+            {inst ? 'Institucional' : 'Persona'}
+          </Chip>
+        );
+      },
     },
     { key: 'doc', label: 'Documento', render: (r) => <span className="text-muted">{r.doc}</span> },
     { key: 'city', label: 'Ciudad', render: (r) => <span className="text-muted">{r.city}</span> },

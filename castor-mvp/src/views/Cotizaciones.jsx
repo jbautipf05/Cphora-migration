@@ -6,6 +6,7 @@ import { Toolbar, SearchBox, SelectFilter, DataTable, EstadoBadge, SlidePanel, C
 import { IconDoc, IconCheck, IconBank } from '../components/icons';
 import { useToast } from '../components/Toast';
 import NuevaCotizacionModal, { genQuoteSeguimientos, subtotal, total } from '../components/NuevaCotizacionModal';
+import { exportQuotePDF } from '../lib/quotePdf';
 
 const ESTADOS = ['borrador', 'enviada', 'aceptada', 'rechazada'];
 
@@ -22,7 +23,8 @@ const quoteToForm = (qq) => ({
 
 export default function Cotizaciones({ onNavigate }) {
   const {
-    quotes, orders, products, update, currentUser, pendingForm, setPendingForm,
+    quotes, orders, products, leads, customers, employees, update, currentUser,
+    pendingForm, setPendingForm,
   } = useApp();
   const toast = useToast();
   const [noteText, setNoteText] = useState('');
@@ -43,35 +45,11 @@ export default function Cotizaciones({ onNavigate }) {
     toast('Nota agregada', 'ok');
   };
 
-  // Descarga PDF simulada: genera un .txt con resumen de la cotización
+  // Descarga el PDF de la cotización con el diseño Castor (port de exportQuotePDF
+  // de Demo6). H-015.
   const downloadPDF = (qu) => {
-    const lines = [
-      `CASTOR · Cotización ${qu.id}`,
-      `Cliente: ${qu.clientName}`,
-      `Canal: ${qu.channel} · Asesor: ${qu.asesor}`,
-      `Fecha: ${qu.createdAt?.slice(0, 10)} · Vigencia: ${qu.vigencia} (${qu.vigenciaDias}d)`,
-      `Estado: ${qu.estado}`,
-      '',
-      'Items:',
-      ...qu.items.map((it) => {
-        const p = products.find((x) => x.id === it.productId);
-        return `  ${p?.name || it.productId} · ${it.qty} × ${fmtCOP(it.price)} = ${fmtCOP(it.qty * it.price)}`;
-      }),
-      '',
-      `Subtotal:    ${fmtCOP(subtotal(qu))}`,
-      `Descuento:   -${fmtCOP((subtotal(qu) * qu.discount) / 100)} (${qu.discount}%)`,
-      `Total:       ${fmtCOP(total(qu))}`,
-      '',
-      `Notas: ${qu.notes || '—'}`,
-    ].join('\n');
-    const blob = new Blob([lines], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Cotizacion_${qu.id}_${(qu.clientName || '').replace(/\s+/g, '_')}.txt`;
-    link.click();
-    URL.revokeObjectURL(url);
-    toast('PDF generado (simulado)', 'ok');
+    exportQuotePDF(qu, { products, leads, customers, employees });
+    toast('PDF generado con diseño Castor', 'ok');
   };
   const [q, setQ] = useState('');
   const [estado, setEstado] = useState('');
@@ -159,6 +137,19 @@ export default function Cotizaciones({ onNavigate }) {
     { key: 'estado', label: 'Estado', sortValue: (r) => r.estado, render: (r) => <EstadoBadge value={r.estado} /> },
     { key: 'fecha', label: 'Creación', sortValue: (r) => r.createdAt, render: (r) => <span className="text-brand-muted">{fmtDate(r.createdAt)}</span> },
     { key: 'vigencia', label: 'Vigencia', sortValue: (r) => r.vigencia, render: (r) => <span className="text-brand-muted">{fmtDate(r.vigencia)}</span> },
+    {
+      key: 'pdf',
+      label: '',
+      align: 'right',
+      render: (r) => (
+        <button
+          onClick={(e) => { e.stopPropagation(); downloadPDF(r); }}
+          className="text-xs text-brand-gold hover:underline"
+        >
+          PDF
+        </button>
+      ),
+    },
   ];
 
   return (

@@ -100,6 +100,8 @@ export default function Leads() {
   const [segForm, setSegForm] = useState({ tipo: 'llamada', fechaProxima: '', texto: '' });
   const [recontactForm, setRecontactForm] = useState(null); // {leadId, fecha, nota}
   const [quoteOpen, setQuoteOpen] = useState(false); // modal "Nueva cotización" en contexto (H-010)
+  const [leadQ, setLeadQ] = useState(''); // buscar lead existente para autollenar (H-005)
+  const [leadQOpen, setLeadQOpen] = useState(false);
 
   const sel = leads.find((l) => l.id === selId) || null;
 
@@ -108,6 +110,7 @@ export default function Leads() {
     if (pendingForm?.type === 'lead') {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setErrors({});
+      setLeadQ('');
       setForm({ ...EMPTY });
       setPendingForm(null);
     }
@@ -382,7 +385,7 @@ export default function Leads() {
         <SelectFilter value={tipo} onChange={setTipo} options={['lead', 'institucional']} allLabel="Todos los tipos" />
         <ClearFiltersButton active={hasFilters} onClear={clearAll} />
         <span className="ml-auto text-sm text-brand-muted">{rows.length} leads</span>
-        <button className="btn-gold" onClick={() => { setErrors({}); setForm({ ...EMPTY }); }}>+ Nuevo lead</button>
+        <button className="btn-gold" onClick={() => { setErrors({}); setLeadQ(''); setForm({ ...EMPTY }); }}>+ Nuevo lead</button>
       </Toolbar>
 
       <DataTable columns={columns} rows={rows} getKey={(r) => r.id} onRowClick={(r) => setSelId(r.id)} />
@@ -689,6 +692,46 @@ export default function Leads() {
       >
         {form && (
           <FormGrid cols={2}>
+            {/* H-005 (mejora): buscar un lead existente para autollenar y editarlo
+                (evita re-tipear). Sólo al crear; al elegir pasa a modo edición. */}
+            {!form.id && (
+              <div className="relative sm:col-span-2">
+                <span className="label">¿Lead existente? Buscá para autollenar y editarlo</span>
+                <input
+                  className="input-field"
+                  placeholder="Buscar por nombre, teléfono o documento…"
+                  value={leadQ}
+                  onChange={(e) => { setLeadQ(e.target.value); setLeadQOpen(true); }}
+                  onFocus={() => setLeadQOpen(true)}
+                  onBlur={() => setTimeout(() => setLeadQOpen(false), 150)}
+                />
+                {leadQOpen && leadQ.trim() && (
+                  <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-48 overflow-y-auto scrollbar-thin rounded-lg border border-brand-border bg-brand-panel shadow-2xl">
+                    {(() => {
+                      const t = leadQ.toLowerCase().trim();
+                      const matches = leads
+                        .filter((l) => `${l.name} ${l.phone || ''} ${l.doc || ''}`.toLowerCase().includes(t))
+                        .slice(0, 8);
+                      return matches.length === 0 ? (
+                        <div className="p-2 text-center text-xs italic text-brand-muted">Sin coincidencias</div>
+                      ) : (
+                        matches.map((l) => (
+                          <button
+                            key={l.id}
+                            type="button"
+                            onMouseDown={() => { setErrors({}); setForm({ ...l }); setLeadQ(''); setLeadQOpen(false); }}
+                            className="flex w-full justify-between gap-2 px-3 py-1.5 text-left text-xs text-brand-muted transition hover:bg-white/5 hover:text-white"
+                          >
+                            <span><span className="font-mono text-brand-gold">{l.id}</span> · <span className="text-white">{l.name}</span></span>
+                            <span className="text-brand-muted">{l.phone || l.doc || l.city || ''}</span>
+                          </button>
+                        ))
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
+            )}
             <Field label="Nombre *" className="sm:col-span-2">
               <Input value={form.name} onChange={(e) => set('name', e.target.value)} />
               {errors.name && <span className="mt-1 block text-xs text-red-400">{errors.name}</span>}

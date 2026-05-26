@@ -17,6 +17,7 @@ import { useToast } from './Toast';
 const CHANNELS = ['Llamada', 'WhatsApp', 'Instagram', 'Pagina Web', 'Facebook', 'Tienda 43', 'Tienda Ctg', 'Referidos'];
 const ASESORES = ['Thalia Cifuentes', 'Alexander Vivas', 'Keyla Cardozo', 'Luz Angela Mendivil', 'Lisseth Ceballos', 'Valentina Olmos'];
 const VIGENCIAS = [20, 30, 45, 60, 90];
+const DISCOUNT_PRESETS = [0, 5, 10, 15, 20, 30, 40, 50]; // descuentos rápidos (H-013, mejora)
 const LEAD_SEARCH_FIELDS = [
   { key: 'name', label: 'Nombre', ph: 'Escribe nombre del lead…' },
   { key: 'phone', label: 'Celular', ph: 'Escribe celular…' },
@@ -51,6 +52,7 @@ export default function NuevaCotizacionModal({ open, leadId = null, initialForm 
   const [form, setForm] = useState(null);
   const [leadField, setLeadField] = useState('name');
   const [leadQuery, setLeadQuery] = useState('');
+  const [customDisc, setCustomDisc] = useState(false); // "Otro" descuento (H-013)
 
   // Construye el form al abrir (espejo de openQuoteForm(leadId)).
   function buildFromLead() {
@@ -81,7 +83,8 @@ export default function NuevaCotizacionModal({ open, leadId = null, initialForm 
   useEffect(() => {
     if (open) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      if (initialForm) { setLeadField('name'); setLeadQuery(''); setForm({ ...initialForm }); } else buildFromLead();
+      if (initialForm) { setLeadField('name'); setLeadQuery(''); setForm({ ...initialForm }); setCustomDisc(!DISCOUNT_PRESETS.includes(Number(initialForm.discount || 0))); }
+      else { buildFromLead(); setCustomDisc(false); }
     } else {
       setForm(null);
     }
@@ -116,7 +119,12 @@ export default function NuevaCotizacionModal({ open, leadId = null, initialForm 
       toast(`${lead.productosInteres.length} producto(s) arrastrado(s) del lead`, 'ok');
     }
   }
-  const clearLead = () => setForm((f) => ({ ...f, leadId: '', clientName: '', city: '' }));
+  // H-014 (mejora): "Quitar" limpia toda la info autollenada del lead
+  // (cliente, ciudad, canal, asesor y productos arrastrados).
+  const clearLead = () => setForm((f) => ({
+    ...f, leadId: '', clientName: '', city: '', channel: 'Llamada', asesor: '',
+    items: [{ productId: '', qty: 1, price: 0, desc: '' }],
+  }));
 
   const setF = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const setItem = (i, patch) =>
@@ -335,7 +343,23 @@ export default function NuevaCotizacionModal({ open, leadId = null, initialForm 
 
           <FormGrid cols={2}>
             <Field label="Descuento % *">
-              <Input type="number" min="0" max="100" value={form.discount} onChange={(e) => setF('discount', Number(e.target.value))} />
+              <Select
+                value={customDisc ? 'otro' : String(form.discount)}
+                onChange={(e) => {
+                  if (e.target.value === 'otro') { setCustomDisc(true); }
+                  else { setCustomDisc(false); setF('discount', Number(e.target.value)); }
+                }}
+              >
+                {DISCOUNT_PRESETS.map((d) => <option key={d} value={d}>{d}%</option>)}
+                <option value="otro">Otro…</option>
+              </Select>
+              {customDisc && (
+                <Input
+                  type="number" min="0" max="100" value={form.discount}
+                  onChange={(e) => setF('discount', Number(e.target.value))}
+                  placeholder="Descuento personalizado %" className="mt-2"
+                />
+              )}
               {discMsg && <span className={`mt-1 block text-xs ${discMsg.c}`}>{discMsg.t}</span>}
             </Field>
             <Field label="Vigencia (días) *">

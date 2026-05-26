@@ -26,13 +26,13 @@ sobre Demo6 y se mantiene.
 
 ---
 
-## Hallazgos de Fase 1 que resultaron MEJORAS (NO en Demo6 — esperan OK del usuario)
+## Hallazgos de Fase 1 que resultaron MEJORAS (NO en Demo6) — ✅ APLICADAS (OK del usuario 2026-05-26)
 
 Clasificados al verificar contra Demo6: no son divergencias, son funcionalidad nueva.
-NO aplicados; aguardan decisión.
+El usuario dio OK → aplicadas (ver `FASE1/H-005_013_014.md`).
 
-| # | Hallazgo | Estado en Demo6 | Propuesta |
-|---|----------|-----------------|-----------|
-| H-005 | Autocompletar/sugerir **leads anteriores** al **crear** un lead | El form de creación de Demo6 (`openLeadForm`) NO tiene buscador de leads previos (es alta nueva). El autocompletado de lead existe sólo en el modal de **cotización** (ya implementado). | Agregar buscador/sugerencias de leads previos en el alta de lead → **mejora UX**, esperar OK. |
-| H-013 | Menú de **descuentos rápidos** (5/10/15/20%… + custom) en el form de cotización | Demo6 usa un `<input type=number>` libre con validación (no un menú de presets). | Convertir el input en select de presets + custom → **mejora UX**, esperar OK. |
-| H-014-ext | Que "Quitar lead" (modal cotización) limpie **también** productos arrastrados / canal / asesor | Demo6 `clearLeadSelection` limpia sólo leadId/cliente/ciudad y re-muestra la caja "lead nuevo" — **React ya replica eso** (paridad ✅). Limpiar además productos/canal/asesor es ir más allá de Demo6. | Extender la limpieza → **mejora**, esperar OK. |
+| # | Hallazgo | Estado en Demo6 | Aplicado |
+|---|----------|-----------------|----------|
+| H-005 | Autocompletar/sugerir **leads anteriores** al **crear** un lead | El form de creación de Demo6 (`openLeadForm`) NO tiene buscador de leads previos. | ✅ Buscador "¿Lead existente?" en el alta; al elegir, carga el lead en modo **edición** (sin duplicar). |
+| H-013 | Menú de **descuentos rápidos** (5/10/15/20%… + custom) en el form de cotización | Demo6 usa un `<input type=number>` libre. | ✅ Select de presets [0,5,10,15,20,30,40,50] + "Otro…" (input custom). |
+| H-014-ext | Que "Quitar lead" (modal cotización) limpie **también** productos / canal / asesor | Demo6 `clearLeadSelection` limpia sólo leadId/cliente/ciudad (React ya replicaba eso). | ✅ "Quitar" ahora limpia además canal (→Llamada), asesor y los ítems arrastrados. |

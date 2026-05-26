@@ -464,7 +464,7 @@ export default function Clientes() {
               {/* Notas */}
               <div className="panel-2 rounded-lg p-4">
                 <div className="mb-2 flex items-center justify-between">
-                  <p className="flex items-center gap-2 text-sm font-semibold text-white">
+                  <p className="flex items-center gap-2 text-sm font-semibold text-gold-accent">
                     📝 Notas y seguimientos
                   </p>
                   <button

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
 import { KpiCard, Chip, TIPO_VENTA, TIPO_DOC, MEDIO_VENTA, PDV_VARIANT } from '../components/ui';
-import { fmtCOP, fmtDate, nowISO } from '../lib/format';
+import { fmtCOP, fmtDate, today } from '../lib/format';
 import { Toolbar, SearchBox, SelectFilter, DataTable, EstadoBadge, ProgressBar, SlidePanel, ClearFiltersButton } from '../components/widgets';
 import Modal from '../components/Modal';
 import { Field, Input, Select, FormGrid } from '../components/form';
@@ -82,7 +82,9 @@ export default function Ventas() {
     if (!form.clientName.trim()) return toast('Indica el cliente', 'warn');
     if (!form.productId) return toast('Selecciona un producto', 'warn');
     const id = nextId('PED', 'ped');
-    const orderDate = nowISO().slice(0, 10);
+    // B1 (Fase 1.5): anclar a today()/DEMO_TODAY igual que A27, para que el pedido
+    // caiga dentro de la ventana de Inicio (gráfico 6 meses / alertas).
+    const orderDate = today();
     add('orders', {
       id, quoteId: null, customerId: null, clientName: form.clientName, asesor: form.asesor,
       total: formTotal, paid: Number(form.paid) || 0, tiempo: Number(form.tiempo) || 30,
@@ -115,7 +117,7 @@ export default function Ventas() {
     const amount = Number(pay.amount) || 0;
     if (amount <= 0) return toast('Monto inválido', 'warn');
     const id = nextId('PAG', 'pag');
-    const date = nowISO().slice(0, 10);
+    const date = today(); // B1 (Fase 1.5): anclar el pago al "hoy" del demo
     add('payments', {
       id, orderId: pay.orderId, amount, method: pay.method, bankId: pay.bankId,
       type: 'abono', date, reference: id, estado: 'confirmado',

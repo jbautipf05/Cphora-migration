@@ -194,7 +194,9 @@ export default function Leads() {
       toast('Lead actualizado', 'ok');
     } else {
       const id = nextId('L', 'lead');
-      add('leads', { ...payload, id, createdAt: nowISO(), notes: [] });
+      // B1 (Fase 1.5): createdAt anclado a today()/DEMO_TODAY (igual que A27 y que el
+      // lead creado desde el modal de cotización), no a nowISO() de tiempo real.
+      add('leads', { ...payload, id, createdAt: today(), notes: [] });
       toast(`Lead ${id} creado`, 'ok');
     }
     setForm(null);

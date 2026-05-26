@@ -4,8 +4,30 @@ import { KpiCard, Badge, Chip } from '../components/ui';
 import { fmtCOP } from '../lib/accounting';
 import { fmtDate, daysBetween, today, nowISO } from '../lib/format';
 import { DataTable, SlidePanel, ClearFiltersButton } from '../components/widgets';
+import { Field, Input, Select } from '../components/form';
 import { IconUsers, IconCheck, IconBadge, IconPhone } from '../components/icons';
 import { useToast } from '../components/Toast';
+
+// EX-F2-04: validación del formulario de edición de cliente. Espejo del patrón
+// H-004 (Leads): teléfono "solo dígitos" = sin letras + ≥7 dígitos (no rompe
+// teléfonos con espacios del seed); email con formato si se informa; en
+// institucional, razón social y NIT obligatorios.
+function validateCustomerDraft(d) {
+  const errs = {};
+  if (!d.name?.trim()) errs.name = 'El nombre es obligatorio';
+  const phone = (d.phone || '').trim();
+  const numDigits = (phone.match(/\d/g) || []).length;
+  if (!phone) errs.phone = 'El teléfono es obligatorio';
+  else if (/[a-zA-Z]/.test(phone)) errs.phone = 'El teléfono no puede contener letras';
+  else if (numDigits < 7) errs.phone = 'El teléfono debe tener al menos 7 dígitos';
+  const email = (d.email || '').trim();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = 'Email inválido';
+  if (d.tipo === 'institucional') {
+    if (!d.razonSocial?.trim()) errs.razonSocial = 'La razón social es obligatoria';
+    if (!d.nit?.trim()) errs.nit = 'El NIT es obligatorio';
+  }
+  return errs;
+}
 
 export default function Clientes() {
   const {
@@ -16,7 +38,9 @@ export default function Clientes() {
     postSales,
     payments,
     warranties,
+    employees,
     update,
+    updateCustomer,
     currentUser,
   } = useApp();
   const toast = useToast();
@@ -27,6 +51,10 @@ export default function Clientes() {
   const [tipo, setTipo] = useState('');
   const [estado, setEstado] = useState('');
   const [sel, setSel] = useState(null);
+  // EX-F2-04: edición inline del cliente en el SlidePanel.
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(null);
+  const [editErrors, setEditErrors] = useState({});
 
   const ciudades = useMemo(
     () => [...new Set(customers.map((c) => c.city).filter(Boolean))],
@@ -36,6 +64,50 @@ export default function Clientes() {
     () => [...new Set(customers.map((c) => c.asesor).filter(Boolean))],
     [customers],
   );
+  // EX-F2-04: opciones de selects del formulario de edición.
+  const asesorOptions = useMemo(() => {
+    const fromEmployees = (employees || [])
+      .filter((e) => e.area === 'Comercial' && e.estado === 'activo')
+      .map((e) => e.name);
+    return [...new Set([...fromEmployees, ...asesores].filter(Boolean))];
+  }, [employees, asesores]);
+  const channelOptions = useMemo(
+    () => [...new Set((leads || []).map((l) => l.channel).filter(Boolean))],
+    [leads],
+  );
+
+  function startEdit() {
+    setDraft({ ...sel });
+    setEditErrors({});
+    setEditing(true);
+  }
+  function cancelEdit() {
+    setEditing(false);
+    setDraft(null);
+    setEditErrors({});
+  }
+  function setD(key, val) {
+    setDraft((p) => ({ ...p, [key]: val }));
+  }
+  function saveEdit() {
+    const errs = validateCustomerDraft(draft);
+    if (Object.keys(errs).length) {
+      setEditErrors(errs);
+      return toast('Revisa los campos marcados', 'warn');
+    }
+    // Si vuelve a Persona, limpia los campos institucionales (normalización).
+    const patch = { ...draft };
+    if (patch.tipo !== 'institucional') {
+      patch.razonSocial = '';
+      patch.nit = '';
+      patch.contacto = '';
+    }
+    updateCustomer(sel.id, patch); // cascada atómica: nombre → orders + quotes
+    setSel((prev) => ({ ...prev, ...patch })); // refresca el snapshot del panel
+    setEditing(false);
+    setEditErrors({});
+    toast('Cliente actualizado', 'ok');
+  }
 
   // Resumen por cliente: pedidos, cotizaciones, leads vinculados, postventa.
   const summary = useMemo(() => {
@@ -245,11 +317,16 @@ export default function Clientes() {
         />
       </div>
 
-      <DataTable columns={columns} rows={rows} getKey={(r) => r.id} onRowClick={setSel} />
+      <DataTable
+        columns={columns}
+        rows={rows}
+        getKey={(r) => r.id}
+        onRowClick={(r) => { setSel(r); setEditing(false); setDraft(null); setEditErrors({}); }}
+      />
 
       <SlidePanel
         open={!!sel}
-        onClose={() => { setSel(null); setNoteText(''); }}
+        onClose={() => { setSel(null); setNoteText(''); setEditing(false); setDraft(null); setEditErrors({}); }}
         title={
           sel ? (
             <span className="inline-flex items-center gap-2">
@@ -281,15 +358,91 @@ export default function Clientes() {
           );
           return (
             <div className="space-y-4">
-              {/* Header con info de contacto */}
-              <div className="space-y-1 text-sm">
-                {sel.phone && (
-                  <p className="text-white">📱 <span className="text-white">{sel.phone}</span> · ✉ <span className="text-white">{sel.email}</span> · 🪪 <span className="text-white">{sel.doc}</span> · 📍 <span className="text-white">{sel.city}</span></p>
-                )}
-                {sel.address && <p className="text-muted">🏠 {sel.address}</p>}
-                {sel.address && <p className="text-muted">🚚 Entrega: {sel.address}</p>}
-                <p className="text-muted">Asesor: <span className="font-medium text-white">{sel.asesor}</span></p>
-              </div>
+              {/* EX-F2-04: contacto en modo lectura (con ✎ Editar) o formulario inline. */}
+              {!editing ? (
+                <div className="space-y-1 text-sm">
+                  <div className="flex items-start justify-between gap-2">
+                    {sel.phone ? (
+                      <p className="text-white">📱 <span className="text-white">{sel.phone}</span> · ✉ <span className="text-white">{sel.email}</span> · 🪪 <span className="text-white">{sel.doc}</span> · 📍 <span className="text-white">{sel.city}</span></p>
+                    ) : <span />}
+                    <button onClick={startEdit} className="shrink-0 text-xs text-gold-accent hover:underline">✎ Editar</button>
+                  </div>
+                  {sel.tipo === 'institucional' && (sel.razonSocial || sel.nit || sel.contacto) && (
+                    <p className="text-muted">🏢 {sel.razonSocial || '—'}{sel.nit ? ` · NIT ${sel.nit}` : ''}{sel.contacto ? ` · Contacto: ${sel.contacto}` : ''}</p>
+                  )}
+                  {sel.address && <p className="text-muted">🏠 {sel.address}</p>}
+                  {sel.address && <p className="text-muted">🚚 Entrega: {sel.address}</p>}
+                  <p className="text-muted">Canal: <span className="text-white">{sel.channel || '— Sin definir —'}</span> · Asesor: <span className="font-medium text-white">{sel.asesor || '— Sin asesor —'}</span></p>
+                </div>
+              ) : draft ? (
+                <div className="panel-2 space-y-3 rounded-lg p-4">
+                  <p className="text-sm font-semibold text-gold-accent">Editar cliente</p>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <Field label="Tipo">
+                      <Select value={draft.tipo || 'lead'} onChange={(e) => setD('tipo', e.target.value)}>
+                        <option value="lead">Persona</option>
+                        <option value="institucional">Institucional</option>
+                      </Select>
+                    </Field>
+                    <Field label="Nombre *">
+                      <Input value={draft.name || ''} onChange={(e) => setD('name', e.target.value)} />
+                      {editErrors.name && <span className="mt-1 block text-xs text-red-400">{editErrors.name}</span>}
+                    </Field>
+                    {draft.tipo === 'institucional' && (
+                      <>
+                        <Field label="Razón social *">
+                          <Input value={draft.razonSocial || ''} onChange={(e) => setD('razonSocial', e.target.value)} />
+                          {editErrors.razonSocial && <span className="mt-1 block text-xs text-red-400">{editErrors.razonSocial}</span>}
+                        </Field>
+                        <Field label="NIT *">
+                          <Input value={draft.nit || ''} onChange={(e) => setD('nit', e.target.value)} />
+                          {editErrors.nit && <span className="mt-1 block text-xs text-red-400">{editErrors.nit}</span>}
+                        </Field>
+                        <Field label="Contacto">
+                          <Input value={draft.contacto || ''} onChange={(e) => setD('contacto', e.target.value)} />
+                        </Field>
+                      </>
+                    )}
+                    <Field label="Documento">
+                      <Input value={draft.doc || ''} onChange={(e) => setD('doc', e.target.value)} />
+                    </Field>
+                    <Field label="Teléfono *">
+                      <Input value={draft.phone || ''} onChange={(e) => setD('phone', e.target.value)} />
+                      {editErrors.phone && <span className="mt-1 block text-xs text-red-400">{editErrors.phone}</span>}
+                    </Field>
+                    <Field label="Email">
+                      <Input value={draft.email || ''} onChange={(e) => setD('email', e.target.value)} />
+                      {editErrors.email && <span className="mt-1 block text-xs text-red-400">{editErrors.email}</span>}
+                    </Field>
+                    <Field label="Ciudad">
+                      <Input value={draft.city || ''} onChange={(e) => setD('city', e.target.value)} />
+                    </Field>
+                    <Field label="Dirección">
+                      <Input value={draft.address || ''} onChange={(e) => setD('address', e.target.value)} />
+                    </Field>
+                    <Field label="Canal">
+                      <Select value={draft.channel || ''} onChange={(e) => setD('channel', e.target.value)}>
+                        <option value="">— Sin definir —</option>
+                        {[...new Set([draft.channel, ...channelOptions].filter(Boolean))].map((ch) => (
+                          <option key={ch} value={ch}>{ch}</option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <Field label="Asesor">
+                      <Select value={draft.asesor || ''} onChange={(e) => setD('asesor', e.target.value)}>
+                        <option value="">— Sin asesor —</option>
+                        {[...new Set([draft.asesor, ...asesorOptions].filter(Boolean))].map((a) => (
+                          <option key={a} value={a}>{a}</option>
+                        ))}
+                      </Select>
+                    </Field>
+                  </div>
+                  <div className="flex justify-end gap-2 pt-1">
+                    <button onClick={cancelEdit} className="btn-outline px-3 py-1.5 text-xs">Cancelar</button>
+                    <button onClick={saveEdit} className="btn-gold px-3 py-1.5 text-xs">Guardar</button>
+                  </div>
+                </div>
+              ) : null}
 
               {/* KPIs */}
               {/* H-026: títulos con mayúscula inicial (sin uppercase), Histórico dorado,

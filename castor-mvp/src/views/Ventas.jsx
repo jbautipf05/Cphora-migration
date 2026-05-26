@@ -6,18 +6,14 @@ import { resolveCustomerId } from '../lib/migrations';
 import { Toolbar, SearchBox, SelectFilter, DataTable, EstadoBadge, ProgressBar, SlidePanel, ClearFiltersButton } from '../components/widgets';
 import { IconCart, IconBank, IconCheck } from '../components/icons';
 import Modal from '../components/Modal';
-import { Field, Input, Select, FormGrid } from '../components/form';
+import { Field, Input, Select } from '../components/form';
+import NuevaVentaModal from '../components/NuevaVentaModal';
 import { useToast } from '../components/Toast';
 
 const METHODS = ['Transferencia', 'Tarjeta', 'Efectivo', 'Cheque'];
 const ASESORES = ['Alexander Vivas', 'Thalia Cifuentes'];
 const MEDIOS = ['TIENDA', 'LEAD', 'FERIA', 'REMARKETING', 'REFERIDO'];
 const PDVS = ['CASTOR 43', 'CASTOR CTG', 'PAGINA WEB', 'GERENCIA'];
-
-const emptyOrder = () => ({
-  clientName: '', asesor: 'Alexander Vivas', productId: '', qty: 1,
-  tipo: 'produccion', docType: 'factura', deliveryAddress: '', paid: 0, tiempo: 30,
-});
 
 export default function Ventas() {
   const {
@@ -41,7 +37,7 @@ export default function Ventas() {
   const [pdv, setPdv] = useState('');
   const [asesor, setAsesor] = useState('');
   const [selId, setSelId] = useState(null);
-  const [form, setForm] = useState(null);
+  const [saleOpen, setSaleOpen] = useState(false); // H-035: modal Nueva venta
   const [pay, setPay] = useState(null); // {orderId, amount, method, bankId}
 
   // OPs rechazadas por auditoría (espejo HTML línea 5216).
@@ -93,56 +89,51 @@ export default function Ventas() {
     };
   }, [orders]);
 
-  const setF = (k, v) => setForm((f) => ({ ...f, [k]: v }));
-  const formTotal = form ? (products.find((p) => p.id === form.productId)?.price || 0) * form.qty : 0;
-
-  function saveOrder() {
-    if (!form.clientName.trim()) return toast('Indica el cliente', 'warn');
-    if (!form.productId) return toast('Selecciona un producto', 'warn');
-    const id = nextId('PED', 'ped');
-    // B1 (Fase 1.5): anclar a today()/DEMO_TODAY igual que A27, para que el pedido
-    // caiga dentro de la ventana de Inicio (gráfico 6 meses / alertas).
+  // H-035: registrar venta desde NuevaVentaModal. Resuelve/crea cliente con datos completos
+  // (B2/ADR-011: customerId FK canónica), ancla la fecha a DEMO_TODAY (B1) y contabiliza (postSale).
+  function submitSale(data) {
+    const clientName = data.custName.trim();
+    if (!clientName) return toast('Indica el cliente', 'warn');
+    if (!data.items?.some((it) => it.productId)) return toast('Agrega al menos un producto', 'warn');
     const orderDate = today();
-    const clientName = form.clientName.trim();
 
-    // B2 (ADR-011): resolver el cliente y guardar customerId (FK canónica). Si no
-    // existe (walk-in), se crea automáticamente. clientName queda como denormalización.
-    let customerId = resolveCustomerId({ clientName }, { customers });
+    let customerId = data.customerId || resolveCustomerId({ clientName }, { customers });
     if (!customerId) {
       customerId = nextId('C', 'cli', 3);
       add('customers', {
-        id: customerId, name: clientName, tipo: 'lead', phone: '', email: '',
-        city: '', address: form.deliveryAddress || '', doc: '', createdAt: today(),
-        asesor: form.asesor, linkedLeadId: null,
+        id: customerId, name: clientName, tipo: 'lead',
+        phone: data.custPhone || '', email: data.custEmail || '', city: data.custCity || '',
+        address: data.custAddress || '', doc: data.custDoc || '', createdAt: orderDate,
+        asesor: data.asesor, linkedLeadId: null,
       });
       toast(`Cliente ${customerId} creado`, 'ok');
     }
 
-    add('orders', {
-      id, quoteId: null, customerId, clientName, asesor: form.asesor,
-      total: formTotal, paid: Number(form.paid) || 0, tiempo: Number(form.tiempo) || 30,
-      orderDate, estado: form.tipo === 'stock' ? 'produccion' : 'pendiente_op',
-      area: null, tipo: form.tipo, docType: form.docType, deliveryAddress: form.deliveryAddress,
-      verified: false, productId: form.productId, qty: Number(form.qty) || 1,
-    });
-    toast(`Pedido ${id} creado`, 'ok');
+    const id = nextId('PED', 'ped');
+    const items = data.items.filter((it) => it.productId);
+    const first = items[0];
+    const tiposItem = [...new Set(items.map((it) => it.tipo))];
+    const tipo = tiposItem.length > 1 ? 'mixto' : tiposItem[0] || 'produccion';
 
-    // Contabiliza la venta automáticamente (CxR DR / Ingresos CR / IVA CR si factura).
-    // El asiento queda visible en Libro Diario y Libro Mayor en tiempo real.
-    const sale = postSale({
-      id,
-      date: orderDate,
-      type: form.docType, // 'factura' | 'remisión'
-      customerId, // B2: tercero real (id), no el nombre
-      customerName: clientName,
-      total: formTotal,
+    add('orders', {
+      id, quoteId: null, customerId, clientName, asesor: data.asesor,
+      total: data.total, paid: Number(data.paid) || 0, tiempo: Number(data.tiempo) || 30,
+      orderDate, estado: tipo === 'stock' ? 'produccion' : 'pendiente_op',
+      area: null, tipo, docType: data.docType, deliveryAddress: data.deliveryAddress,
+      medio: data.medio, pdv: data.pdv, cierreVenta: data.cierreVenta, abonoBancos: data.abonoBancos,
+      verified: false, productId: first.productId, qty: Number(first.qty) || 1,
+      items, // H-035.2: ítems de la venta (multi-ítem)
     });
-    if (sale?.ok) {
-      toast(`Asiento contable ${sale.journalEntry.id} generado`, 'ok');
-    } else if (sale?.error) {
-      toast(`Aviso contable: ${sale.message || sale.error}`, 'warn');
-    }
-    setForm(null);
+    toast(`Venta ${id} registrada`, 'ok');
+
+    const sale = postSale({
+      id, date: orderDate, type: data.docType,
+      customerId, customerName: clientName, total: data.total,
+    });
+    if (sale?.ok) toast(`Asiento contable ${sale.journalEntry.id} generado`, 'ok');
+    else if (sale?.error) toast(`Aviso contable: ${sale.message || sale.error}`, 'warn');
+
+    setSaleOpen(false);
   }
 
   function savePayment() {
@@ -339,8 +330,8 @@ export default function Ventas() {
         <span className="ml-auto text-sm text-brand-muted">{rows.length} pedidos</span>
         {/* H-032: renombrar a "+ Nueva venta" + agregar "+ Venta innovación".
             El modal específico de innovación se construye en H-036 (flag innovation). Demo6:5275-5276. */}
-        <button className="btn-outline" onClick={() => setForm({ ...emptyOrder(), innovation: true })}>+ Venta innovación</button>
-        <button className="btn-gold" onClick={() => setForm(emptyOrder())}>+ Nueva venta</button>
+        <button className="btn-outline" onClick={() => setSaleOpen(true)}>+ Venta innovación</button>
+        <button className="btn-gold" onClick={() => setSaleOpen(true)}>+ Nueva venta</button>
       </Toolbar>
 
       {/* H-033: ayuda de doble clic (Demo6:5280). */}
@@ -403,52 +394,15 @@ export default function Ventas() {
         )}
       </SlidePanel>
 
-      {/* Modal nuevo pedido */}
-      <Modal
-        open={!!form}
-        onClose={() => setForm(null)}
-        title="Nuevo pedido"
-        footer={
-          <>
-            <div className="mr-auto text-sm"><span className="text-brand-muted">Total: </span><span className="font-semibold text-brand-gold">{fmtCOP(formTotal)}</span></div>
-            <button className="btn-outline" onClick={() => setForm(null)}>Cancelar</button>
-            <button className="btn-gold" onClick={saveOrder}>Guardar</button>
-          </>
-        }
-      >
-        {form && (
-          <FormGrid cols={2}>
-            <Field label="Cliente" className="sm:col-span-2"><Input value={form.clientName} onChange={(e) => setF('clientName', e.target.value)} /></Field>
-            <Field label="Producto" className="sm:col-span-2">
-              <Select value={form.productId} onChange={(e) => setF('productId', e.target.value)}>
-                <option value="">Selecciona…</option>
-                {products.map((p) => <option key={p.id} value={p.id}>{p.name} — {fmtCOP(p.price)}</option>)}
-              </Select>
-            </Field>
-            <Field label="Cantidad"><Input type="number" min="1" value={form.qty} onChange={(e) => setF('qty', Number(e.target.value))} /></Field>
-            <Field label="Asesor">
-              <Select value={form.asesor} onChange={(e) => setF('asesor', e.target.value)}>
-                {ASESORES.map((a) => <option key={a} value={a}>{a}</option>)}
-              </Select>
-            </Field>
-            <Field label="Tipo">
-              <Select value={form.tipo} onChange={(e) => setF('tipo', e.target.value)}>
-                <option value="produccion">Producción</option>
-                <option value="stock">Stock</option>
-              </Select>
-            </Field>
-            <Field label="Documento">
-              <Select value={form.docType} onChange={(e) => setF('docType', e.target.value)}>
-                <option value="factura">Factura</option>
-                <option value="remisión">Remisión</option>
-              </Select>
-            </Field>
-            <Field label="Anticipo %"><Input type="number" min="0" max="100" value={form.paid} onChange={(e) => setF('paid', Number(e.target.value))} /></Field>
-            <Field label="Tiempo (días)"><Input type="number" min="0" value={form.tiempo} onChange={(e) => setF('tiempo', Number(e.target.value))} /></Field>
-            <Field label="Dirección de entrega" className="sm:col-span-2"><Input value={form.deliveryAddress} onChange={(e) => setF('deliveryAddress', e.target.value)} /></Field>
-          </FormGrid>
-        )}
-      </Modal>
+      {/* H-035: Modal Nueva venta (reemplaza el antiguo "Nuevo pedido"). */}
+      <NuevaVentaModal
+        open={saleOpen}
+        onClose={() => setSaleOpen(false)}
+        products={products}
+        customers={customers}
+        asesores={ASESORES}
+        onSubmit={submitSale}
+      />
 
       {/* Modal registrar pago */}
       <Modal

@@ -4,6 +4,7 @@ import { KpiCard, Badge, Chip } from '../components/ui';
 import { fmtCOP } from '../lib/accounting';
 import { fmtDate, daysBetween, today, nowISO } from '../lib/format';
 import { DataTable, SlidePanel, ClearFiltersButton } from '../components/widgets';
+import { IconUsers, IconCheck, IconBadge, IconPhone } from '../components/icons';
 import { useToast } from '../components/Toast';
 
 export default function Clientes() {
@@ -97,11 +98,18 @@ export default function Clientes() {
     const totals = Object.values(summary);
     return {
       total: customers.length,
-      institucionales: customers.filter((c) => c.tipo === 'institucional').length,
       activos: totals.filter((s) => s.procesos > 0).length,
-      pendientesPostventa: totals.reduce((a, s) => a + (s.postventaAbiertos || 0), 0),
+      // VIP: histórico ≥ $20M (igual que Demo6 customerTotalHist >= 20000000).
+      vip: totals.filter((s) => s.historico >= 20000000).length,
+      // Postventa pendiente: nº de CLIENTES con ≥1 seguimiento 'pendiente' (Demo6:4258),
+      // no la suma total de seguimientos abiertos (bug previo que daba 3).
+      pendientesPostventa: customers.filter((c) =>
+        (postSales || []).some(
+          (p) => (p.customerId === c.id || p.clientName === c.name) && p.estado === 'pendiente',
+        ),
+      ).length,
     };
-  }, [customers, summary]);
+  }, [customers, summary, postSales]);
 
   const columns = [
     {
@@ -174,11 +182,13 @@ export default function Clientes() {
 
   return (
     <div className="space-y-5">
+      {/* H-016: orden y tarjetas según Demo6:4261-4264 (Total → Con procesos → VIP → Postventa),
+          con subtítulos e iconos. */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Total clientes" value={kpis.total} accent="#38bdf8" />
-        <KpiCard label="Institucionales" value={kpis.institucionales} accent="#a78bfa" />
-        <KpiCard label="Con procesos activos" value={kpis.activos} accent="#34d399" />
-        <KpiCard label="Postventa pendiente" value={kpis.pendientesPostventa} accent="#f87171" />
+        <KpiCard label="Total clientes" value={kpis.total} hint="En la base" accent="#C9A961" icon={<IconUsers width={18} height={18} />} />
+        <KpiCard label="Con procesos activos" value={kpis.activos} hint="Lead/Cot/Venta/Postventa" accent="#3b82f6" icon={<IconCheck width={18} height={18} />} />
+        <KpiCard label="VIP" value={kpis.vip} hint="Histórico ≥ $20M" accent="#f59e0b" icon={<IconBadge width={18} height={18} />} />
+        <KpiCard label="Postventa pendiente" value={kpis.pendientesPostventa} hint="Seguimientos abiertos" accent={kpis.pendientesPostventa ? '#ef4444' : '#10b981'} icon={<IconPhone width={18} height={18} />} />
       </div>
 
       {/* H-017: filtros con labels (mayúsc. pequeñas), buscador ancho y contenedor unificado.

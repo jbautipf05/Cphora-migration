@@ -33,7 +33,7 @@ import {
   DISPATCH_REQUESTS,
 } from '../data/erpSeed';
 import { loadState, saveState, resetState } from '../lib/persistence';
-import { migrateCustomerFk } from '../lib/migrations';
+import { migrateCustomerFk, migrateCustomerChannel } from '../lib/migrations';
 import { nowISO, uid } from '../lib/format';
 import {
   postJournalEntry as engPostJE,
@@ -109,8 +109,10 @@ function hydrate() {
         counters: { ...base.counters, ...(saved.counters || {}) },
         currentUser: saved.currentUser || base.currentUser,
       };
-  // Migración idempotente: rellena customerId (FK) en pedidos/cotizaciones (ADR-011 / B2).
-  return migrateCustomerFk(merged);
+  // Migraciones idempotentes (no destructivas, versionadas en _migrations):
+  //  · customerId (FK) en pedidos/cotizaciones (ADR-011 / B2)
+  //  · channel en clientes derivado del lead vinculado (EX-F2-04)
+  return migrateCustomerChannel(migrateCustomerFk(merged));
 }
 
 const AppContext = createContext(null);

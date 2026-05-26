@@ -52,3 +52,27 @@ export function migrateCustomerFk(state) {
     _migrations: { ...(state._migrations || {}), customerFk: CUSTOMER_FK_VERSION },
   };
 }
+
+const CUSTOMER_CHANNEL_VERSION = 1;
+
+// Rellena el campo `channel` (canal por el que llegó el cliente) en clientes que
+// no lo tengan: lo deriva del lead vinculado (linkedLeadId → lead.channel) y, si
+// no hay lead, deja '' (shape uniforme). Idempotente: state._migrations.customerChannel.
+// EX-F2-04: el modelo de cliente no traía `channel` (solo los leads lo tenían).
+export function migrateCustomerChannel(state) {
+  if (!state) return state;
+  if ((state._migrations?.customerChannel || 0) >= CUSTOMER_CHANNEL_VERSION) return state;
+
+  const leads = state.leads || [];
+  const backfill = (c) => {
+    if (c.channel) return c; // ya tiene canal → no tocar
+    const lead = c.linkedLeadId ? leads.find((l) => l.id === c.linkedLeadId) : null;
+    return { ...c, channel: lead?.channel || '' };
+  };
+
+  return {
+    ...state,
+    customers: (state.customers || []).map(backfill),
+    _migrations: { ...(state._migrations || {}), customerChannel: CUSTOMER_CHANNEL_VERSION },
+  };
+}

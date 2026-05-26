@@ -65,10 +65,10 @@ export const PURCHASE_ORDERS = [
 ];
 
 export const CUSTOMERS = [
-  { id: 'C-001', name: 'Jose Ramírez', tipo: 'lead', phone: '311 445 7788', email: 'jramirez@mail.com', city: 'Bogotá', address: 'Cra 50 # 80-10', doc: 'CC 79.554.332', createdAt: '2026-01-10', asesor: 'Thalia Cifuentes', linkedLeadId: null },
-  { id: 'C-002', name: 'María Delgado', tipo: 'lead', phone: '313 668 1100', email: 'maria.d@mail.co', city: 'Cali', address: 'Cl 5 # 40-22', doc: 'CC 52.887.210', createdAt: '2026-02-20', asesor: 'Alexander Vivas', linkedLeadId: null },
-  { id: 'C-003', name: 'Adriano Villadiego', tipo: 'institucional', razonSocial: 'Villadiego Inmuebles', nit: '900777555-1', contacto: 'Adriano Villadiego', phone: '301 774 3322', email: 'avilla@mail.co', city: 'Cartagena', address: 'Cl 35 # 3-27', doc: 'CC 12.554.876', createdAt: '2026-02-15', asesor: 'Alexander Vivas', linkedLeadId: null },
-  { id: 'C-004', name: 'Carmiña Chapman', tipo: 'lead', phone: '315 900 7721', email: 'carmina.ch@mail.co', city: 'Cartagena', address: 'Centro Histórico, Cl 35 # 3-27', doc: 'CC 45.662.980', createdAt: '2026-03-20', asesor: 'Alexander Vivas', linkedLeadId: 'L-105' },
+  { id: 'C-001', name: 'Jose Ramírez', tipo: 'lead', phone: '311 445 7788', email: 'jramirez@mail.com', city: 'Bogotá', address: 'Cra 50 # 80-10', doc: 'CC 79.554.332', createdAt: '2026-01-10', channel: '', asesor: 'Thalia Cifuentes', linkedLeadId: null },
+  { id: 'C-002', name: 'María Delgado', tipo: 'lead', phone: '313 668 1100', email: 'maria.d@mail.co', city: 'Cali', address: 'Cl 5 # 40-22', doc: 'CC 52.887.210', createdAt: '2026-02-20', channel: '', asesor: 'Alexander Vivas', linkedLeadId: null },
+  { id: 'C-003', name: 'Adriano Villadiego', tipo: 'institucional', razonSocial: 'Villadiego Inmuebles', nit: '900777555-1', contacto: 'Adriano Villadiego', phone: '301 774 3322', email: 'avilla@mail.co', city: 'Cartagena', address: 'Cl 35 # 3-27', doc: 'CC 12.554.876', createdAt: '2026-02-15', channel: '', asesor: 'Alexander Vivas', linkedLeadId: null },
+  { id: 'C-004', name: 'Carmiña Chapman', tipo: 'lead', phone: '315 900 7721', email: 'carmina.ch@mail.co', city: 'Cartagena', address: 'Centro Histórico, Cl 35 # 3-27', doc: 'CC 45.662.980', createdAt: '2026-03-20', channel: '', asesor: 'Alexander Vivas', linkedLeadId: 'L-105' },
 ];
 
 export const INVOICES = [

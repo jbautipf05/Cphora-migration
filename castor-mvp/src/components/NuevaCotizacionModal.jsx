@@ -206,7 +206,7 @@ export default function NuevaCotizacionModal({ open, leadId = null, initialForm 
       open={open && !!form}
       onClose={onClose}
       title="Nueva cotización"
-      size="lg"
+      size="3xl"
       footer={
         <>
           <button className="btn-outline" onClick={onClose}>Cancelar</button>

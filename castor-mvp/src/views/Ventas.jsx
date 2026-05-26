@@ -287,7 +287,10 @@ export default function Ventas() {
           onClear={() => { setQ(''); setEstado(''); setTipo(''); setMedio(''); setPdv(''); setAsesor(''); }}
         />
         <span className="ml-auto text-sm text-brand-muted">{rows.length} pedidos</span>
-        <button className="btn-gold" onClick={() => setForm(emptyOrder())}>+ Nuevo pedido</button>
+        {/* H-032: renombrar a "+ Nueva venta" + agregar "+ Venta innovación".
+            El modal específico de innovación se construye en H-036 (flag innovation). Demo6:5275-5276. */}
+        <button className="btn-outline" onClick={() => setForm({ ...emptyOrder(), innovation: true })}>+ Venta innovación</button>
+        <button className="btn-gold" onClick={() => setForm(emptyOrder())}>+ Nueva venta</button>
       </Toolbar>
 
       <DataTable columns={columns} rows={rows} getKey={(r) => r.id} onRowClick={(r) => setSelId(r.id)} />

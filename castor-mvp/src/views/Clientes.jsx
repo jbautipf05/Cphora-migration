@@ -143,18 +143,10 @@ export default function Clientes() {
       label: 'Procesos',
       align: 'right',
       sortValue: (r) => summary[r.id]?.procesos || 0,
+      // Demo6 (Demo6:4317): número único consolidado, dorado si >0 (suma de sub-procesos).
       render: (r) => {
-        const s = summary[r.id];
-        if (!s || s.procesos === 0) return <span className="text-muted/50">—</span>;
-        return (
-          <span className="text-xs">
-            <span className="text-emerald-300">{s.pedidos.length}</span>
-            <span className="text-muted/50">/</span>
-            <span className="text-sky-300">{s.cotizaciones.length}</span>
-            <span className="text-muted/50">/</span>
-            <span className="text-gold-accent">{s.leadsVinc.length}</span>
-          </span>
-        );
+        const n = summary[r.id]?.procesos || 0;
+        return <span className={`font-bold ${n ? 'text-gold-accent' : 'text-muted/50'}`}>{n}</span>;
       },
     },
     {

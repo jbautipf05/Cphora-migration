@@ -4,6 +4,7 @@ import { KpiCard, Chip, TIPO_LEAD } from '../components/ui';
 import { fmtCOP, fmtDate, fmtDateTime, nowISO, daysBetween, today } from '../lib/format';
 import { Toolbar, SearchBox, SelectFilter, DataTable, EstadoBadge, SlidePanel, ClearFiltersButton } from '../components/widgets';
 import Modal from '../components/Modal';
+import NuevaCotizacionModal from '../components/NuevaCotizacionModal';
 import { Field, Input, Select, Textarea, FormGrid } from '../components/form';
 import { useToast } from '../components/Toast';
 import { IconBell, IconUsers } from '../components/icons';
@@ -41,7 +42,7 @@ const EMPTY = {
   asesor: 'Alexander Vivas', valor: 0,
 };
 
-export default function Leads({ onNavigate }) {
+export default function Leads() {
   const { leads, products, add, update, nextId, currentUser, pendingForm, setPendingForm } = useApp();
   const toast = useToast();
   const [q, setQ] = useState('');
@@ -53,6 +54,7 @@ export default function Leads({ onNavigate }) {
   const [note, setNote] = useState('');
   const [segForm, setSegForm] = useState({ tipo: 'llamada', fechaProxima: '', texto: '' });
   const [recontactForm, setRecontactForm] = useState(null); // {leadId, fecha, nota}
+  const [quoteOpen, setQuoteOpen] = useState(false); // modal "Nueva cotización" en contexto (H-010)
 
   const sel = leads.find((l) => l.id === selId) || null;
 
@@ -445,12 +447,7 @@ export default function Leads({ onNavigate }) {
             <div className="flex flex-wrap gap-2">
               <button
                 className="btn-gold flex-1"
-                onClick={() => {
-                  // Espejo de openQuoteForm(l.id): abre el modal de cotización
-                  // con este lead ya preseleccionado (no sólo cambia de vista).
-                  setPendingForm({ type: 'quote', leadId: sel.id });
-                  onNavigate?.('cotizaciones');
-                }}
+                onClick={() => setQuoteOpen(true)}
               >
                 + Nueva cotización
               </button>
@@ -650,6 +647,15 @@ export default function Leads({ onNavigate }) {
           </FormGrid>
         )}
       </Modal>
+
+      {/* Modal "Nueva cotización" en contexto del lead (H-010): abre sin salir de
+          Leads; al guardar/cerrar volvés al perfil del lead. */}
+      <NuevaCotizacionModal
+        open={quoteOpen}
+        leadId={sel?.id || null}
+        onClose={() => setQuoteOpen(false)}
+        onCreated={() => setQuoteOpen(false)}
+      />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
 import { fmtCOP, nowISO, addDays, today } from '../lib/format';
+import { resolveCustomerId } from '../lib/migrations';
 import Modal from './Modal';
 import { Field, Input, Select, Textarea, FormGrid } from './form';
 import { useToast } from './Toast';
@@ -47,7 +48,7 @@ const emptyForm = () => ({
 });
 
 export default function NuevaCotizacionModal({ open, leadId = null, initialForm = null, onClose, onCreated }) {
-  const { products, leads, add, update, nextId, pushNotification } = useApp();
+  const { products, leads, customers, add, update, nextId, pushNotification } = useApp();
   const toast = useToast();
   const [form, setForm] = useState(null);
   const [leadField, setLeadField] = useState('name');
@@ -180,8 +181,11 @@ export default function NuevaCotizacionModal({ open, leadId = null, initialForm 
       : '';
     const id = nextId('COT', 'cot');
     const createdAt = today(); // anclar al "hoy" del demo (DEMO_TODAY), espejo de saveQuote() de Demo6
+    // B2 (ADR-011): enlazar customerId si es resoluble (lead vinculado o cliente existente).
+    // Una cotización es pre-venta → NO se auto-crea cliente acá (eso ocurre al crear el pedido).
+    const customerId = resolveCustomerId({ clientName: form.clientName.trim(), leadId: lid }, { customers, leads });
     add('quotes', {
-      id, leadId: lid, clientName: form.clientName.trim(), city: form.city || '', channel: form.channel,
+      id, leadId: lid, customerId, clientName: form.clientName.trim(), city: form.city || '', channel: form.channel,
       items, discount, notes: form.notes || '', asesor: form.asesor,
       estado: requiresApproval ? 'pendiente_aprob' : 'borrador', requiresApproval, approvalReason,
       createdAt, vigenciaDias: vigDias, vigencia: addDays(createdAt.slice(0, 10), vigDias),

@@ -60,7 +60,7 @@ que el equipo asume:
 
 ## Modelo de datos Firestore (lineamientos)
 
-A detallarse en ADR-011. Lineamientos preliminares:
+A detallarse en ADR-012. Lineamientos preliminares:
 - Colección raíz por entidad principal (`customers`, `products`, `orders`, etc.)
 - `journalEntries` como colección, con subcolección `lines` por entry
 - Denormalizar agresivamente para reportes: cada línea lleva accountCode,
@@ -78,7 +78,8 @@ Realtime nativo más simple que Supabase, hosting incluido.
 el volumen crece, lock-in a Google Cloud, equipo debe aprender Firestore.
 
 **Pendientes:**
-- ADR-011: modelo de datos Firestore detallado
-- ADR-012: estrategia de Cloud Functions para agregaciones contables
-- ADR-013: reglas de seguridad por rol
+- ADR-011: identidad de cliente (customerId FK) — *ocupa el número 011*
+- ADR-012: modelo de datos Firestore detallado
+- ADR-013: estrategia de Cloud Functions para agregaciones contables
+- ADR-014: reglas de seguridad por rol
 - Validación de costo estimado con el cliente antes de pasar de mockup a producción

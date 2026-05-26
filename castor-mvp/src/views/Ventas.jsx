@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
 import { KpiCard, Chip, TIPO_VENTA, TIPO_DOC, MEDIO_VENTA, PDV_VARIANT } from '../components/ui';
-import { fmtCOP, fmtDate, nowISO } from '../lib/format';
+import { fmtCOP, fmtDate, today } from '../lib/format';
+import { resolveCustomerId } from '../lib/migrations';
 import { Toolbar, SearchBox, SelectFilter, DataTable, EstadoBadge, ProgressBar, SlidePanel, ClearFiltersButton } from '../components/widgets';
 import Modal from '../components/Modal';
 import { Field, Input, Select, FormGrid } from '../components/form';
@@ -21,6 +22,7 @@ export default function Ventas() {
   const {
     orders,
     products,
+    customers,
     payments,
     invoices,
     bankAccounts,
@@ -50,6 +52,9 @@ export default function Ventas() {
   const estados = useMemo(() => [...new Set(orders.map((o) => o.estado))], [orders]);
   const tipos = useMemo(() => [...new Set(orders.map((o) => o.tipo))], [orders]);
   const pName = (id) => products.find((p) => p.id === id)?.name || id;
+  // B2 (ADR-011): nombre a mostrar resuelto por customerId (refleja renombres);
+  // fallback al clientName almacenado para datos legacy sin FK.
+  const custName = (o) => customers.find((c) => c.id === o.customerId)?.name || o.clientName;
 
   const rows = useMemo(() => {
     const t = q.toLowerCase();
@@ -82,9 +87,26 @@ export default function Ventas() {
     if (!form.clientName.trim()) return toast('Indica el cliente', 'warn');
     if (!form.productId) return toast('Selecciona un producto', 'warn');
     const id = nextId('PED', 'ped');
-    const orderDate = nowISO().slice(0, 10);
+    // B1 (Fase 1.5): anclar a today()/DEMO_TODAY igual que A27, para que el pedido
+    // caiga dentro de la ventana de Inicio (gráfico 6 meses / alertas).
+    const orderDate = today();
+    const clientName = form.clientName.trim();
+
+    // B2 (ADR-011): resolver el cliente y guardar customerId (FK canónica). Si no
+    // existe (walk-in), se crea automáticamente. clientName queda como denormalización.
+    let customerId = resolveCustomerId({ clientName }, { customers });
+    if (!customerId) {
+      customerId = nextId('C', 'cli', 3);
+      add('customers', {
+        id: customerId, name: clientName, tipo: 'lead', phone: '', email: '',
+        city: '', address: form.deliveryAddress || '', doc: '', createdAt: today(),
+        asesor: form.asesor, linkedLeadId: null,
+      });
+      toast(`Cliente ${customerId} creado`, 'ok');
+    }
+
     add('orders', {
-      id, quoteId: null, customerId: null, clientName: form.clientName, asesor: form.asesor,
+      id, quoteId: null, customerId, clientName, asesor: form.asesor,
       total: formTotal, paid: Number(form.paid) || 0, tiempo: Number(form.tiempo) || 30,
       orderDate, estado: form.tipo === 'stock' ? 'produccion' : 'pendiente_op',
       area: null, tipo: form.tipo, docType: form.docType, deliveryAddress: form.deliveryAddress,
@@ -98,8 +120,8 @@ export default function Ventas() {
       id,
       date: orderDate,
       type: form.docType, // 'factura' | 'remisión'
-      customerId: null,
-      customerName: form.clientName,
+      customerId, // B2: tercero real (id), no el nombre
+      customerName: clientName,
       total: formTotal,
     });
     if (sale?.ok) {
@@ -115,7 +137,7 @@ export default function Ventas() {
     const amount = Number(pay.amount) || 0;
     if (amount <= 0) return toast('Monto inválido', 'warn');
     const id = nextId('PAG', 'pag');
-    const date = nowISO().slice(0, 10);
+    const date = today(); // B1 (Fase 1.5): anclar el pago al "hoy" del demo
     add('payments', {
       id, orderId: pay.orderId, amount, method: pay.method, bankId: pay.bankId,
       type: 'abono', date, reference: id, estado: 'confirmado',
@@ -143,7 +165,7 @@ export default function Ventas() {
 
   const columns = [
     { key: 'id', label: 'Pedido', render: (r) => <span className="font-mono text-xs text-brand-gold">{r.id}</span> },
-    { key: 'clientName', label: 'Cliente', render: (r) => <span className="text-white">{r.clientName}</span> },
+    { key: 'clientName', label: 'Cliente', render: (r) => <span className="text-white">{custName(r)}</span> },
     { key: 'asesor', label: 'Asesor', render: (r) => <span className="text-brand-muted">{r.asesor}</span> },
     { key: 'producto', label: 'Producto', render: (r) => <span className="text-brand-muted">{pName(r.productId)} ×{r.qty}</span> },
     { key: 'total', label: 'Total', align: 'right', sortValue: (r) => r.total, render: (r) => <span className="text-white">{fmtCOP(r.total)}</span> },
@@ -210,7 +232,7 @@ export default function Ventas() {
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono text-sm text-brand-gold">{o.id}</span>
-                  <span className="font-medium text-white">{o.clientName || ''}</span>
+                  <span className="font-medium text-white">{custName(o) || ''}</span>
                   <span className="text-xs text-brand-muted">{pName(o.productId)} ×{o.qty || 1}</span>
                   {o.asesor && (
                     <span className="badge-gold rounded px-2 py-0.5 text-[10px]">
@@ -255,7 +277,7 @@ export default function Ventas() {
 
       <DataTable columns={columns} rows={rows} getKey={(r) => r.id} onRowClick={(r) => setSelId(r.id)} />
 
-      <SlidePanel open={!!sel} onClose={() => setSelId(null)} title={sel?.id} subtitle={sel ? `${sel.clientName} · ${fmtDate(sel.orderDate)}` : ''}>
+      <SlidePanel open={!!sel} onClose={() => setSelId(null)} title={sel?.id} subtitle={sel ? `${custName(sel)} · ${fmtDate(sel.orderDate)}` : ''}>
         {sel && (
           <div className="space-y-5">
             <div className="flex flex-wrap items-center gap-2">

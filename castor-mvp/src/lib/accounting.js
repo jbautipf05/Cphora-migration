@@ -33,16 +33,10 @@ export const PAYROLL_2026 = Object.freeze({
 // ── Bancos por defecto v1.1 (§7.8) — referencia del núcleo ──
 export const DEFAULT_BANKS_V11 = ['Bancolombia', 'BBVA', 'Bold', 'Lulo Bank'];
 
-const _copFmt = new Intl.NumberFormat('es-CO', {
-  style: 'currency',
-  currency: 'COP',
-  maximumFractionDigits: 0,
-});
-
-export const fmtCOP = (n) => _copFmt.format(Math.round(n || 0));
-
-export const fmtNum = (n) =>
-  new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(Math.round(n || 0));
+// fmtCOP / fmtNum: fuente única en lib/format.js. Se re-exportan aquí por
+// compatibilidad con las vistas contables que ya importan desde este módulo
+// (B3 / TD-26). Antes había una copia idéntica acá que podía divergir.
+export { fmtCOP, fmtNum } from './format';
 
 // Saldo de una cuenta auxiliar según su naturaleza.
 // saldo = naturaleza 'debito' ? (debe - haber) : (haber - debe)

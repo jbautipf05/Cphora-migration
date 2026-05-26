@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
 import { KpiCard } from '../components/ui';
 import { fmtCOP } from '../lib/format';
@@ -20,7 +20,7 @@ const lifecycleOf = (p) => p.lifecycleStatus || (p.verified ? 'Activo' : 'Borrad
 // "Nuevo producto" (BOM) y edición de ficha (master card).
 // ─────────────────────────────────────────────────────────────────────────────
 export default function Innovacion() {
-  const { products, orders, warehouses, supplies, update, add, nextId } = useApp();
+  const { products, orders, warehouses, supplies, update, add, nextId, pendingForm, setPendingForm } = useApp();
   const toast = useToast();
 
   const [search, setSearch] = useState('');
@@ -90,6 +90,16 @@ export default function Innovacion() {
   });
   const addBomRow = () => setForm((f) => ({ ...f, bom: [...f.bom, { supplyId: '', qty: '' }] }));
   const delBomRow = (i) => setForm((f) => ({ ...f, bom: f.bom.filter((_, idx) => idx !== i) }));
+
+  // Intent del header "+ Nuevo" → abrir el form de nuevo producto (H-001).
+  useEffect(() => {
+    if (pendingForm?.type === 'producto') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      openNew();
+      setPendingForm(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingForm]);
 
   const formBomCost = form ? bomCost(form.bom) : 0;
   const formMargin = (f) => (Number(f.price) > 0 ? Math.round((Number(f.price) - Number(f.cost)) / Number(f.price) * 100) : 0);

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
 import { KpiCard, Chip, TIPO_LEAD } from '../components/ui';
 import { fmtCOP, fmtDate, fmtDateTime, nowISO, daysBetween, today } from '../lib/format';
@@ -42,7 +42,7 @@ const EMPTY = {
 };
 
 export default function Leads({ onNavigate }) {
-  const { leads, products, add, update, nextId, currentUser, setPendingForm } = useApp();
+  const { leads, products, add, update, nextId, currentUser, pendingForm, setPendingForm } = useApp();
   const toast = useToast();
   const [q, setQ] = useState('');
   const [estado, setEstado] = useState('');
@@ -55,6 +55,16 @@ export default function Leads({ onNavigate }) {
   const [recontactForm, setRecontactForm] = useState(null); // {leadId, fecha, nota}
 
   const sel = leads.find((l) => l.id === selId) || null;
+
+  // Intent del header "+ Nuevo" → abrir el form de nuevo lead (H-001).
+  useEffect(() => {
+    if (pendingForm?.type === 'lead') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setForm({ ...EMPTY });
+      setPendingForm(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingForm]);
 
   const rows = useMemo(() => {
     const t = q.toLowerCase();

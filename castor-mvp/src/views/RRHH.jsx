@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
 import { KpiCard } from '../components/ui';
 import { fmtCOP, fmtDate, today, daysBetween } from '../lib/format';
@@ -18,11 +18,21 @@ const empty = () => ({
 });
 
 export default function RRHH() {
-  const { employees, add, nextId } = useApp();
+  const { employees, add, nextId, pendingForm, setPendingForm } = useApp();
   const toast = useToast();
   const [q, setQ] = useState('');
   const [area, setArea] = useState('');
   const [form, setForm] = useState(null);
+
+  // Intent del header "+ Nuevo" → abrir el form de nuevo empleado (H-001).
+  useEffect(() => {
+    if (pendingForm?.type === 'empleado') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setForm(empty());
+      setPendingForm(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingForm]);
 
   const areas = useMemo(() => [...new Set(employees.map((e) => e.area))], [employees]);
 

@@ -1,9 +1,11 @@
 # Hallazgos extra (descubiertos durante Fase 1 — NO corregir sin OK)
 
 Cosas observadas comparando Demo6 ↔ React que NO están en los 7 P0 declarados.
-Documentadas para decisión del usuario; no se tocan por iniciativa propia.
 
-| # | Origen | Observación | Severidad estimada |
-|---|--------|-------------|--------------------|
-| EX-01 | H-001 | El botón "+ Nuevo" en Demo6 es un **modal centrado** ("Crear nuevo"); en React es un **dropdown**. Se alinearon las 9 opciones (orden/labels), pero el form-factor difiere. | Baja (cosmético/UX) |
-| EX-02 | H-001 | En Demo6 cada opción del menú "Nuevo" **abre el formulario** correspondiente (openLeadForm, openQuoteForm, …); en React **navega al módulo**. Aplica también a las 4 opciones que ya existían. Hacerlo "abrir en contexto" requiere cablear `pendingForm` en ~8 vistas. Se relaciona con H-010/H-011. | Media (UX, fricción) |
+| # | Origen | Observación | Estado |
+|---|--------|-------------|--------|
+| EX-01 | H-001 | "+ Nuevo": Demo6 usa modal vs React dropdown | ✅ Resuelto — el usuario pidió modal; H-001 ahora usa Modal "Crear nuevo". |
+| EX-02 | H-001 | Las opciones del menú "Nuevo" deben **abrir el formulario** (no sólo navegar) | ✅ Resuelto — 6 opciones abren el form vía `pendingForm`; 3 navegan (gaps, opción A). |
+| EX-03 | H-001 | **No existe** un formulario standalone de **Pago** en React (el pago es por pedido). Demo6 tiene `openPaymentForm`. Hoy "💰 Pago" navega a Ventas. | ⏳ Pendiente fase posterior (construir form). |
+| EX-04 | H-001 | **No existe** form de **registrar unidad terminada** en React (sólo traslados). Demo6 tiene `openFinishedForm`. Hoy "✓ Terminado" navega a Inventario. | ⏳ Pendiente fase posterior. |
+| EX-05 | H-001 | **No existe** modal de **alta de cuenta bancaria**; se administran inline en Configuración Nómina. Demo6 tiene `openBankForm`. Hoy "🏦 Cuenta bancaria" navega a config-nomina. | ⏳ Pendiente fase posterior. |

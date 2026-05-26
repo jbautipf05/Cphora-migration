@@ -3,8 +3,7 @@ import { useApp } from '../store/AppContext';
 import { KpiCard, Badge, Chip, TIPO_LEAD } from '../components/ui';
 import { fmtCOP } from '../lib/accounting';
 import { fmtDate, daysBetween, today, nowISO } from '../lib/format';
-import { Toolbar, SearchBox, SelectFilter, DataTable, SlidePanel, ClearFiltersButton, EstadoBadge } from '../components/widgets';
-import { IconSearch } from '../components/icons';
+import { DataTable, SlidePanel, ClearFiltersButton } from '../components/widgets';
 import { useToast } from '../components/Toast';
 
 export default function Clientes() {
@@ -180,29 +179,57 @@ export default function Clientes() {
         <KpiCard label="Postventa pendiente" value={kpis.pendientesPostventa} accent="#f87171" />
       </div>
 
-      <Toolbar>
-        <div className="relative">
-          <IconSearch
-            width={14}
-            height={14}
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"
-          />
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Buscar nombre, doc, teléfono o email…"
-            className="w-72 rounded-lg border border-white/10 bg-brand-bg/60 py-2 pl-9 pr-3 text-sm text-white placeholder-muted/60 outline-none transition focus:border-gold-accent/60"
-          />
+      {/* H-017: filtros con labels (mayúsc. pequeñas), buscador ancho y contenedor unificado.
+          Réplica de Demo6:4267-4276 (panel + grid 6 cols, Buscar = col-span-2). */}
+      <div className="panel mb-5 p-4">
+        <div className="mb-3 grid grid-cols-2 gap-3 md:grid-cols-6">
+          <div className="col-span-2">
+            <label className="label">Buscar</label>
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Nombre, doc, teléfono..."
+              className="input-field py-1.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="label">Ciudad</label>
+            <select value={ciudad} onChange={(e) => setCiudad(e.target.value)} className="input-field py-1.5 text-sm">
+              <option value="">Todas</option>
+              {ciudades.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label">Asesor</label>
+            <select value={asesor} onChange={(e) => setAsesor(e.target.value)} className="input-field py-1.5 text-sm">
+              <option value="">Todos</option>
+              {asesores.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label">Tipo</label>
+            <select value={tipo} onChange={(e) => setTipo(e.target.value)} className="input-field py-1.5 text-sm">
+              <option value="">Todos</option>
+              <option value="lead">Persona</option>
+              <option value="institucional">Institucional</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">Estado</label>
+            <select value={estado} onChange={(e) => setEstado(e.target.value)} className="input-field py-1.5 text-sm">
+              <option value="">Todos</option>
+              <option value="activo">Activo</option>
+              <option value="inactivo">Inactivo</option>
+              <option value="vip">VIP</option>
+            </select>
+          </div>
         </div>
-        <SelectFilter value={ciudad} onChange={setCiudad} options={ciudades} allLabel="Todas las ciudades" />
-        <SelectFilter value={asesor} onChange={setAsesor} options={asesores} allLabel="Todos los asesores" />
-        <SelectFilter value={tipo} onChange={setTipo} options={['lead', 'institucional']} allLabel="Todos los tipos" />
-        <SelectFilter value={estado} onChange={setEstado} options={['activo', 'inactivo', 'vip']} allLabel="Todos los estados" />
         <ClearFiltersButton
           active={!!(q || ciudad || asesor || tipo || estado)}
           onClear={() => { setQ(''); setCiudad(''); setAsesor(''); setTipo(''); setEstado(''); }}
+          label="× Limpiar filtros"
         />
-      </Toolbar>
+      </div>
 
       <DataTable columns={columns} rows={rows} getKey={(r) => r.id} onRowClick={setSel} />
 

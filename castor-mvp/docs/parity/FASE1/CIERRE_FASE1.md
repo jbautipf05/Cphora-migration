@@ -41,13 +41,19 @@ por el usuario.
 - Menú "+ Nuevo": modal + abrir formularios; gaps (Pago/Terminado/Cuenta bancaria) navegan.
 - Productos de interés: buscador con autocompletado (no `<select>`).
 
-## Pendientes (fuera de los P0 de Fase 1)
-- **P1:** H-005 (autocompletar leads anteriores), H-009 (orden notas), H-012 (filtro
-  Asesor en Cotizaciones), H-013 (descuentos rápidos), H-014 ("Quitar lead" limpia).
-- **P2:** H-006 (dato secundario en ficha), H-008 (ícono "Contactar nuevamente").
-- **Hallazgos extra (`HALLAZGOS_EXTRA.md`):** EX-03/04/05 (forms faltantes: Pago suelto,
-  Registrar terminado, Cuenta bancaria), EX-06 ("Editar cotización" duplica), EX-07
-  (lead no genera 6 seguimientos al crear).
+## P1 / P2 / Mejoras — ✅ COMPLETADOS (2026-05-26)
+- **P1/P2 paridad** (`FASE1/H-006_008_009_012.md`): H-009 (notas DESC), H-012 (filtro
+  Asesor en Cotizaciones), H-006 (dato secundario en ficha), H-008 (ícono campana).
+- **Mejoras aprobadas** (`FASE1/H-005_013_014.md`): H-005 (buscar lead existente al
+  crear → edita), H-013 (descuentos rápidos), H-014-ext ("Quitar" limpia todo).
+- **H-007** (P3): se mantiene React (decisión usuario).
+
+**⇒ Fase 1 (Inicio / Leads / Cotizaciones) COMPLETA: 7 P0 + 4 P1/P2 + 3 mejoras.**
+
+## Pendientes (fuera de Fase 1 — hallazgos extra)
+- `HALLAZGOS_EXTRA.md`: EX-03/04/05 (forms faltantes: Pago suelto, Registrar terminado,
+  Cuenta bancaria), EX-06 ("Editar cotización" duplica), EX-07 (lead no genera 6
+  seguimientos al crear). Para fases posteriores.
 
 ## Validación manual recomendada
 - **H-015:** abrir un PDF descargado y compararlo con `Cotizacion_COT-2001_Laura_Mendoza.pdf`

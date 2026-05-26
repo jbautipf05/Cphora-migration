@@ -119,7 +119,7 @@ export function SlidePanel({ open, onClose, title, subtitle, children }) {
 // Cada columna acepta:
 //  - sortable: bool (default true salvo que render sea custom sin sortValue)
 //  - sortValue(row): valor crudo a comparar (si no se da, usa row[c.key])
-export function DataTable({ columns, rows, onRowClick, getKey, empty = 'Sin registros.' }) {
+export function DataTable({ columns, rows, onRowClick, onRowDoubleClick, getKey, empty = 'Sin registros.' }) {
   const [sort, setSort] = useState({ by: null, dir: 'asc' });
 
   const sortedRows = useMemo(() => {
@@ -182,8 +182,9 @@ export function DataTable({ columns, rows, onRowClick, getKey, empty = 'Sin regi
               <tr
                 key={getKey(row)}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
+                onDoubleClick={onRowDoubleClick ? () => onRowDoubleClick(row) : undefined}
                 className={`border-b border-white/5 transition hover:bg-[rgba(201,169,97,0.06)] ${
-                  onRowClick ? 'cursor-pointer' : ''
+                  onRowClick || onRowDoubleClick ? 'cursor-pointer' : ''
                 }`}
               >
                 {columns.map((c) => (

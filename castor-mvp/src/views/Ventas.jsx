@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
-import { KpiCard, Chip, TIPO_VENTA, TIPO_DOC, MEDIO_VENTA, PDV_VARIANT } from '../components/ui';
-import { fmtCOP, fmtDate, today } from '../lib/format';
+import { KpiCard, Chip, TIPO_VENTA } from '../components/ui';
+import { fmtCOP, fmtDate, today, addDays, daysUntil } from '../lib/format';
 import { resolveCustomerId } from '../lib/migrations';
 import { Toolbar, SearchBox, SelectFilter, DataTable, EstadoBadge, ProgressBar, SlidePanel, ClearFiltersButton } from '../components/widgets';
 import { IconCart, IconBank, IconCheck } from '../components/icons';
@@ -176,52 +176,85 @@ export default function Ventas() {
     setPay(null);
   }
 
+  // Nº de OPs asociadas (cosmético): items de la venta; hoy 1 por pedido (modelo plano).
+  const opsCount = (r) => (Array.isArray(r.items) ? r.items.length : 1);
+  // Fecha de vencimiento: usa dueDate o la deriva de orderDate + tiempo (días).
+  const venceOf = (r) => r.dueDate || addDays(r.orderDate, r.tiempo || 30);
+
+  // H-033: tabla reestructurada según Demo6:5285-5333. Se eliminan PRODUCTO/MEDIO/PDV/ESTADO;
+  // se agregan OPs y VENCE; PEDIDO muestra etiqueta P-XXXX (id real PED- intacto, decisión cosmética);
+  // la columna TIPO conserva el badge de React (azul Producción / verde Stock).
   const columns = [
-    { key: 'id', label: 'Pedido', render: (r) => <span className="font-mono text-xs text-brand-gold">{r.id}</span> },
+    {
+      key: 'id',
+      label: 'Pedido',
+      render: (r) => (
+        <span className="inline-flex items-center gap-1 font-mono text-xs font-semibold text-brand-gold">
+          {String(r.id).replace(/^PED-/, 'P-')}
+          {r.tipo === 'innovacion' && <span className="rounded bg-amber-500/20 px-1 text-[9px] text-amber-300">INN</span>}
+        </span>
+      ),
+    },
     { key: 'clientName', label: 'Cliente', render: (r) => <span className="text-white">{custName(r)}</span> },
     { key: 'asesor', label: 'Asesor', render: (r) => <span className="text-brand-muted">{r.asesor}</span> },
-    { key: 'producto', label: 'Producto', render: (r) => <span className="text-brand-muted">{pName(r.productId)} ×{r.qty}</span> },
-    { key: 'total', label: 'Total', align: 'right', sortValue: (r) => r.total, render: (r) => <span className="text-white">{fmtCOP(r.total)}</span> },
+    {
+      key: 'ops',
+      label: 'OPs',
+      sortValue: (r) => opsCount(r),
+      render: (r) => (
+        <div className="flex justify-center">
+          <span className="rounded bg-white/10 px-2 py-0.5 text-xs font-semibold text-brand-gold-light">{opsCount(r)}</span>
+        </div>
+      ),
+    },
+    { key: 'total', label: 'Total', align: 'right', sortValue: (r) => r.total, render: (r) => <span className="font-semibold text-brand-gold-light">{fmtCOP(r.total)}</span> },
     {
       key: 'saldo',
       label: 'Saldo',
       align: 'right',
       sortValue: (r) => (r.total || 0) * (1 - (r.paid || 0) / 100),
       render: (r) => {
-        const saldo = (r.total || 0) * (1 - (r.paid || 0) / 100);
-        return (
-          <span className={saldo > 0 ? 'text-amber-300' : 'text-emerald-300'}>
-            {fmtCOP(saldo)}
-          </span>
-        );
+        const saldo = Math.max(0, Math.round((r.total || 0) * (1 - (r.paid || 0) / 100)));
+        return <span className={`font-semibold ${saldo > 0 ? 'text-red-400' : 'text-emerald-400'}`}>{fmtCOP(saldo)}</span>;
       },
     },
-    { key: 'pago', label: 'Pago', sortValue: (r) => r.paid, render: (r) => <ProgressBar value={r.paid} /> },
+    {
+      key: 'pago',
+      label: 'Pago',
+      sortValue: (r) => r.paid,
+      render: (r) => <ProgressBar value={r.paid} color={(r.paid || 0) >= 100 ? '#10b981' : '#38bdf8'} />,
+    },
     {
       key: 'tipo',
       label: 'Tipo',
       sortValue: (r) => r.tipo,
+      // Mejora React preservada (inventario): badge azul Producción / verde Stock (NO texto plano).
       render: (r) => <Chip variant={TIPO_VENTA[r.tipo] || 'gray'}>{r.tipo}</Chip>,
-    },
-    {
-      key: 'medio',
-      label: 'Medio',
-      sortValue: (r) => r.medio,
-      render: (r) => r.medio ? <Chip variant={MEDIO_VENTA[r.medio] || 'gray'}>{r.medio}</Chip> : <span className="text-muted/50">—</span>,
-    },
-    {
-      key: 'pdv',
-      label: 'PDV',
-      sortValue: (r) => r.pdv,
-      render: (r) => r.pdv ? <Chip variant={PDV_VARIANT[r.pdv] || 'gray'}>{r.pdv}</Chip> : <span className="text-muted/50">—</span>,
     },
     {
       key: 'doc',
       label: 'Doc',
       sortValue: (r) => r.docType,
-      render: (r) => <Chip variant={TIPO_DOC[r.docType] || 'gray'}>{r.docType}</Chip>,
+      render: (r) => <span className="text-xs uppercase text-brand-muted">{r.docType || '—'}</span>,
     },
-    { key: 'estado', label: 'Estado', render: (r) => <EstadoBadge value={r.estado} /> },
+    {
+      key: 'vence',
+      label: 'Vence',
+      sortValue: (r) => venceOf(r),
+      render: (r) => {
+        const d = daysUntil(venceOf(r));
+        if (d == null) return <span className="text-muted/50">—</span>;
+        const settled = (r.paid || 0) >= 100 || r.estado === 'entregado' || r.estado === 'cancelado';
+        const tone = settled
+          ? 'bg-white/5 text-brand-muted'
+          : d < 0
+            ? 'bg-red-500/20 text-red-300'
+            : d <= 7
+              ? 'bg-amber-500/20 text-amber-300'
+              : 'bg-emerald-500/20 text-emerald-300';
+        return <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${tone}`}>{d}d</span>;
+      },
+    },
   ];
 
   return (
@@ -293,9 +326,11 @@ export default function Ventas() {
         <button className="btn-gold" onClick={() => setForm(emptyOrder())}>+ Nueva venta</button>
       </Toolbar>
 
-      <DataTable columns={columns} rows={rows} getKey={(r) => r.id} onRowClick={(r) => setSelId(r.id)} />
+      {/* H-033: ayuda de doble clic (Demo6:5280). */}
+      <div className="text-[11px] text-brand-muted">💡 Doble clic en una fila abre el detalle del pedido con sus OPs.</div>
+      <DataTable columns={columns} rows={rows} getKey={(r) => r.id} onRowDoubleClick={(r) => setSelId(r.id)} />
 
-      <SlidePanel open={!!sel} onClose={() => setSelId(null)} title={sel?.id} subtitle={sel ? `${custName(sel)} · ${fmtDate(sel.orderDate)}` : ''}>
+      <SlidePanel open={!!sel} onClose={() => setSelId(null)} title={sel ? String(sel.id).replace(/^PED-/, 'P-') : ''} subtitle={sel ? `${custName(sel)} · ${fmtDate(sel.orderDate)}` : ''}>
         {sel && (
           <div className="space-y-5">
             <div className="flex flex-wrap items-center gap-2">

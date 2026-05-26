@@ -136,6 +136,8 @@ export default function Clientes() {
     },
     { key: 'doc', label: 'Documento', render: (r) => <span className="text-muted">{r.doc}</span> },
     { key: 'city', label: 'Ciudad', render: (r) => <span className="text-muted">{r.city}</span> },
+    // H-018: columna TELÉFONO entre Ciudad y Asesor (Demo6:4287).
+    { key: 'phone', label: 'Teléfono', render: (r) => <span className="text-muted">{r.phone || '—'}</span> },
     { key: 'asesor', label: 'Asesor', render: (r) => <span className="text-muted">{r.asesor}</span> },
     {
       key: 'procesos',

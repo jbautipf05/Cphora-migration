@@ -162,15 +162,8 @@ export default function Clientes() {
       render: (r) => {
         const u = summary[r.id]?.ultimo;
         if (!u) return <span className="text-muted/50">—</span>;
-        const dd = daysBetween(u, today());
-        return (
-          <span className="text-xs text-muted">
-            {fmtDate(u)}
-            {dd != null && (
-              <span className="ml-1 text-[10px] opacity-70">hace {dd}d</span>
-            )}
-          </span>
-        );
+        // Demo6 muestra solo la fecha limpia, sin texto relativo "hace Nd".
+        return <span className="text-xs text-muted">{fmtDate(u)}</span>;
       },
     },
   ];

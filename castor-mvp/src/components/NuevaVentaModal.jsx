@@ -34,6 +34,9 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   const setItem = (i, k, v) =>
     setF((p) => ({ ...p, items: p.items.map((it, idx) => (idx === i ? { ...it, [k]: v } : it)) }));
+  const addItem = () =>
+    setF((p) => ({ ...p, items: [...p.items, { productId: '', qty: 1, disc: 0, tipo: 'produccion', comment: '' }] }));
+  const removeItem = (i) => setF((p) => ({ ...p, items: p.items.filter((_, idx) => idx !== i) }));
 
   // Buscador inteligente: filtra clientes por el campo elegido.
   const results = useMemo(() => {
@@ -194,17 +197,67 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
           </div>
         </div>
 
-        {/* Items + control general (mínimo en H-035.1; bloque dinámico llega en H-035.2). */}
+        {/* ── H-035.2: Bloque Items de la venta (dinámico) ── */}
         <div className="panel-2 rounded-lg p-4">
-          <span className="mb-2 block text-sm font-semibold gold-title">Items de la venta</span>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field className="sm:col-span-2" label="Producto *">
-              <Select value={f.items[0].productId} onChange={(e) => setItem(0, 'productId', e.target.value)}>
-                <option value="">Selecciona…</option>
-                {products.map((p) => <option key={p.id} value={p.id}>{p.name} — {fmtCOP(p.price)}</option>)}
-              </Select>
-            </Field>
-            <Field label="Cantidad"><Input type="number" min="1" value={f.items[0].qty} onChange={(e) => setItem(0, 'qty', Number(e.target.value))} /></Field>
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-sm font-semibold gold-title">Items de la venta</span>
+            <button type="button" onClick={addItem} className="text-xs text-brand-gold hover:underline">+ Agregar item</button>
+          </div>
+          <p className="mb-3 text-[11px] text-brand-muted">
+            Puedes mezclar items de <b className="text-emerald-300">stock</b> (entrega inmediata) con items de{' '}
+            <b className="text-amber-300">producción</b> bajo pedido.
+          </p>
+          <div className="space-y-3">
+            {f.items.map((it, i) => (
+              <div key={i} className="panel rounded-lg p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="flex gap-3 text-xs">
+                    <label className="flex items-center gap-1">
+                      <input type="radio" name={`itype_${i}`} checked={it.tipo === 'stock'} onChange={() => setItem(i, 'tipo', 'stock')} />
+                      <span className="text-emerald-300">Stock</span>
+                    </label>
+                    <label className="flex items-center gap-1">
+                      <input type="radio" name={`itype_${i}`} checked={it.tipo === 'produccion'} onChange={() => setItem(i, 'tipo', 'produccion')} />
+                      <span className="text-amber-300">Producción</span>
+                    </label>
+                  </div>
+                  <button type="button" onClick={() => removeItem(i)} className="text-lg text-red-400" title="Quitar item">×</button>
+                </div>
+                <div className="grid grid-cols-12 gap-2">
+                  <div className="col-span-12 sm:col-span-4">
+                    <span className="label text-[10px]">Producto *</span>
+                    <Select value={it.productId} onChange={(e) => setItem(i, 'productId', e.target.value)} className="text-xs">
+                      <option value="">— Producto —</option>
+                      {products.map((p) => <option key={p.id} value={p.id}>{p.name} — {fmtCOP(p.price)}</option>)}
+                    </Select>
+                  </div>
+                  <div className="col-span-4 sm:col-span-2">
+                    <span className="label text-[10px]">Cantidad</span>
+                    <Input type="number" min="1" value={it.qty} onChange={(e) => setItem(i, 'qty', Number(e.target.value))} className="text-xs" />
+                  </div>
+                  <div className="col-span-4 sm:col-span-2">
+                    <span className="label text-[10px]">Precio unit.</span>
+                    <Input type="number" readOnly value={priceOf(it.productId)} title="Precio desde lista" className="cursor-not-allowed bg-brand-navy/40 text-xs" />
+                  </div>
+                  <div className="col-span-4 sm:col-span-2">
+                    <span className="label text-[10px]">% Desc.</span>
+                    <Input type="number" min="0" max="100" value={it.disc} onChange={(e) => setItem(i, 'disc', Number(e.target.value))} className="text-xs" />
+                  </div>
+                  <div className="col-span-12 sm:col-span-2">
+                    <span className="label text-[10px]">Total</span>
+                    <div className="input-field flex items-center justify-end bg-brand-navy/30 text-xs font-semibold text-brand-gold-light">{fmtCOP(itemTotal(it))}</div>
+                  </div>
+                </div>
+                <textarea
+                  value={it.comment}
+                  onChange={(e) => setItem(i, 'comment', e.target.value)}
+                  rows={1}
+                  placeholder="Ej: preferencias, detalles especiales, alto del respaldo, etc."
+                  className="input-field mt-2 text-xs"
+                />
+              </div>
+            ))}
+            {f.items.length === 0 && <p className="text-xs italic text-brand-muted">Sin items. Usa “+ Agregar item”.</p>}
           </div>
         </div>
 

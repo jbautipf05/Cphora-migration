@@ -61,6 +61,14 @@ prefill desde cotización). No es bug; es una feature no incluida.
 **Recomendación:** Fase 3 — pasar `quoteId` a `NuevaVentaModal` y precargar cliente + ítems (NuevaVentaModal
 ya soporta items[]; faltaría el wiring de prefill). Reutilizable el patrón de Demo6.
 
+**SCOPE AÑADIDO (decidido en EX-F2-04, 2026-05-26):** cuando se implemente este flujo
+cotización→venta, debe incluir el **paso-4 retroactivo**: si al crear la venta desde una cotización se
+auto-crea un cliente nuevo (`Ventas.submitSale`), actualizar retroactivamente el `customerId` de la
+cotización origen (que estaba en `null` por ser pre-venta). Hoy ese código NO existe porque "→ Crear
+venta" solo navega y las ventas nuevas se crean con `quoteId: null` (`Ventas.jsx:131,148`) — construirlo
+en EX-F2-04 habría sido código muerto. Vive naturalmente acá, donde sí hay flujo cotización→venta. Con
+esto, la cascada de B2 (nombre por `customerId`) alcanzaría también las cotizaciones que originaron ventas.
+
 ---
 
 ## EX-F2-04 — Sin UI de edición de cliente [DESCUBIERTO EN VALIDACIÓN EXHAUSTIVA pre-merge]
@@ -74,3 +82,8 @@ verificado mutando el estado y confirmando que el pedido refleja el nombre nuevo
 **Por qué no se toca:** editar clientes no fue hallazgo de Fase 1 ni de Fase 2 (no está en el inventario).
 
 **Recomendación:** Fase 3 — modal de edición de cliente (reutilizable parte del bloque Cliente de H-035.1).
+
+**✅ RESUELTO en Fase 3 (2026-05-26).** Implementado como mejora deliberada (Demo6 tampoco edita
+clientes) para poder ejercer B2 desde la UI. Solución: edición **inline** en el SlidePanel (no modal),
+con cascada acotada del nombre a `orders`+`quotes` por `customerId` (B2 completo). Ver
+`docs/parity/FASE3/VALIDACION_EX_F2_04.md` y `PROPUESTA_EDICION_CLIENTE.md`.

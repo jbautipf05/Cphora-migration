@@ -269,7 +269,7 @@ export default function Clientes() {
               {/* Header con info de contacto */}
               <div className="space-y-1 text-sm">
                 {sel.phone && (
-                  <p className="text-white">📞 <span className="text-white">{sel.phone}</span> · ✉ <span className="text-white">{sel.email}</span> · 🆔 <span className="text-white">{sel.doc}</span> · 📍 <span className="text-white">{sel.city}</span></p>
+                  <p className="text-white">📱 <span className="text-white">{sel.phone}</span> · ✉ <span className="text-white">{sel.email}</span> · 🪪 <span className="text-white">{sel.doc}</span> · 📍 <span className="text-white">{sel.city}</span></p>
                 )}
                 {sel.address && <p className="text-muted">🏠 {sel.address}</p>}
                 {sel.address && <p className="text-muted">🚚 Entrega: {sel.address}</p>}

@@ -54,12 +54,14 @@ export default function Cotizaciones({ onNavigate }) {
   const [q, setQ] = useState('');
   const [estado, setEstado] = useState('');
   const [canal, setCanal] = useState('');
+  const [asesorF, setAsesorF] = useState(''); // filtro por asesor (H-012)
   const [selId, setSelId] = useState(null);
   const [quoteModal, setQuoteModal] = useState(null); // null | {} | {leadId} | {initialForm}
   const [segVerify, setSegVerify] = useState({ id: null, nota: '' }); // verificar seguimiento
 
   const sel = quotes.find((x) => x.id === selId) || null;
   const canales = useMemo(() => [...new Set(quotes.map((x) => x.channel))], [quotes]);
+  const asesoresQ = useMemo(() => [...new Set(quotes.map((x) => x.asesor).filter(Boolean))], [quotes]);
 
   // Consume el intent del header/Leads ("+ Nueva cotización") → abre el modal.
   useEffect(() => {
@@ -98,10 +100,11 @@ export default function Cotizaciones({ onNavigate }) {
     return quotes.filter((c) => {
       if (estado && c.estado !== estado) return false;
       if (canal && c.channel !== canal) return false;
+      if (asesorF && c.asesor !== asesorF) return false;
       if (t && !`${c.id} ${c.clientName} ${c.asesor}`.toLowerCase().includes(t)) return false;
       return true;
     });
-  }, [quotes, q, estado, canal]);
+  }, [quotes, q, estado, canal, asesorF]);
 
   const aceptadas = quotes.filter((c) => c.estado === 'aceptada').length;
 
@@ -170,9 +173,10 @@ export default function Cotizaciones({ onNavigate }) {
         <SearchBox value={q} onChange={setQ} placeholder="Buscar ID, cliente, asesor…" />
         <SelectFilter value={estado} onChange={setEstado} options={ESTADOS} allLabel="Todos los estados" />
         <SelectFilter value={canal} onChange={setCanal} options={canales} allLabel="Todos los canales" />
+        <SelectFilter value={asesorF} onChange={setAsesorF} options={asesoresQ} allLabel="Todos los asesores" />
         <ClearFiltersButton
-          active={!!(q || estado || canal)}
-          onClear={() => { setQ(''); setEstado(''); setCanal(''); }}
+          active={!!(q || estado || canal || asesorF)}
+          onClear={() => { setQ(''); setEstado(''); setCanal(''); setAsesorF(''); }}
         />
         <span className="ml-auto text-sm text-brand-muted">{rows.length} cotizaciones</span>
         <button className="btn-gold" onClick={() => setQuoteModal({})}>+ Nueva cotización</button>

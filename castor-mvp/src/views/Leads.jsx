@@ -392,8 +392,12 @@ export default function Leads() {
         onClose={() => setSelId(null)}
         title={
           sel ? (
-            <span className="inline-flex items-center gap-2">
-              {sel.name}
+            <span className="block">
+              <span className="inline-flex items-center gap-2">{sel.name}</span>
+              {/* Dato secundario (razón social / empresa) bajo el nombre — espejo HTML 3910 (H-006) */}
+              <span className="block text-sm font-normal text-brand-muted">
+                {sel.tipo === 'institucional' ? (sel.razonSocial || '—') : (sel.company || '—')}
+              </span>
             </span>
           ) : ''
         }
@@ -538,11 +542,11 @@ export default function Leads() {
                 ✎ Editar
               </button>
               <button
-                className="btn-outline"
+                className="btn-outline inline-flex items-center gap-1.5"
                 style={{ borderColor: '#f59e0b', color: '#fbbf24' }}
                 onClick={() => setRecontactForm({ leadId: sel.id, fecha: sel.recontactarFecha || '', nota: sel.recontactarNota || '' })}
               >
-                <IconBell width={12} height={12} /> {sel.recontactar ? 'Editar recontacto' : 'Contactar nuevamente'}
+                <IconBell width={14} height={14} /> {sel.recontactar ? 'Editar recontacto' : 'Contactar nuevamente'}
               </button>
             </div>
 
@@ -624,7 +628,8 @@ export default function Leads() {
               </div>
               <div className="space-y-2">
                 {(sel.notes || []).length === 0 && <p className="text-sm text-brand-muted">Sin notas.</p>}
-                {(sel.notes || []).map((n, i) => (
+                {/* Notas más recientes primero (espejo de [...l.notes].reverse() de Demo6) — H-009 */}
+                {[...(sel.notes || [])].reverse().map((n, i) => (
                   <div key={i} className="rounded-lg border border-brand-border bg-brand-bg/40 p-3 text-sm">
                     <p className="text-white/90">{n.text}</p>
                     <p className="mt-1 text-[11px] text-brand-muted">{n.by} · {fmtDate(n.at)}</p>

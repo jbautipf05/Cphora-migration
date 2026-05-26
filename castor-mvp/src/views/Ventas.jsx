@@ -255,6 +255,23 @@ export default function Ventas() {
         return <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${tone}`}>{d}d</span>;
       },
     },
+    {
+      // H-034: "+ Pago" inline — registra un abono contra el pedido sin abrir el detalle.
+      key: 'acciones',
+      label: '',
+      sortable: false,
+      render: (r) => (
+        <button
+          className="text-xs text-brand-gold hover:underline"
+          onClick={(e) => {
+            e.stopPropagation();
+            setPay({ orderId: r.id, amount: '', method: 'Transferencia', bankId: bankAccounts[0]?.id });
+          }}
+        >
+          + Pago
+        </button>
+      ),
+    },
   ];
 
   return (

@@ -278,19 +278,21 @@ export default function Clientes() {
               </div>
 
               {/* KPIs */}
+              {/* H-026: títulos con mayúscula inicial (sin uppercase), Histórico dorado,
+                  Saldo rojo/coral vivo. Ver Demo6:4364-4366. */}
               <div className="grid grid-cols-3 gap-2">
                 <div className="panel-2 rounded-lg p-3">
-                  <p className="text-[11px] uppercase text-muted">Histórico</p>
-                  <p className="mt-0.5 text-lg font-bold text-white">{fmtCOP(selSummary.historico)}</p>
+                  <p className="text-[11px] text-muted">Histórico</p>
+                  <p className="mt-0.5 text-lg font-bold text-gold-accent">{fmtCOP(selSummary.historico)}</p>
                 </div>
                 <div className="panel-2 rounded-lg p-3">
-                  <p className="text-[11px] uppercase text-muted">Saldo</p>
-                  <p className={`mt-0.5 text-lg font-bold ${saldoPendiente > 0 ? 'text-red-300' : 'text-emerald-300'}`}>
+                  <p className="text-[11px] text-muted">Saldo</p>
+                  <p className={`mt-0.5 text-lg font-bold ${saldoPendiente > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
                     {fmtCOP(saldoPendiente)}
                   </p>
                 </div>
                 <div className="panel-2 rounded-lg p-3">
-                  <p className="text-[11px] uppercase text-muted">Procesos activos</p>
+                  <p className="text-[11px] text-muted">Procesos activos</p>
                   <p className="mt-0.5 text-lg font-bold text-white">{selSummary.procesos}</p>
                 </div>
               </div>

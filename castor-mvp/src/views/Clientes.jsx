@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
-import { KpiCard, Badge, Chip, TIPO_LEAD } from '../components/ui';
+import { KpiCard, Badge, Chip } from '../components/ui';
 import { fmtCOP } from '../lib/accounting';
 import { fmtDate, daysBetween, today, nowISO } from '../lib/format';
 import { DataTable, SlidePanel, ClearFiltersButton } from '../components/widgets';
@@ -239,14 +239,15 @@ export default function Clientes() {
         title={
           sel ? (
             <span className="inline-flex items-center gap-2">
-              <span className="font-mono text-xs text-muted">{sel.id}</span>
-              <Chip variant={TIPO_LEAD[sel.tipo] || 'gray'}>
+              <span className="font-mono text-xs text-brand-gold">{sel.id}</span>
+              <Chip variant={sel.tipo === 'institucional' ? 'info' : 'ok'} uppercase={false}>
                 {sel.tipo === 'institucional' ? 'Institucional' : 'Persona'}
               </Chip>
+              {selSummary?.estadoCli === 'vip' && <Badge tone="gold">VIP</Badge>}
             </span>
           ) : ''
         }
-        subtitle={sel?.name}
+        subtitle={sel ? <span className="text-lg font-bold text-gold-accent">{sel.name}</span> : ''}
       >
         {sel && selSummary && (() => {
           const cliPagos = payments.filter((p) =>

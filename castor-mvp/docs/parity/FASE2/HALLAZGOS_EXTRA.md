@@ -44,3 +44,33 @@ con su propia consolidación — reconciliarlo es trabajo aparte.
 
 **Recomendación:** o bien sembrar registros `PAYMENTS` coherentes con cada `paid%`, o bien que
 `savePayment` parta del `paid` existente + delta. Evaluar en Fase 6 / corrección técnica.
+
+---
+
+## EX-F2-03 — Flujo cotización→venta sin prefill [DESCUBIERTO EN VALIDACIÓN EXHAUSTIVA pre-merge]
+
+**Ubicación:** `src/views/Cotizaciones.jsx:290` (botón "→ Crear venta").
+
+El botón "→ Crear venta" del detalle de cotización (a) solo aparece para cotizaciones **aceptadas** y
+(b) solo **navega** a Ventas (`onNavigate('ventas')`); NO abre el modal de Nueva Venta (H-035) precargado
+con el cliente y los ítems de la cotización (como hace `openSaleForm(quoteId)` en Demo6:5683).
+
+**Por qué no se toca:** fuera del inventario de Fase 2 (H-035 se especificó abriéndose desde Ventas, sin
+prefill desde cotización). No es bug; es una feature no incluida.
+
+**Recomendación:** Fase 3 — pasar `quoteId` a `NuevaVentaModal` y precargar cliente + ítems (NuevaVentaModal
+ya soporta items[]; faltaría el wiring de prefill). Reutilizable el patrón de Demo6.
+
+---
+
+## EX-F2-04 — Sin UI de edición de cliente [DESCUBIERTO EN VALIDACIÓN EXHAUSTIVA pre-merge]
+
+**Ubicación:** `src/views/Clientes.jsx` (detalle de cliente / SlidePanel).
+
+El detalle de cliente no tiene acción de editar (solo cierre ✕ y "+ Nota"). No se puede cambiar nombre,
+teléfono, etc. de un cliente desde la UI. (La resolución de nombre por `customerId` — B2 — sí funciona:
+verificado mutando el estado y confirmando que el pedido refleja el nombre nuevo sin cambiar el FK.)
+
+**Por qué no se toca:** editar clientes no fue hallazgo de Fase 1 ni de Fase 2 (no está en el inventario).
+
+**Recomendación:** Fase 3 — modal de edición de cliente (reutilizable parte del bloque Cliente de H-035.1).

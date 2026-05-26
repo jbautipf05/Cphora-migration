@@ -27,11 +27,12 @@ Adjuntos + estado).
 H-040 (Exportar PDF), H-041 (modal Nuevo producto).
 
 ## 3. Caveats acumulados (para revisión humana)
-1. **[DECISIÓN] Estado venta innovación (H-036.3):** implementado `pendiente_innovacion` (funcional, aparece
-   en módulo Innovación) vs `pendiente_aprobacion_gerencia` (fiel a Demo6 saveSale, pero no aparece — bug
-   interno de Demo6). Pendiente de tu confirmación; reversible en 1 línea.
-2. **[DECISIÓN] Modal Nuevo producto (H-041):** modal dedicado simple (sin BOM) en Lista de Precios, en vez de
-   reutilizar el de Innovación (con BOM). El inventario pedía "evaluar contigo". Reversible.
+1. **[DECISIÓN — ✅ CONFIRMADA POR USUARIO]** Estado venta innovación (H-036.3): se mantiene
+   `pendiente_innovacion` (Opción 2; funcional, aparece en módulo Innovación). Confirmado en prompt de
+   pre-merge; razón: integra con el módulo Innovación.
+2. **[DECISIÓN — ✅ CONFIRMADA POR USUARIO]** Modal Nuevo producto (H-041): se mantiene el modal dedicado
+   simple (sin BOM) en Lista de Precios. Confirmado en prompt de pre-merge; razón: el inventario H-041 no
+   incluía BOM; reversible si el cliente lo pide más adelante.
 3. **IDs Pedido/OP cosméticos (H-028/H-033):** se mantuvo `PED-XXXX` como id/FK; etiqueta visual `P-XXXX` en
    tabla. NO se adoptó el modelo de 2 niveles de Demo6 (decisión aprobada al inicio).
 4. **Multi-ítem `order.items[]`:** las ventas nuevas guardan `items[]`; Producción/Auditoría aún leen el modelo

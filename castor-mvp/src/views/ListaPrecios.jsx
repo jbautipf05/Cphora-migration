@@ -5,6 +5,7 @@ import { fmtCOP } from '../lib/accounting';
 import { SlidePanel } from '../components/widgets';
 import { IconBox, IconTag, IconBank, IconShield } from '../components/icons';
 import { useToast } from '../components/Toast';
+import { exportPriceListPDF } from '../lib/priceListPdf';
 
 // Lista de precios — catálogo de productos con filtros completos.
 // Espejo HTML: search + categoría + bodega + rango de precio.
@@ -45,8 +46,11 @@ export default function ListaPrecios() {
 
   const hasFilters = !!(q || cat || bodega);
   const clearAll = () => { setQ(''); setCat(''); setBodega(''); };
-  // H-040 implementa la exportación real; aquí queda el disparador (stub temporal).
-  const handleExportPdf = () => toast('Exportación de PDF disponible en H-040', 'info');
+  // H-040: exporta la lista (filtrada) a PDF corporativo.
+  const handleExportPdf = () => {
+    exportPriceListPDF(rows, { warehouses });
+    toast(`PDF de ${rows.length} producto(s) generado`, 'ok');
+  };
 
   // KPIs
   const totalStock = Object.values(stockByProduct).reduce((a, s) => a + s.total, 0);

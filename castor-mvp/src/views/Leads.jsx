@@ -42,7 +42,7 @@ const EMPTY = {
 };
 
 export default function Leads({ onNavigate }) {
-  const { leads, products, add, update, nextId, currentUser } = useApp();
+  const { leads, products, add, update, nextId, currentUser, setPendingForm } = useApp();
   const toast = useToast();
   const [q, setQ] = useState('');
   const [estado, setEstado] = useState('');
@@ -433,7 +433,15 @@ export default function Leads({ onNavigate }) {
 
             {/* Botones de acción */}
             <div className="flex flex-wrap gap-2">
-              <button className="btn-gold flex-1" onClick={() => onNavigate?.('cotizaciones')}>
+              <button
+                className="btn-gold flex-1"
+                onClick={() => {
+                  // Espejo de openQuoteForm(l.id): abre el modal de cotización
+                  // con este lead ya preseleccionado (no sólo cambia de vista).
+                  setPendingForm({ type: 'quote', leadId: sel.id });
+                  onNavigate?.('cotizaciones');
+                }}
+              >
                 + Nueva cotización
               </button>
               <button className="btn-outline" onClick={() => setForm({ ...sel })}>

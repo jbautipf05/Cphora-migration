@@ -67,16 +67,22 @@ export default function Ventas() {
       if (medio && o.medio !== medio) return false;
       if (pdv && o.pdv !== pdv) return false;
       if (asesor && o.asesor !== asesor) return false;
-      if (
-        t &&
-        !`${o.id} ${o.clientName} ${o.asesor || ''} ${o.medio || ''} ${o.pdv || ''}`
-          .toLowerCase()
-          .includes(t)
-      )
-        return false;
+      if (t) {
+        // B2 completo: buscar por el nombre RESUELTO (por customerId), no el
+        // clientName almacenado, para que renombrar un cliente se refleje también
+        // en el buscador. Se inlinea (no usa el closure custName) para no romper
+        // la memoización del useMemo; `customers` ya está en las deps.
+        const nm = customers.find((c) => c.id === o.customerId)?.name || o.clientName;
+        if (
+          !`${o.id} ${nm} ${o.asesor || ''} ${o.medio || ''} ${o.pdv || ''}`
+            .toLowerCase()
+            .includes(t)
+        )
+          return false;
+      }
       return true;
     });
-  }, [orders, q, estado, tipo, medio, pdv, asesor]);
+  }, [orders, customers, q, estado, tipo, medio, pdv, asesor]);
 
   const kpis = useMemo(() => {
     const valor = orders.reduce((a, o) => a + (o.total || 0), 0);

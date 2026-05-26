@@ -162,6 +162,34 @@ export function AppProvider({ children }) {
         setState((s) => ({ ...s, [collection]: (s[collection] || []).filter((x) => x.id !== id) })),
       setCollection: (collection, value) => setState((s) => ({ ...s, [collection]: value })),
 
+      // EX-F2-04 / B2 completo: edita un cliente y, si cambió el NOMBRE, propaga el
+      // nombre nuevo (cascada acotada) a la denormalización clientName de pedidos y
+      // cotizaciones del MISMO customerId. NO toca facturas/pagos/notas (snapshots
+      // históricos). Todo en UN SOLO setState para que la cascada sea atómica
+      // (evita el problema de updates separados visto con nextId en Fase 1.5).
+      updateCustomer: (id, patch) =>
+        setState((s) => {
+          const cust = (s.customers || []).find((c) => c.id === id);
+          if (!cust) return s;
+          const newName = patch.name;
+          const nameChanged =
+            typeof newName === 'string' && newName !== cust.name;
+          return {
+            ...s,
+            customers: s.customers.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+            orders: nameChanged
+              ? (s.orders || []).map((o) =>
+                  o.customerId === id ? { ...o, clientName: newName } : o,
+                )
+              : s.orders,
+            quotes: nameChanged
+              ? (s.quotes || []).map((qt) =>
+                  qt.customerId === id ? { ...qt, clientName: newName } : qt,
+                )
+              : s.quotes,
+          };
+        }),
+
       // Genera un id incremental tipo "PED-1254" y avanza el contador.
       // Calcula el id de forma síncrona desde countersRef (bump inmediato), por
       // lo que soporta varias llamadas en el mismo evento sin colisión ni undefined.

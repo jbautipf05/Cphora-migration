@@ -44,7 +44,9 @@ export default function Clientes() {
       const ords = orders.filter(
         (o) => o.customerId === c.id || o.clientName === c.name,
       );
-      const cots = quotes.filter((qq) => qq.clientName === c.name);
+      // B2 completo: resolver por customerId (FK), con fallback a nombre para
+      // cotizaciones legacy sin FK — mismo patrón que `ords` arriba.
+      const cots = quotes.filter((qq) => qq.customerId === c.id || qq.clientName === c.name);
       const lds = leads.filter((l) => l.linkedCustomerId === c.id || l.name === c.name);
       const psv = (postSales || []).filter(
         (p) => p.customerId === c.id || p.clientName === c.name,

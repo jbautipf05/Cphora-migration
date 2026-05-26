@@ -37,10 +37,54 @@ const CHANNELS = ['Llamada', 'Pagina Web', 'Instagram', 'WhatsApp', 'Tienda 43',
 const ASESORES = ['Alexander Vivas', 'Thalia Cifuentes'];
 
 const EMPTY = {
-  name: '', tipo: 'lead', razonSocial: '', nit: '', phone: '', email: '', doc: '',
+  name: '', tipo: 'lead', razonSocial: '', nit: '', contacto: '', phone: '', email: '', doc: '',
   address: '', city: '', channel: 'Llamada', clasificacion: 'medio', estado: 'Nuevo',
-  asesor: '', valor: 0,
+  asesor: '', valor: 0, productosInteres: [],
 };
+
+// Buscador de producto con autocompletado para "Productos de interés" del lead
+// (reemplaza un <select> de cientos de items). Espejo de leadProductoRowHTML/
+// filterLeadProductoList de Demo6. H-003.
+function ProductPicker({ products, value, onChange }) {
+  const selected = products.find((p) => p.id === value);
+  const [q, setQ] = useState('');
+  const [open, setOpen] = useState(false);
+  const results = useMemo(() => {
+    const t = q.toLowerCase().trim();
+    return (t ? products.filter((p) => p.name.toLowerCase().includes(t)) : products).slice(0, 12);
+  }, [products, q]);
+  return (
+    <div className="relative">
+      <input
+        className="input-field py-1 text-xs"
+        placeholder="Buscar producto por nombre..."
+        value={open ? q : selected?.name || ''}
+        onFocus={() => { setOpen(true); setQ(''); }}
+        onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+      />
+      {open && (
+        <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-48 overflow-y-auto scrollbar-thin rounded-lg border border-brand-border bg-brand-panel shadow-2xl">
+          {results.length === 0 ? (
+            <div className="p-2 text-center text-xs italic text-brand-muted">Sin coincidencias</div>
+          ) : (
+            results.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onMouseDown={() => { onChange(p.id); setOpen(false); setQ(''); }}
+                className="flex w-full justify-between gap-2 px-3 py-1.5 text-left text-xs text-brand-muted transition hover:bg-white/5 hover:text-white"
+              >
+                <span className="text-white">{p.name}</span>
+                <span className="text-brand-gold">{fmtCOP(p.price)}</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Leads() {
   const { leads, products, add, update, nextId, currentUser, pendingForm, setPendingForm } = useApp();
@@ -63,6 +107,7 @@ export default function Leads() {
   useEffect(() => {
     if (pendingForm?.type === 'lead') {
       // eslint-disable-next-line react-hooks/set-state-in-effect
+      setErrors({});
       setForm({ ...EMPTY });
       setPendingForm(null);
     }
@@ -105,6 +150,17 @@ export default function Leads() {
     setErrors((e) => (e[k] ? { ...e, [k]: undefined } : e));
   };
 
+  // Productos de interés (editor) + valor estimado auto (H-003).
+  const addPI = () => setForm((f) => ({ ...f, productosInteres: [...(f.productosInteres || []), { productId: '', qty: 1 }] }));
+  const setPI = (i, patch) =>
+    setForm((f) => ({ ...f, productosInteres: (f.productosInteres || []).map((it, j) => (j === i ? { ...it, ...patch } : it)) }));
+  const rmPI = (i) => setForm((f) => ({ ...f, productosInteres: (f.productosInteres || []).filter((_, j) => j !== i) }));
+  // Valor estimado = Σ(precio × cantidad), espejo de leadValorFromProductos de Demo6.
+  const leadValor = (form?.productosInteres || []).reduce((s, it) => {
+    const p = products.find((x) => x.id === it.productId);
+    return s + (p ? p.price * (Number(it.qty) || 0) : 0);
+  }, 0);
+
   // Valida los campos obligatorios del lead (espejo de los * de Demo6) + formato
   // de teléfono. Nota: Demo6 sólo usa `required` nativo (sin chequeo de dígitos);
   // el chequeo de teléfono se agrega por lógica (H-004). "Solo dígitos" se
@@ -129,13 +185,13 @@ export default function Leads() {
       return toast('Revisa los campos marcados', 'warn');
     }
     setErrors({});
-    const payload = { ...form, valor: Number(form.valor) || 0 };
+    const payload = { ...form, valor: leadValor, productosInteres: form.productosInteres || [] };
     if (form.id) {
       update('leads', form.id, payload);
       toast('Lead actualizado', 'ok');
     } else {
       const id = nextId('L', 'lead');
-      add('leads', { ...payload, id, createdAt: nowISO(), productosInteres: [], notes: [] });
+      add('leads', { ...payload, id, createdAt: nowISO(), notes: [] });
       toast(`Lead ${id} creado`, 'ok');
     }
     setForm(null);
@@ -326,7 +382,7 @@ export default function Leads() {
         <SelectFilter value={tipo} onChange={setTipo} options={['lead', 'institucional']} allLabel="Todos los tipos" />
         <ClearFiltersButton active={hasFilters} onClear={clearAll} />
         <span className="ml-auto text-sm text-brand-muted">{rows.length} leads</span>
-        <button className="btn-gold" onClick={() => setForm({ ...EMPTY })}>+ Nuevo lead</button>
+        <button className="btn-gold" onClick={() => { setErrors({}); setForm({ ...EMPTY }); }}>+ Nuevo lead</button>
       </Toolbar>
 
       <DataTable columns={columns} rows={rows} getKey={(r) => r.id} onRowClick={(r) => setSelId(r.id)} />
@@ -478,7 +534,7 @@ export default function Leads() {
               >
                 + Nueva cotización
               </button>
-              <button className="btn-outline" onClick={() => setForm({ ...sel })}>
+              <button className="btn-outline" onClick={() => { setErrors({}); setForm({ ...sel }); }}>
                 ✎ Editar
               </button>
               <button
@@ -632,13 +688,17 @@ export default function Leads() {
               <Input value={form.name} onChange={(e) => set('name', e.target.value)} />
               {errors.name && <span className="mt-1 block text-xs text-red-400">{errors.name}</span>}
             </Field>
-            <Field label="Tipo">
-              <Select value={form.tipo} onChange={(e) => set('tipo', e.target.value)}>
-                <option value="lead">Lead</option>
-                <option value="institucional">Institucional</option>
-              </Select>
+            <Field label="Tipo *">
+              <div className="flex gap-4 pt-1.5">
+                <label className="flex items-center gap-2 text-sm text-white">
+                  <input type="radio" name="lead-tipo" value="lead" checked={form.tipo === 'lead'} onChange={() => set('tipo', 'lead')} /> Lead
+                </label>
+                <label className="flex items-center gap-2 text-sm text-white">
+                  <input type="radio" name="lead-tipo" value="institucional" checked={form.tipo === 'institucional'} onChange={() => set('tipo', 'institucional')} /> Lead institucional
+                </label>
+              </div>
             </Field>
-            <Field label="Clasificación">
+            <Field label="Clasificación *">
               <Select value={form.clasificacion} onChange={(e) => set('clasificacion', e.target.value)}>
                 {CLASIF.map((c) => <option key={c} value={c}>{c}</option>)}
               </Select>
@@ -647,6 +707,7 @@ export default function Leads() {
               <>
                 <Field label="Razón social"><Input value={form.razonSocial} onChange={(e) => set('razonSocial', e.target.value)} /></Field>
                 <Field label="NIT"><Input value={form.nit} onChange={(e) => set('nit', e.target.value)} /></Field>
+                <Field label="Contacto"><Input value={form.contacto} onChange={(e) => set('contacto', e.target.value)} /></Field>
               </>
             )}
             <Field label="Teléfono *">
@@ -657,7 +718,7 @@ export default function Leads() {
             <Field label="Documento"><Input value={form.doc} onChange={(e) => set('doc', e.target.value)} /></Field>
             <Field label="Ciudad"><Input value={form.city} onChange={(e) => set('city', e.target.value)} /></Field>
             <Field label="Dirección" className="sm:col-span-2"><Input value={form.address} onChange={(e) => set('address', e.target.value)} /></Field>
-            <Field label="Canal">
+            <Field label="Canal *">
               <Select value={form.channel} onChange={(e) => set('channel', e.target.value)}>
                 {CHANNELS.map((c) => <option key={c} value={c}>{c}</option>)}
               </Select>
@@ -669,13 +730,31 @@ export default function Leads() {
               </Select>
               {errors.asesor && <span className="mt-1 block text-xs text-red-400">{errors.asesor}</span>}
             </Field>
-            <Field label="Estado">
+            <Field label="Estado *">
               <Select value={form.estado} onChange={(e) => set('estado', e.target.value)}>
                 {ESTADOS.map((e2) => <option key={e2} value={e2}>{e2}</option>)}
               </Select>
             </Field>
-            <Field label="Valor estimado (COP)">
-              <Input type="number" value={form.valor} onChange={(e) => set('valor', e.target.value)} />
+
+            {/* Productos de interés — editor con autocompletado (H-003) */}
+            <div className="sm:col-span-2">
+              <span className="label">Productos de interés</span>
+              <div className="space-y-2">
+                {(form.productosInteres || []).map((it, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <ProductPicker products={products} value={it.productId} onChange={(id) => setPI(i, { productId: id })} />
+                    </div>
+                    <Input type="number" min="1" value={it.qty} onChange={(e) => setPI(i, { qty: Number(e.target.value) })} className="!w-20 !py-1 text-xs" />
+                    <button type="button" onClick={() => rmPI(i)} className="text-lg text-brand-muted hover:text-red-400">×</button>
+                  </div>
+                ))}
+              </div>
+              <button type="button" onClick={addPI} className="btn-outline mt-2 !py-1 !text-xs">+ Agregar producto</button>
+            </div>
+
+            <Field label="Valor estimado (COP)" hint="Calculado de los productos de interés">
+              <Input type="number" readOnly value={leadValor} title="Auto — no editable" className="cursor-not-allowed bg-brand-navy/40" />
             </Field>
           </FormGrid>
         )}

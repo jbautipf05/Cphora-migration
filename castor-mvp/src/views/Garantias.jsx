@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
 import { KpiCard } from '../components/ui';
 import { fmtDate, today } from '../lib/format';
@@ -17,12 +17,22 @@ const empty = () => ({
 });
 
 export default function Garantias() {
-  const { warranties, orders, update, add, nextId } = useApp();
+  const { warranties, orders, update, add, nextId, pendingForm, setPendingForm } = useApp();
   const toast = useToast();
   const [selId, setSelId] = useState(null);
   const [form, setForm] = useState(null);
 
   const sel = warranties.find((w) => w.id === selId) || null;
+
+  // Intent del header "+ Nuevo" → abrir el form de nueva garantía (H-001).
+  useEffect(() => {
+    if (pendingForm?.type === 'garantia') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setForm(empty());
+      setPendingForm(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingForm]);
 
   const kpis = useMemo(() => ({
     abiertos: warranties.filter((w) => w.estado !== 'cerrada' && w.estado !== 'resuelta').length,

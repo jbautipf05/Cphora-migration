@@ -114,6 +114,12 @@ const AppContext = createContext(null);
 export function AppProvider({ children }) {
   const [state, setState] = useState(hydrate);
 
+  // Intent de navegación transversal: equivale a las funciones globales
+  // openQuoteForm(leadId) / openSaleForm({quoteId}) del HTML. Una vista lo
+  // setea antes de navegar y la vista destino lo consume y lo limpia al montar.
+  // Es UI efímera (no se persiste).
+  const [pendingForm, setPendingForm] = useState(null);
+
   // Persiste el estado completo cada vez que cambia (debounced).
   const timer = useRef(null);
   useEffect(() => {
@@ -273,7 +279,10 @@ export function AppProvider({ children }) {
     [],
   );
 
-  const value = useMemo(() => ({ ...state, ...actions, setState }), [state, actions]);
+  const value = useMemo(
+    () => ({ ...state, ...actions, setState, pendingForm, setPendingForm }),
+    [state, actions, pendingForm],
+  );
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
 

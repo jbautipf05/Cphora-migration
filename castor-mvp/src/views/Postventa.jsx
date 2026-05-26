@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
 import { KpiCard, Chip } from '../components/ui';
-import { fmtDate, today, daysBetween, nowISO } from '../lib/format';
+import { fmtDate, today, daysBetween } from '../lib/format';
 import { useToast } from '../components/Toast';
 import Modal from '../components/Modal';
 import { Field, Input, Select, Textarea, FormGrid } from '../components/form';
@@ -14,10 +14,20 @@ import { IconShield, IconPhone, IconCheck, IconUsers } from '../components/icons
 //   · Historial de contactos directos (registrar contacto manual)
 // ─────────────────────────────────────────────────────────────────────────────
 export default function Postventa() {
-  const { postSales, setState, currentUser, nextId, add } = useApp();
+  const { postSales, setState, currentUser, nextId, add, pendingForm, setPendingForm } = useApp();
   const toast = useToast();
   const [contactForm, setContactForm] = useState(null);
   const [completeForm, setCompleteForm] = useState(null); // { id, nps, notes }
+
+  // Intent del header "+ Nuevo" → abrir el form de registrar contacto directo (H-001).
+  useEffect(() => {
+    if (pendingForm?.type === 'postventa') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setContactForm({ clientName: '', asesor: currentUser?.name || '', type: 'llamada', notes: '', nps: 9 });
+      setPendingForm(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingForm]);
 
   // Separar por estado contra hoy.
   const vencidos = useMemo(

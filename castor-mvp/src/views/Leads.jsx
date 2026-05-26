@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
 import { KpiCard, Chip, TIPO_LEAD } from '../components/ui';
 import { fmtCOP, fmtDate, fmtDateTime, nowISO, daysBetween, today } from '../lib/format';
 import { Toolbar, SearchBox, SelectFilter, DataTable, EstadoBadge, SlidePanel, ClearFiltersButton } from '../components/widgets';
 import Modal from '../components/Modal';
+import NuevaCotizacionModal from '../components/NuevaCotizacionModal';
 import { Field, Input, Select, Textarea, FormGrid } from '../components/form';
 import { useToast } from '../components/Toast';
 import { IconBell, IconUsers } from '../components/icons';
@@ -36,13 +37,57 @@ const CHANNELS = ['Llamada', 'Pagina Web', 'Instagram', 'WhatsApp', 'Tienda 43',
 const ASESORES = ['Alexander Vivas', 'Thalia Cifuentes'];
 
 const EMPTY = {
-  name: '', tipo: 'lead', razonSocial: '', nit: '', phone: '', email: '', doc: '',
+  name: '', tipo: 'lead', razonSocial: '', nit: '', contacto: '', phone: '', email: '', doc: '',
   address: '', city: '', channel: 'Llamada', clasificacion: 'medio', estado: 'Nuevo',
-  asesor: 'Alexander Vivas', valor: 0,
+  asesor: '', valor: 0, productosInteres: [],
 };
 
-export default function Leads({ onNavigate }) {
-  const { leads, products, add, update, nextId, currentUser } = useApp();
+// Buscador de producto con autocompletado para "Productos de interés" del lead
+// (reemplaza un <select> de cientos de items). Espejo de leadProductoRowHTML/
+// filterLeadProductoList de Demo6. H-003.
+function ProductPicker({ products, value, onChange }) {
+  const selected = products.find((p) => p.id === value);
+  const [q, setQ] = useState('');
+  const [open, setOpen] = useState(false);
+  const results = useMemo(() => {
+    const t = q.toLowerCase().trim();
+    return (t ? products.filter((p) => p.name.toLowerCase().includes(t)) : products).slice(0, 12);
+  }, [products, q]);
+  return (
+    <div className="relative">
+      <input
+        className="input-field py-1 text-xs"
+        placeholder="Buscar producto por nombre..."
+        value={open ? q : selected?.name || ''}
+        onFocus={() => { setOpen(true); setQ(''); }}
+        onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+      />
+      {open && (
+        <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-48 overflow-y-auto scrollbar-thin rounded-lg border border-brand-border bg-brand-panel shadow-2xl">
+          {results.length === 0 ? (
+            <div className="p-2 text-center text-xs italic text-brand-muted">Sin coincidencias</div>
+          ) : (
+            results.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onMouseDown={() => { onChange(p.id); setOpen(false); setQ(''); }}
+                className="flex w-full justify-between gap-2 px-3 py-1.5 text-left text-xs text-brand-muted transition hover:bg-white/5 hover:text-white"
+              >
+                <span className="text-white">{p.name}</span>
+                <span className="text-brand-gold">{fmtCOP(p.price)}</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function Leads() {
+  const { leads, products, add, update, nextId, currentUser, pendingForm, setPendingForm } = useApp();
   const toast = useToast();
   const [q, setQ] = useState('');
   const [estado, setEstado] = useState('');
@@ -50,11 +95,27 @@ export default function Leads({ onNavigate }) {
   const [tipo, setTipo] = useState('');
   const [selId, setSelId] = useState(null);
   const [form, setForm] = useState(null); // null | {…} (modal abierto)
+  const [errors, setErrors] = useState({}); // errores de validación inline (H-004)
   const [note, setNote] = useState('');
   const [segForm, setSegForm] = useState({ tipo: 'llamada', fechaProxima: '', texto: '' });
   const [recontactForm, setRecontactForm] = useState(null); // {leadId, fecha, nota}
+  const [quoteOpen, setQuoteOpen] = useState(false); // modal "Nueva cotización" en contexto (H-010)
+  const [leadQ, setLeadQ] = useState(''); // buscar lead existente para autollenar (H-005)
+  const [leadQOpen, setLeadQOpen] = useState(false);
 
   const sel = leads.find((l) => l.id === selId) || null;
+
+  // Intent del header "+ Nuevo" → abrir el form de nuevo lead (H-001).
+  useEffect(() => {
+    if (pendingForm?.type === 'lead') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setErrors({});
+      setLeadQ('');
+      setForm({ ...EMPTY });
+      setPendingForm(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingForm]);
 
   const rows = useMemo(() => {
     const t = q.toLowerCase();
@@ -86,17 +147,54 @@ export default function Leads({ onNavigate }) {
     [leads],
   );
 
-  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  // Setea un campo del form y limpia su error inline si lo tenía (H-004).
+  const set = (k, v) => {
+    setForm((f) => ({ ...f, [k]: v }));
+    setErrors((e) => (e[k] ? { ...e, [k]: undefined } : e));
+  };
+
+  // Productos de interés (editor) + valor estimado auto (H-003).
+  const addPI = () => setForm((f) => ({ ...f, productosInteres: [...(f.productosInteres || []), { productId: '', qty: 1 }] }));
+  const setPI = (i, patch) =>
+    setForm((f) => ({ ...f, productosInteres: (f.productosInteres || []).map((it, j) => (j === i ? { ...it, ...patch } : it)) }));
+  const rmPI = (i) => setForm((f) => ({ ...f, productosInteres: (f.productosInteres || []).filter((_, j) => j !== i) }));
+  // Valor estimado = Σ(precio × cantidad), espejo de leadValorFromProductos de Demo6.
+  const leadValor = (form?.productosInteres || []).reduce((s, it) => {
+    const p = products.find((x) => x.id === it.productId);
+    return s + (p ? p.price * (Number(it.qty) || 0) : 0);
+  }, 0);
+
+  // Valida los campos obligatorios del lead (espejo de los * de Demo6) + formato
+  // de teléfono. Nota: Demo6 sólo usa `required` nativo (sin chequeo de dígitos);
+  // el chequeo de teléfono se agrega por lógica (H-004). "Solo dígitos" se
+  // interpreta como "sin letras + ≥7 dígitos" para no romper teléfonos con
+  // espacios del seed ("300 555 1122").
+  function validate(f) {
+    const errs = {};
+    if (!f.name.trim()) errs.name = 'El nombre es obligatorio';
+    const phone = (f.phone || '').trim();
+    const numDigits = (phone.match(/\d/g) || []).length;
+    if (!phone) errs.phone = 'El teléfono es obligatorio';
+    else if (/[a-zA-Z]/.test(phone)) errs.phone = 'El teléfono no puede contener letras';
+    else if (numDigits < 7) errs.phone = 'El teléfono debe tener al menos 7 dígitos';
+    if (!f.asesor) errs.asesor = 'Selecciona un asesor';
+    return errs;
+  }
 
   function save() {
-    if (!form.name.trim()) return toast('El nombre es obligatorio', 'warn');
-    const payload = { ...form, valor: Number(form.valor) || 0 };
+    const errs = validate(form);
+    if (Object.keys(errs).length) {
+      setErrors(errs);
+      return toast('Revisa los campos marcados', 'warn');
+    }
+    setErrors({});
+    const payload = { ...form, valor: leadValor, productosInteres: form.productosInteres || [] };
     if (form.id) {
       update('leads', form.id, payload);
       toast('Lead actualizado', 'ok');
     } else {
       const id = nextId('L', 'lead');
-      add('leads', { ...payload, id, createdAt: nowISO(), productosInteres: [], notes: [] });
+      add('leads', { ...payload, id, createdAt: nowISO(), notes: [] });
       toast(`Lead ${id} creado`, 'ok');
     }
     setForm(null);
@@ -287,7 +385,7 @@ export default function Leads({ onNavigate }) {
         <SelectFilter value={tipo} onChange={setTipo} options={['lead', 'institucional']} allLabel="Todos los tipos" />
         <ClearFiltersButton active={hasFilters} onClear={clearAll} />
         <span className="ml-auto text-sm text-brand-muted">{rows.length} leads</span>
-        <button className="btn-gold" onClick={() => setForm({ ...EMPTY })}>+ Nuevo lead</button>
+        <button className="btn-gold" onClick={() => { setErrors({}); setLeadQ(''); setForm({ ...EMPTY }); }}>+ Nuevo lead</button>
       </Toolbar>
 
       <DataTable columns={columns} rows={rows} getKey={(r) => r.id} onRowClick={(r) => setSelId(r.id)} />
@@ -297,8 +395,12 @@ export default function Leads({ onNavigate }) {
         onClose={() => setSelId(null)}
         title={
           sel ? (
-            <span className="inline-flex items-center gap-2">
-              {sel.name}
+            <span className="block">
+              <span className="inline-flex items-center gap-2">{sel.name}</span>
+              {/* Dato secundario (razón social / empresa) bajo el nombre — espejo HTML 3910 (H-006) */}
+              <span className="block text-sm font-normal text-brand-muted">
+                {sel.tipo === 'institucional' ? (sel.razonSocial || '—') : (sel.company || '—')}
+              </span>
             </span>
           ) : ''
         }
@@ -433,18 +535,21 @@ export default function Leads({ onNavigate }) {
 
             {/* Botones de acción */}
             <div className="flex flex-wrap gap-2">
-              <button className="btn-gold flex-1" onClick={() => onNavigate?.('cotizaciones')}>
+              <button
+                className="btn-gold flex-1"
+                onClick={() => setQuoteOpen(true)}
+              >
                 + Nueva cotización
               </button>
-              <button className="btn-outline" onClick={() => setForm({ ...sel })}>
+              <button className="btn-outline" onClick={() => { setErrors({}); setForm({ ...sel }); }}>
                 ✎ Editar
               </button>
               <button
-                className="btn-outline"
+                className="btn-outline inline-flex items-center gap-1.5"
                 style={{ borderColor: '#f59e0b', color: '#fbbf24' }}
                 onClick={() => setRecontactForm({ leadId: sel.id, fecha: sel.recontactarFecha || '', nota: sel.recontactarNota || '' })}
               >
-                <IconBell width={12} height={12} /> {sel.recontactar ? 'Editar recontacto' : 'Contactar nuevamente'}
+                <IconBell width={14} height={14} /> {sel.recontactar ? 'Editar recontacto' : 'Contactar nuevamente'}
               </button>
             </div>
 
@@ -526,7 +631,8 @@ export default function Leads({ onNavigate }) {
               </div>
               <div className="space-y-2">
                 {(sel.notes || []).length === 0 && <p className="text-sm text-brand-muted">Sin notas.</p>}
-                {(sel.notes || []).map((n, i) => (
+                {/* Notas más recientes primero (espejo de [...l.notes].reverse() de Demo6) — H-009 */}
+                {[...(sel.notes || [])].reverse().map((n, i) => (
                   <div key={i} className="rounded-lg border border-brand-border bg-brand-bg/40 p-3 text-sm">
                     <p className="text-white/90">{n.text}</p>
                     <p className="mt-1 text-[11px] text-brand-muted">{n.by} · {fmtDate(n.at)}</p>
@@ -586,16 +692,61 @@ export default function Leads({ onNavigate }) {
       >
         {form && (
           <FormGrid cols={2}>
-            <Field label="Nombre" className="sm:col-span-2">
+            {/* H-005 (mejora): buscar un lead existente para autollenar y editarlo
+                (evita re-tipear). Sólo al crear; al elegir pasa a modo edición. */}
+            {!form.id && (
+              <div className="relative sm:col-span-2">
+                <span className="label">¿Lead existente? Buscá para autollenar y editarlo</span>
+                <input
+                  className="input-field"
+                  placeholder="Buscar por nombre, teléfono o documento…"
+                  value={leadQ}
+                  onChange={(e) => { setLeadQ(e.target.value); setLeadQOpen(true); }}
+                  onFocus={() => setLeadQOpen(true)}
+                  onBlur={() => setTimeout(() => setLeadQOpen(false), 150)}
+                />
+                {leadQOpen && leadQ.trim() && (
+                  <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-48 overflow-y-auto scrollbar-thin rounded-lg border border-brand-border bg-brand-panel shadow-2xl">
+                    {(() => {
+                      const t = leadQ.toLowerCase().trim();
+                      const matches = leads
+                        .filter((l) => `${l.name} ${l.phone || ''} ${l.doc || ''}`.toLowerCase().includes(t))
+                        .slice(0, 8);
+                      return matches.length === 0 ? (
+                        <div className="p-2 text-center text-xs italic text-brand-muted">Sin coincidencias</div>
+                      ) : (
+                        matches.map((l) => (
+                          <button
+                            key={l.id}
+                            type="button"
+                            onMouseDown={() => { setErrors({}); setForm({ ...l }); setLeadQ(''); setLeadQOpen(false); }}
+                            className="flex w-full justify-between gap-2 px-3 py-1.5 text-left text-xs text-brand-muted transition hover:bg-white/5 hover:text-white"
+                          >
+                            <span><span className="font-mono text-brand-gold">{l.id}</span> · <span className="text-white">{l.name}</span></span>
+                            <span className="text-brand-muted">{l.phone || l.doc || l.city || ''}</span>
+                          </button>
+                        ))
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
+            )}
+            <Field label="Nombre *" className="sm:col-span-2">
               <Input value={form.name} onChange={(e) => set('name', e.target.value)} />
+              {errors.name && <span className="mt-1 block text-xs text-red-400">{errors.name}</span>}
             </Field>
-            <Field label="Tipo">
-              <Select value={form.tipo} onChange={(e) => set('tipo', e.target.value)}>
-                <option value="lead">Lead</option>
-                <option value="institucional">Institucional</option>
-              </Select>
+            <Field label="Tipo *">
+              <div className="flex gap-4 pt-1.5">
+                <label className="flex items-center gap-2 text-sm text-white">
+                  <input type="radio" name="lead-tipo" value="lead" checked={form.tipo === 'lead'} onChange={() => set('tipo', 'lead')} /> Lead
+                </label>
+                <label className="flex items-center gap-2 text-sm text-white">
+                  <input type="radio" name="lead-tipo" value="institucional" checked={form.tipo === 'institucional'} onChange={() => set('tipo', 'institucional')} /> Lead institucional
+                </label>
+              </div>
             </Field>
-            <Field label="Clasificación">
+            <Field label="Clasificación *">
               <Select value={form.clasificacion} onChange={(e) => set('clasificacion', e.target.value)}>
                 {CLASIF.map((c) => <option key={c} value={c}>{c}</option>)}
               </Select>
@@ -604,34 +755,67 @@ export default function Leads({ onNavigate }) {
               <>
                 <Field label="Razón social"><Input value={form.razonSocial} onChange={(e) => set('razonSocial', e.target.value)} /></Field>
                 <Field label="NIT"><Input value={form.nit} onChange={(e) => set('nit', e.target.value)} /></Field>
+                <Field label="Contacto"><Input value={form.contacto} onChange={(e) => set('contacto', e.target.value)} /></Field>
               </>
             )}
-            <Field label="Teléfono"><Input value={form.phone} onChange={(e) => set('phone', e.target.value)} /></Field>
+            <Field label="Teléfono *">
+              <Input value={form.phone} onChange={(e) => set('phone', e.target.value)} />
+              {errors.phone && <span className="mt-1 block text-xs text-red-400">{errors.phone}</span>}
+            </Field>
             <Field label="Email"><Input value={form.email} onChange={(e) => set('email', e.target.value)} /></Field>
             <Field label="Documento"><Input value={form.doc} onChange={(e) => set('doc', e.target.value)} /></Field>
             <Field label="Ciudad"><Input value={form.city} onChange={(e) => set('city', e.target.value)} /></Field>
             <Field label="Dirección" className="sm:col-span-2"><Input value={form.address} onChange={(e) => set('address', e.target.value)} /></Field>
-            <Field label="Canal">
+            <Field label="Canal *">
               <Select value={form.channel} onChange={(e) => set('channel', e.target.value)}>
                 {CHANNELS.map((c) => <option key={c} value={c}>{c}</option>)}
               </Select>
             </Field>
-            <Field label="Asesor">
+            <Field label="Asesor *">
               <Select value={form.asesor} onChange={(e) => set('asesor', e.target.value)}>
+                <option value="">— Elegir —</option>
                 {ASESORES.map((a) => <option key={a} value={a}>{a}</option>)}
               </Select>
+              {errors.asesor && <span className="mt-1 block text-xs text-red-400">{errors.asesor}</span>}
             </Field>
-            <Field label="Estado">
+            <Field label="Estado *">
               <Select value={form.estado} onChange={(e) => set('estado', e.target.value)}>
                 {ESTADOS.map((e2) => <option key={e2} value={e2}>{e2}</option>)}
               </Select>
             </Field>
-            <Field label="Valor estimado (COP)">
-              <Input type="number" value={form.valor} onChange={(e) => set('valor', e.target.value)} />
+
+            {/* Productos de interés — editor con autocompletado (H-003) */}
+            <div className="sm:col-span-2">
+              <span className="label">Productos de interés</span>
+              <div className="space-y-2">
+                {(form.productosInteres || []).map((it, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <ProductPicker products={products} value={it.productId} onChange={(id) => setPI(i, { productId: id })} />
+                    </div>
+                    <Input type="number" min="1" value={it.qty} onChange={(e) => setPI(i, { qty: Number(e.target.value) })} className="!w-20 !py-1 text-xs" />
+                    <button type="button" onClick={() => rmPI(i)} className="text-lg text-brand-muted hover:text-red-400">×</button>
+                  </div>
+                ))}
+              </div>
+              <button type="button" onClick={addPI} className="btn-outline mt-2 !py-1 !text-xs">+ Agregar producto</button>
+            </div>
+
+            <Field label="Valor estimado (COP)" hint="Calculado de los productos de interés">
+              <Input type="number" readOnly value={leadValor} title="Auto — no editable" className="cursor-not-allowed bg-brand-navy/40" />
             </Field>
           </FormGrid>
         )}
       </Modal>
+
+      {/* Modal "Nueva cotización" en contexto del lead (H-010): abre sin salir de
+          Leads; al guardar/cerrar volvés al perfil del lead. */}
+      <NuevaCotizacionModal
+        open={quoteOpen}
+        leadId={sel?.id || null}
+        onClose={() => setQuoteOpen(false)}
+        onCreated={() => setQuoteOpen(false)}
+      />
     </div>
   );
 }

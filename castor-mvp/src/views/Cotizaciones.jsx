@@ -1,47 +1,37 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
-import { KpiCard, Chip } from '../components/ui';
-import { fmtCOP, fmtDate, nowISO, addDays, daysBetween, today } from '../lib/format';
+import { KpiCard } from '../components/ui';
+import { fmtCOP, fmtDate, nowISO, daysBetween, today } from '../lib/format';
 import { Toolbar, SearchBox, SelectFilter, DataTable, EstadoBadge, SlidePanel, ClearFiltersButton } from '../components/widgets';
 import { IconDoc, IconCheck, IconBank } from '../components/icons';
-import Modal from '../components/Modal';
-import { Field, Input, Select, Textarea, FormGrid } from '../components/form';
 import { useToast } from '../components/Toast';
+import NuevaCotizacionModal, { genQuoteSeguimientos, subtotal, total } from '../components/NuevaCotizacionModal';
+import { exportQuotePDF } from '../lib/quotePdf';
 
 const ESTADOS = ['borrador', 'enviada', 'aceptada', 'rechazada'];
-const CHANNELS = ['Llamada', 'Pagina Web', 'Instagram', 'WhatsApp', 'Tienda 43', 'Feria', 'Referido'];
-const ASESORES = ['Alexander Vivas', 'Thalia Cifuentes'];
-const VIGENCIAS = [20, 30, 45, 60, 90];
 
-const subtotal = (q) => q.items.reduce((a, i) => a + i.qty * i.price, 0);
-const total = (q) => Math.round(subtotal(q) * (1 - q.discount / 100));
-
-const emptyForm = () => ({
-  clientName: '', city: '', channel: 'Llamada', asesor: 'Alexander Vivas',
-  items: [{ productId: '', qty: 1, price: 0, desc: '' }], discount: 0, vigenciaDias: 30, notes: '',
+// Convierte una cotización existente al shape del form (para "Editar cotización":
+// abre el modal prellenado). Nota: save() del modal crea una NUEVA cotización
+// (comportamiento heredado, ver HALLAZGOS_EXTRA EX-06).
+const quoteToForm = (qq) => ({
+  leadId: qq.leadId || '', clientName: qq.clientName || '', city: qq.city || '',
+  channel: qq.channel || 'Llamada', asesor: qq.asesor || '',
+  items: qq.items?.length ? qq.items.map((it) => ({ ...it })) : [{ productId: '', qty: 1, price: 0, desc: '' }],
+  discount: qq.discount || 0, vigenciaDias: qq.vigenciaDias || 30, notes: qq.notes || '',
+  newLeadPhone: '', newLeadEmail: '', newLeadDoc: '', newLeadAddress: '',
 });
 
 export default function Cotizaciones({ onNavigate }) {
-  const { quotes, orders, products, add, update, nextId, currentUser } = useApp();
+  const {
+    quotes, orders, products, leads, customers, employees, update, currentUser,
+    pendingForm, setPendingForm,
+  } = useApp();
   const toast = useToast();
   const [noteText, setNoteText] = useState('');
 
   // Cotizaciones aceptadas sin pedido asociado (espejo del indicador ● del HTML).
   const aceptadasSinPedido = (q) =>
     q.estado === 'aceptada' && !orders.some((o) => o.quoteId === q.id);
-
-  // Calcula seguimientos programados estilo HTML: 7 hitos cada 8-9 días desde la creación.
-  const seguimientosOf = (qu) => {
-    if (!qu?.createdAt) return [];
-    const baseDate = new Date(qu.createdAt);
-    const list = [];
-    for (let i = 1; i <= 7; i++) {
-      const d = new Date(baseDate);
-      d.setDate(d.getDate() + i * 8);
-      list.push({ n: i, date: d.toISOString().slice(0, 10) });
-    }
-    return list;
-  };
 
   const addNoteToQuote = () => {
     if (!noteText.trim() || !sel) return;
@@ -55,81 +45,68 @@ export default function Cotizaciones({ onNavigate }) {
     toast('Nota agregada', 'ok');
   };
 
-  // Descarga PDF simulada: genera un .txt con resumen de la cotización
+  // Descarga el PDF de la cotización con el diseño Castor (port de exportQuotePDF
+  // de Demo6). H-015.
   const downloadPDF = (qu) => {
-    const lines = [
-      `CASTOR · Cotización ${qu.id}`,
-      `Cliente: ${qu.clientName}`,
-      `Canal: ${qu.channel} · Asesor: ${qu.asesor}`,
-      `Fecha: ${qu.createdAt?.slice(0, 10)} · Vigencia: ${qu.vigencia} (${qu.vigenciaDias}d)`,
-      `Estado: ${qu.estado}`,
-      '',
-      'Items:',
-      ...qu.items.map((it) => {
-        const p = products.find((x) => x.id === it.productId);
-        return `  ${p?.name || it.productId} · ${it.qty} × ${fmtCOP(it.price)} = ${fmtCOP(it.qty * it.price)}`;
-      }),
-      '',
-      `Subtotal:    ${fmtCOP(subtotal(qu))}`,
-      `Descuento:   -${fmtCOP((subtotal(qu) * qu.discount) / 100)} (${qu.discount}%)`,
-      `Total:       ${fmtCOP(total(qu))}`,
-      '',
-      `Notas: ${qu.notes || '—'}`,
-    ].join('\n');
-    const blob = new Blob([lines], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Cotizacion_${qu.id}_${(qu.clientName || '').replace(/\s+/g, '_')}.txt`;
-    link.click();
-    URL.revokeObjectURL(url);
-    toast('PDF generado (simulado)', 'ok');
+    exportQuotePDF(qu, { products, leads, customers, employees });
+    toast('PDF generado con diseño Castor', 'ok');
   };
   const [q, setQ] = useState('');
   const [estado, setEstado] = useState('');
   const [canal, setCanal] = useState('');
+  const [asesorF, setAsesorF] = useState(''); // filtro por asesor (H-012)
   const [selId, setSelId] = useState(null);
-  const [form, setForm] = useState(null);
+  const [quoteModal, setQuoteModal] = useState(null); // null | {} | {leadId} | {initialForm}
+  const [segVerify, setSegVerify] = useState({ id: null, nota: '' }); // verificar seguimiento
 
   const sel = quotes.find((x) => x.id === selId) || null;
   const canales = useMemo(() => [...new Set(quotes.map((x) => x.channel))], [quotes]);
+  const asesoresQ = useMemo(() => [...new Set(quotes.map((x) => x.asesor).filter(Boolean))], [quotes]);
+
+  // Consume el intent del header/Leads ("+ Nueva cotización") → abre el modal.
+  useEffect(() => {
+    if (pendingForm?.type === 'quote') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setQuoteModal({ leadId: pendingForm.leadId || null });
+      setPendingForm(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingForm]);
+
+  // Genera de forma diferida los 7 seguimientos de cotizaciones seed que no los
+  // tengan, igual que el HTML al abrir openQuoteDetail (4806).
+  useEffect(() => {
+    if (sel && !sel.seguimientos) {
+      update('quotes', sel.id, { seguimientos: genQuoteSeguimientos(sel.createdAt) });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selId]);
+
+  // Verificar/cerrar un seguimiento de la cotización (con nota opcional).
+  function verifySeguimiento(quoteId, segId, nota) {
+    update('quotes', quoteId, (qq) => ({
+      seguimientos: (qq.seguimientos || []).map((s) =>
+        s.id === segId
+          ? { ...s, estado: 'completado', completadoAt: today(), notas: nota?.trim() || s.notas }
+          : s,
+      ),
+    }));
+    setSegVerify({ id: null, nota: '' });
+    toast('Seguimiento verificado', 'ok');
+  }
 
   const rows = useMemo(() => {
     const t = q.toLowerCase();
     return quotes.filter((c) => {
       if (estado && c.estado !== estado) return false;
       if (canal && c.channel !== canal) return false;
+      if (asesorF && c.asesor !== asesorF) return false;
       if (t && !`${c.id} ${c.clientName} ${c.asesor}`.toLowerCase().includes(t)) return false;
       return true;
     });
-  }, [quotes, q, estado, canal]);
+  }, [quotes, q, estado, canal, asesorF]);
 
   const aceptadas = quotes.filter((c) => c.estado === 'aceptada').length;
-
-  // ── Form helpers ──
-  const setF = (k, v) => setForm((f) => ({ ...f, [k]: v }));
-  const setItem = (i, patch) =>
-    setForm((f) => ({ ...f, items: f.items.map((it, j) => (j === i ? { ...it, ...patch } : it)) }));
-  const addItem = () => setForm((f) => ({ ...f, items: [...f.items, { productId: '', qty: 1, price: 0, desc: '' }] }));
-  const rmItem = (i) => setForm((f) => ({ ...f, items: f.items.filter((_, j) => j !== i) }));
-  const onProduct = (i, productId) => {
-    const p = products.find((x) => x.id === productId);
-    setItem(i, { productId, price: p?.price || 0, desc: p?.name || '' });
-  };
-  const formTotal = form ? total(form) : 0;
-
-  function save() {
-    if (!form.clientName.trim()) return toast('Indica el cliente', 'warn');
-    const items = form.items.filter((it) => it.productId && it.qty > 0);
-    if (!items.length) return toast('Agrega al menos un producto', 'warn');
-    const id = nextId('COT', 'cot');
-    add('quotes', {
-      id, ...form, items, estado: 'borrador',
-      createdAt: nowISO(), vigencia: addDays(nowISO().slice(0, 10), form.vigenciaDias),
-    });
-    toast(`Cotización ${id} creada`, 'ok');
-    setForm(null);
-  }
 
   function updateEstado(id, nuevo) {
     update('quotes', id, { estado: nuevo });
@@ -163,6 +140,19 @@ export default function Cotizaciones({ onNavigate }) {
     { key: 'estado', label: 'Estado', sortValue: (r) => r.estado, render: (r) => <EstadoBadge value={r.estado} /> },
     { key: 'fecha', label: 'Creación', sortValue: (r) => r.createdAt, render: (r) => <span className="text-brand-muted">{fmtDate(r.createdAt)}</span> },
     { key: 'vigencia', label: 'Vigencia', sortValue: (r) => r.vigencia, render: (r) => <span className="text-brand-muted">{fmtDate(r.vigencia)}</span> },
+    {
+      key: 'pdf',
+      label: '',
+      align: 'right',
+      render: (r) => (
+        <button
+          onClick={(e) => { e.stopPropagation(); downloadPDF(r); }}
+          className="text-xs text-brand-gold hover:underline"
+        >
+          PDF
+        </button>
+      ),
+    },
   ];
 
   return (
@@ -183,12 +173,13 @@ export default function Cotizaciones({ onNavigate }) {
         <SearchBox value={q} onChange={setQ} placeholder="Buscar ID, cliente, asesor…" />
         <SelectFilter value={estado} onChange={setEstado} options={ESTADOS} allLabel="Todos los estados" />
         <SelectFilter value={canal} onChange={setCanal} options={canales} allLabel="Todos los canales" />
+        <SelectFilter value={asesorF} onChange={setAsesorF} options={asesoresQ} allLabel="Todos los asesores" />
         <ClearFiltersButton
-          active={!!(q || estado || canal)}
-          onClear={() => { setQ(''); setEstado(''); setCanal(''); }}
+          active={!!(q || estado || canal || asesorF)}
+          onClear={() => { setQ(''); setEstado(''); setCanal(''); setAsesorF(''); }}
         />
         <span className="ml-auto text-sm text-brand-muted">{rows.length} cotizaciones</span>
-        <button className="btn-gold" onClick={() => setForm(emptyForm())}>+ Nueva cotización</button>
+        <button className="btn-gold" onClick={() => setQuoteModal({})}>+ Nueva cotización</button>
       </Toolbar>
 
       <DataTable columns={columns} rows={rows} getKey={(r) => r.id} onRowClick={(r) => setSelId(r.id)} />
@@ -238,7 +229,7 @@ export default function Cotizaciones({ onNavigate }) {
               <div className="mb-2 flex items-center justify-between">
                 <p className="text-xs font-semibold uppercase tracking-wide text-brand-gold-light/80">Items</p>
                 <button
-                  onClick={() => setForm({ ...sel, _editId: sel.id })}
+                  onClick={() => setQuoteModal({ initialForm: quoteToForm(sel) })}
                   className="text-xs text-gold-accent hover:underline"
                 >
                   ✎ Editar cotización
@@ -308,31 +299,69 @@ export default function Cotizaciones({ onNavigate }) {
               )}
             </div>
 
-            {/* Seguimientos programados (espejo HTML — calculados a partir de createdAt) */}
+            {/* Seguimientos programados (7 persistidos, espejo HTML 4882) */}
             <div className="panel-2 rounded-lg p-4">
               <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
-                📅 Seguimientos programados ({seguimientosOf(sel).length} en 2 meses)
+                📅 Seguimientos programados (7 en 2 meses)
               </p>
               <div className="space-y-2">
-                {seguimientosOf(sel).map((s) => {
-                  const dd = daysBetween(today(), s.date);
-                  const vencido = dd < 0;
-                  const color = vencido ? '#ef4444' : '#3b82f6';
+                {(sel.seguimientos || []).map((s) => {
+                  const dd = daysBetween(today(), s.fechaProxima);
+                  const done = s.estado === 'completado';
+                  const color = done ? '#10b981' : dd <= 0 ? '#ef4444' : dd <= 3 ? '#f59e0b' : '#3b82f6';
+                  const label = done
+                    ? `✓ ${fmtDate(s.completadoAt)}`
+                    : dd <= 0 ? `Vencido ${Math.abs(dd)}d` : `En ${dd}d`;
                   return (
                     <div
-                      key={s.n}
-                      className="flex items-center justify-between rounded p-2"
-                      style={{ borderLeft: `3px solid ${color}`, background: 'rgba(255,255,255,0.02)' }}
+                      key={s.id}
+                      className="rounded p-2"
+                      style={{ borderLeft: `4px solid ${color}`, background: 'rgba(255,255,255,0.02)' }}
                     >
-                      <div>
-                        <p className="text-sm font-medium text-white">
-                          Seguimiento #{s.n} · {fmtDate(s.date)}
-                        </p>
-                        <p className="text-[11px]" style={{ color }}>
-                          {vencido ? `Vencido ${Math.abs(dd)}d` : `En ${dd}d`}
-                        </p>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-medium text-white">
+                            Seguimiento #{s.n} · {fmtDate(s.fechaProxima)}
+                          </p>
+                          <p className="text-[10px]" style={{ color }}>{label}</p>
+                        </div>
+                        {s.estado === 'pendiente' && (
+                          <button
+                            className="text-[11px] text-gold-accent hover:underline"
+                            onClick={() => setSegVerify({ id: segVerify.id === s.id ? null : s.id, nota: '' })}
+                          >
+                            ✓ Verificar
+                          </button>
+                        )}
                       </div>
-                      <button className="text-xs text-gold-accent hover:underline">✓ Verificar</button>
+                      {s.notas && (
+                        <p className="mt-1 text-[11px] italic text-brand-muted">"{s.notas}"</p>
+                      )}
+                      {segVerify.id === s.id && (
+                        <div className="mt-2">
+                          <textarea
+                            value={segVerify.nota}
+                            onChange={(e) => setSegVerify((v) => ({ ...v, nota: e.target.value }))}
+                            placeholder="Nota del seguimiento..."
+                            rows={2}
+                            className="input-field text-xs"
+                          />
+                          <div className="mt-1 flex gap-1">
+                            <button
+                              className="btn-gold !py-1 !px-2 text-[11px]"
+                              onClick={() => verifySeguimiento(sel.id, s.id, segVerify.nota)}
+                            >
+                              ✓ Verificar
+                            </button>
+                            <button
+                              className="btn-outline !py-1 !px-2 text-[11px]"
+                              onClick={() => setSegVerify({ id: null, nota: '' })}
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -377,74 +406,14 @@ export default function Cotizaciones({ onNavigate }) {
         )}
       </SlidePanel>
 
-      {/* Modal nueva cotización */}
-      <Modal
-        open={!!form}
-        onClose={() => setForm(null)}
-        title="Nueva cotización"
-        size="lg"
-        footer={
-          <>
-            <div className="mr-auto text-sm">
-              <span className="text-brand-muted">Total: </span>
-              <span className="font-semibold text-brand-gold">{fmtCOP(formTotal)}</span>
-            </div>
-            <button className="btn-outline" onClick={() => setForm(null)}>Cancelar</button>
-            <button className="btn-gold" onClick={save}>Guardar</button>
-          </>
-        }
-      >
-        {form && (
-          <div className="space-y-5">
-            <FormGrid cols={2}>
-              <Field label="Cliente"><Input value={form.clientName} onChange={(e) => setF('clientName', e.target.value)} /></Field>
-              <Field label="Ciudad"><Input value={form.city} onChange={(e) => setF('city', e.target.value)} /></Field>
-              <Field label="Canal">
-                <Select value={form.channel} onChange={(e) => setF('channel', e.target.value)}>
-                  {CHANNELS.map((c) => <option key={c} value={c}>{c}</option>)}
-                </Select>
-              </Field>
-              <Field label="Asesor">
-                <Select value={form.asesor} onChange={(e) => setF('asesor', e.target.value)}>
-                  {ASESORES.map((a) => <option key={a} value={a}>{a}</option>)}
-                </Select>
-              </Field>
-            </FormGrid>
-
-            <div>
-              <div className="mb-2 flex items-center justify-between">
-                <span className="label !mb-0">Productos</span>
-                <button className="btn-outline !py-1 !text-xs" onClick={addItem}>+ Agregar</button>
-              </div>
-              <div className="space-y-2">
-                {form.items.map((it, i) => (
-                  <div key={i} className="grid grid-cols-12 items-center gap-2">
-                    <div className="col-span-6">
-                      <Select value={it.productId} onChange={(e) => onProduct(i, e.target.value)}>
-                        <option value="">Producto…</option>
-                        {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                      </Select>
-                    </div>
-                    <div className="col-span-2"><Input type="number" min="1" value={it.qty} onChange={(e) => setItem(i, { qty: Number(e.target.value) })} /></div>
-                    <div className="col-span-3 text-right text-sm text-white">{fmtCOP(it.qty * it.price)}</div>
-                    <button className="col-span-1 text-brand-muted hover:text-red-400" onClick={() => rmItem(i)}>✕</button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <FormGrid cols={3}>
-              <Field label="Descuento %"><Input type="number" min="0" max="100" value={form.discount} onChange={(e) => setF('discount', Number(e.target.value))} /></Field>
-              <Field label="Vigencia (días)">
-                <Select value={form.vigenciaDias} onChange={(e) => setF('vigenciaDias', Number(e.target.value))}>
-                  {VIGENCIAS.map((v) => <option key={v} value={v}>{v}</option>)}
-                </Select>
-              </Field>
-            </FormGrid>
-            <Field label="Notas"><Textarea rows={2} value={form.notes} onChange={(e) => setF('notes', e.target.value)} /></Field>
-          </div>
-        )}
-      </Modal>
+      {/* Modal nueva cotización — componente reutilizable (H-010) */}
+      <NuevaCotizacionModal
+        open={!!quoteModal}
+        leadId={quoteModal?.leadId || null}
+        initialForm={quoteModal?.initialForm || null}
+        onClose={() => setQuoteModal(null)}
+        onCreated={(id) => setSelId(id)}
+      />
     </div>
   );
 }

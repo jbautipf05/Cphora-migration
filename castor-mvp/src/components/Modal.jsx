@@ -10,7 +10,7 @@ export default function Modal({ open, onClose, title, subtitle, children, footer
   }, [open, onClose]);
 
   if (!open) return null;
-  const maxW = { sm: 'max-w-md', md: 'max-w-2xl', lg: 'max-w-4xl', xl: 'max-w-6xl' }[size] || 'max-w-2xl';
+  const maxW = { sm: 'max-w-md', md: 'max-w-2xl', '3xl': 'max-w-3xl', lg: 'max-w-4xl', xl: 'max-w-6xl' }[size] || 'max-w-2xl';
 
   return (
     <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto p-4 sm:p-8">

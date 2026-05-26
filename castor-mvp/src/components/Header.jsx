@@ -1,27 +1,38 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { pageMeta } from '../nav';
-import { IconSearch, IconUsers, IconDoc, IconCart, IconBox } from './icons';
+import { useApp } from '../store/AppContext';
+import { IconSearch } from './icons';
 import Notifications from './Notifications';
+import Modal from './Modal';
 
+// Espejo del menú "Crear nuevo" de Demo6 (modal-quick-create): 9 opciones en el
+// mismo orden, con los mismos emoji y etiquetas. H-001.
+// Formato: [viewId, emoji, label, intentType|null]
+// - intentType != null → setea pendingForm y la vista destino abre su formulario.
+// - intentType == null → sólo navega (gap: el form de creación no existe aún en
+//   React — Pago, Terminado, Cuenta bancaria; ver FASE1/H-001.md y HALLAZGOS_EXTRA).
 const QUICK = [
-  ['leads', 'Nuevo lead', IconUsers],
-  ['cotizaciones', 'Nueva cotización', IconDoc],
-  ['ventas', 'Nuevo pedido', IconCart],
-  ['almacen', 'Nuevo insumo', IconBox],
+  ['leads', '👤', 'Lead', 'lead'],
+  ['cotizaciones', '📄', 'Cotización', 'quote'],
+  ['ventas', '💰', 'Pago', null],
+  ['garantias', '🛡', 'Garantía', 'garantia'],
+  ['innovacion', '📦', 'Nuevo producto', 'producto'],
+  ['inventario', '✓', 'Terminado', null],
+  ['rrhh', '🧑', 'Empleado', 'empleado'],
+  ['config-nomina', '🏦', 'Cuenta bancaria', null],
+  ['postventa', '📞', 'Postventa', 'postventa'],
 ];
 
 export default function Header({ view, search, setSearch, setView }) {
   const { title, breadcrumb } = pageMeta(view);
+  const { setPendingForm } = useApp();
   const [quickOpen, setQuickOpen] = useState(false);
-  const quickRef = useRef(null);
 
-  useEffect(() => {
-    const onDoc = (e) => {
-      if (quickRef.current && !quickRef.current.contains(e.target)) setQuickOpen(false);
-    };
-    document.addEventListener('click', onDoc);
-    return () => document.removeEventListener('click', onDoc);
-  }, []);
+  const onPick = (id, type) => {
+    if (type) setPendingForm({ type });
+    setView(id);
+    setQuickOpen(false);
+  };
 
   return (
     <header
@@ -50,29 +61,26 @@ export default function Header({ view, search, setSearch, setView }) {
 
         <Notifications onNavigate={setView} />
 
-        <div className="relative" ref={quickRef}>
-          <button onClick={() => setQuickOpen((o) => !o)} className="btn-gold">
-            + Nuevo
-          </button>
-          {quickOpen && (
-            <div className="absolute right-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-xl border border-brand-border bg-brand-panel shadow-2xl">
-              {QUICK.map(([id, label, Icon]) => (
-                <button
-                  key={id}
-                  onClick={() => {
-                    setView(id);
-                    setQuickOpen(false);
-                  }}
-                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-brand-muted transition hover:bg-white/5 hover:text-white"
-                >
-                  <Icon width={16} height={16} className="text-brand-gold-light/80" />
-                  <span>{label}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <button onClick={() => setQuickOpen(true)} className="btn-gold">
+          + Nuevo
+        </button>
       </div>
+
+      {/* Modal "Crear nuevo" — espejo de modal-quick-create de Demo6 */}
+      <Modal open={quickOpen} onClose={() => setQuickOpen(false)} title="Crear nuevo" size="sm">
+        <div className="space-y-1">
+          {QUICK.map(([id, emoji, label, type]) => (
+            <button
+              key={id}
+              onClick={() => onPick(id, type)}
+              className="flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-left text-sm text-brand-muted transition hover:bg-white/5 hover:text-white"
+            >
+              <span className="w-5 text-center text-base leading-none">{emoji}</span>
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
+      </Modal>
     </header>
   );
 }

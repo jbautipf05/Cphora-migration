@@ -95,7 +95,11 @@ export default function Ventas() {
   function submitSale(data) {
     const clientName = data.custName.trim();
     if (!clientName) return toast('Indica el cliente', 'warn');
-    if (!data.items?.some((it) => it.productId)) return toast('Agrega al menos un producto', 'warn');
+    // Validación según modo: innovación valida productos propuestos (por nombre); venta estándar, items con productId.
+    const hasContent = data.innovation
+      ? data.innovItems?.some((it) => it.name?.trim())
+      : data.items?.some((it) => it.productId);
+    if (!hasContent) return toast('Agrega al menos un producto', 'warn');
     const orderDate = today();
 
     let customerId = data.customerId || resolveCustomerId({ clientName }, { customers });
@@ -111,27 +115,48 @@ export default function Ventas() {
     }
 
     const id = nextId('PED', 'ped');
-    const items = data.items.filter((it) => it.productId);
-    const first = items[0];
-    const tiposItem = [...new Set(items.map((it) => it.tipo))];
-    const tipo = tiposItem.length > 1 ? 'mixto' : tiposItem[0] || 'produccion';
     // H-035.3: el avance (paid%) se deriva del pago realmente registrado (no de un % suelto),
     // por lo que queda respaldado por un registro PAYMENTS (evita la inconsistencia EX-F2-02).
     const payAmount = Number(data.payAmount) || 0;
     const paidPct = data.total ? Math.min(100, Math.round((payAmount / data.total) * 100)) : 0;
 
-    add('orders', {
-      id, quoteId: null, customerId, clientName, asesor: data.asesor,
-      total: data.total, paid: paidPct, tiempo: Number(data.tiempo) || 30,
-      orderDate, estado: tipo === 'stock' ? 'produccion' : 'pendiente_op',
-      area: null, tipo, docType: data.docType, deliveryAddress: data.deliveryAddress,
-      medio: data.medio, pdv: data.pdv, cierreVenta: data.cierreVenta, abonoBancos: data.abonoBancos,
-      verified: false, productId: first.productId, qty: Number(first.qty) || 1,
-      items, // H-035.2: ítems de la venta (multi-ítem)
-    });
-    toast(`Venta ${id} registrada`, 'ok');
+    if (data.innovation) {
+      // H-036.3: venta de innovación. Productos propuestos (aún sin catálogo); queda pendiente de
+      // aprobación de gerencia. Estado = 'pendiente_innovacion' (DECISIÓN PENDIENTE DE CONFIRMACIÓN:
+      // Demo6 saveSale usa 'pendiente_aprobacion_gerencia', pero el módulo Innovación filtra
+      // 'pendiente_innovacion'; se eligió el que integra con el módulo — ver H-036.3.md).
+      const innovItems = (data.innovItems || []).filter((it) => it.name?.trim());
+      const fp = innovItems[0] || {};
+      add('orders', {
+        id, quoteId: null, customerId, clientName, asesor: data.asesor,
+        total: data.total, paid: paidPct, tiempo: Number(data.tiempo) || 30,
+        orderDate, estado: 'pendiente_innovacion', area: null, tipo: 'innovacion',
+        docType: data.docType, deliveryAddress: data.deliveryAddress,
+        medio: data.medio, pdv: data.pdv, cierreVenta: data.cierreVenta, abonoBancos: data.abonoBancos,
+        verified: false, productId: '', qty: Number(fp.qty) || 1,
+        productoPropuesto: { name: fp.name || '', desc: fp.desc || '', qty: Number(fp.qty) || 1, price: Number(fp.price) || 0 },
+        innovItems,
+        innovRefPhoto: data.innovRefPhoto || null, innovConsentPhoto: data.innovConsentPhoto || null,
+      });
+      toast(`Venta innovación ${id} registrada (pendiente de aprobación)`, 'ok');
+    } else {
+      const items = data.items.filter((it) => it.productId);
+      const first = items[0];
+      const tiposItem = [...new Set(items.map((it) => it.tipo))];
+      const tipo = tiposItem.length > 1 ? 'mixto' : tiposItem[0] || 'produccion';
+      add('orders', {
+        id, quoteId: null, customerId, clientName, asesor: data.asesor,
+        total: data.total, paid: paidPct, tiempo: Number(data.tiempo) || 30,
+        orderDate, estado: tipo === 'stock' ? 'produccion' : 'pendiente_op',
+        area: null, tipo, docType: data.docType, deliveryAddress: data.deliveryAddress,
+        medio: data.medio, pdv: data.pdv, cierreVenta: data.cierreVenta, abonoBancos: data.abonoBancos,
+        verified: false, productId: first.productId, qty: Number(first.qty) || 1,
+        items, // H-035.2: ítems de la venta (multi-ítem)
+      });
+      toast(`Venta ${id} registrada`, 'ok');
+    }
 
-    // H-035.3: registrar el pago (abono) + asiento de cobro.
+    // H-035.3: registrar el pago (abono) + asiento de cobro (aplica a venta estándar e innovación).
     if (payAmount > 0) {
       const pagId = nextId('PAG', 'pag');
       add('payments', {
@@ -145,12 +170,16 @@ export default function Ventas() {
       if (collection?.ok) toast(`Asiento ${collection.journalEntry.id} de cobro generado`, 'ok');
     }
 
-    const sale = postSale({
-      id, date: orderDate, type: data.docType,
-      customerId, customerName: clientName, total: data.total,
-    });
-    if (sale?.ok) toast(`Asiento contable ${sale.journalEntry.id} generado`, 'ok');
-    else if (sale?.error) toast(`Aviso contable: ${sale.message || sale.error}`, 'warn');
+    // El asiento de venta (reconocimiento de ingreso) solo para ventas estándar; la innovación
+    // queda pendiente de aprobación de gerencia (no se reconoce hasta aprobarse).
+    if (!data.innovation) {
+      const sale = postSale({
+        id, date: orderDate, type: data.docType,
+        customerId, customerName: clientName, total: data.total,
+      });
+      if (sale?.ok) toast(`Asiento contable ${sale.journalEntry.id} generado`, 'ok');
+      else if (sale?.error) toast(`Aviso contable: ${sale.message || sale.error}`, 'warn');
+    }
 
     setSaleOpen(false);
   }

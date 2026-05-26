@@ -30,6 +30,8 @@ const emptyForm = () => ({
   // H-035.3: registro de pago
   payMethod: 'Transferencia', payBankId: '', payReference: '', paySoporte: '',
   payManual: false, payAmount: '',
+  // H-036.3: adjuntos obligatorios (innovación)
+  innovRefPhoto: '', innovConsentPhoto: '',
 });
 
 export default function NuevaVentaModal({ open, onClose, products = [], customers = [], asesores = [], bankAccounts = [], innovation = false, onSubmit }) {
@@ -319,6 +321,30 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
             ))}
             {f.items.length === 0 && <p className="text-xs italic text-brand-muted">Sin items. Usa “+ Agregar item”.</p>}
           </div>
+          </div>
+        )}
+
+        {/* ── H-036.3: Adjuntos obligatorios (solo innovación) ── */}
+        {innovation && (
+          <div className="panel-2 rounded-lg p-4" style={{ border: '1px solid #C9A961' }}>
+            <span className="mb-2 block text-sm font-semibold gold-title">🖼 Adjuntos obligatorios (innovación)</span>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <span className="label">Foto de referencia *</span>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => set('innovRefPhoto', `ref_${Date.now().toString(36)}.jpg`)} className="btn-outline text-xs">📸 Adjuntar foto</button>
+                  <span className="text-xs">{f.innovRefPhoto ? <span className="text-emerald-300">✓ {f.innovRefPhoto}</span> : <span className="text-brand-muted">Sin adjuntar</span>}</span>
+                </div>
+              </div>
+              <div>
+                <span className="label">Foto consentimiento cliente *</span>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => set('innovConsentPhoto', `consent_${Date.now().toString(36)}.jpg`)} className="btn-outline text-xs">📝 Adjuntar consentimiento</button>
+                  <span className="text-xs">{f.innovConsentPhoto ? <span className="text-emerald-300">✓ {f.innovConsentPhoto}</span> : <span className="text-brand-muted">Sin adjuntar</span>}</span>
+                </div>
+              </div>
+            </div>
+            <div className="mt-3 text-[11px] text-amber-300">⚠ La venta quedará en estado <b>pendiente</b> de aprobación de gerencia hasta ser aprobada.</div>
           </div>
         )}
 

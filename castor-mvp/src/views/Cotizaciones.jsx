@@ -287,7 +287,17 @@ export default function Cotizaciones({ onNavigate }) {
                 <button className="btn-gold flex-1" onClick={() => updateEstado(sel.id, 'aceptada')}>Aceptar</button>
               )}
               {sel.estado === 'aceptada' && (
-                <button className="btn-gold flex-1" onClick={() => onNavigate?.('ventas')}>→ Crear venta</button>
+                <button
+                  className="btn-gold flex-1"
+                  onClick={() => {
+                    // EX-F2-03: abre el modal Nueva Venta (H-035) precargado desde
+                    // esta cotización. Ventas consume el intent y arma el prefill.
+                    setPendingForm({ type: 'sale', quoteId: sel.id });
+                    onNavigate?.('ventas');
+                  }}
+                >
+                  → Crear venta
+                </button>
               )}
               {sel.estado !== 'rechazada' && (
                 <button

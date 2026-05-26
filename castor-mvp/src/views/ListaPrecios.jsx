@@ -6,16 +6,21 @@ import { SlidePanel } from '../components/widgets';
 import { IconBox, IconTag, IconBank, IconShield } from '../components/icons';
 import { useToast } from '../components/Toast';
 import { exportPriceListPDF } from '../lib/priceListPdf';
+import Modal from '../components/Modal';
+import { Field, Input, Select, Textarea } from '../components/form';
+import { uid } from '../lib/format';
 
 // Lista de precios — catálogo de productos con filtros completos.
 // Espejo HTML: search + categoría + bodega + rango de precio.
 export default function ListaPrecios() {
-  const { products, warehouses, finishedStock } = useApp();
+  const { products, warehouses, finishedStock, add, nextId } = useApp();
   const [q, setQ] = useState('');
   const [cat, setCat] = useState('');
   const [bodega, setBodega] = useState('');
   const [sel, setSel] = useState(null);
+  const [form, setForm] = useState(null); // H-041: modal nuevo producto
   const toast = useToast();
+  const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   const categorias = useMemo(() => [...new Set(products.map((p) => p.category).filter(Boolean))], [products]);
   const ptBodegas = warehouses.filter((w) => w.tipo === 'terminado');
@@ -50,6 +55,32 @@ export default function ListaPrecios() {
   const handleExportPdf = () => {
     exportPriceListPDF(rows, { warehouses });
     toast(`PDF de ${rows.length} producto(s) generado`, 'ok');
+  };
+
+  // H-041: alta rápida de producto al catálogo (modal simple, sin BOM).
+  const emptyProduct = () => ({
+    name: '', sku: '', category: '', price: 0, description: '',
+    ancho: '', alto: '', profundidad: '', warehouseId: ptBodegas[0]?.id || '', stock: 1, photo: '📦',
+  });
+  const saveNewProduct = () => {
+    if (!form.name.trim()) return toast('El nombre es obligatorio', 'warn');
+    if (!form.category) return toast('Selecciona la categoría', 'warn');
+    if (!(Number(form.price) > 0)) return toast('Indica el precio comercial', 'warn');
+    const id = nextId('PROD', 'prod', 0);
+    const sku = form.sku.trim() || `${form.category.slice(0, 3).toUpperCase()}-${id.toUpperCase()}`;
+    const stockIni = Number(form.stock) || 0;
+    add('products', {
+      id, sku, name: form.name.trim(), category: form.category, photo: form.photo || '📦',
+      warehouseId: form.warehouseId, description: form.description,
+      dimensions: { ancho: Number(form.ancho) || 0, alto: Number(form.alto) || 0, profundidad: Number(form.profundidad) || 0 },
+      stock: stockIni, min: 0, cost: 0, price: Number(form.price) || 0, verified: true,
+    });
+    // Stock inicial → registro en finishedStock para que aparezca en el catálogo/disponibilidad.
+    if (stockIni > 0 && form.warehouseId) {
+      add('finishedStock', { id: uid('FS'), productId: id, warehouseId: form.warehouseId, qty: stockIni, status: 'disponible' });
+    }
+    toast(`Producto ${sku} creado`, 'ok');
+    setForm(null);
   };
 
   // KPIs
@@ -121,7 +152,7 @@ export default function ListaPrecios() {
           <div className="ml-auto flex items-center gap-2">
             {hasFilters && <button onClick={clearAll} className="btn-outline text-xs">Limpiar</button>}
             <button onClick={handleExportPdf} className="btn-outline text-xs">📄 Exportar PDF</button>
-            <button onClick={() => toast('Modal de nuevo producto disponible en H-041', 'info')} className="btn-gold">+ Nuevo producto</button>
+            <button onClick={() => setForm(emptyProduct())} className="btn-gold">+ Nuevo producto</button>
           </div>
         </div>
       </div>
@@ -249,6 +280,71 @@ export default function ListaPrecios() {
           </div>
         )}
       </SlidePanel>
+
+      {/* H-041: Modal Nuevo producto (A datos+imagen · B dimensiones · C ubicación/stock). */}
+      <Modal
+        open={!!form}
+        onClose={() => setForm(null)}
+        title="Nuevo producto"
+        size="lg"
+        footer={
+          <>
+            <button className="btn-outline" onClick={() => setForm(null)}>Cancelar</button>
+            <button className="btn-gold" onClick={saveNewProduct}>Crear producto</button>
+          </>
+        }
+      >
+        {form && (
+          <div className="space-y-5">
+            {/* Bloque A: datos básicos + imagen */}
+            <div className="flex flex-col gap-4 sm:flex-row">
+              <div className="sm:w-40">
+                <div className="grid h-32 place-items-center rounded-lg border border-dashed border-white/15 bg-brand-bg/60 text-5xl">
+                  {form.photo || '➕'}
+                </div>
+                <Input className="mt-2 text-center" value={form.photo} onChange={(e) => setField('photo', e.target.value)} placeholder="+ Imagen (emoji)" />
+              </div>
+              <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2">
+                <Field label="Nombre del producto *"><Input value={form.name} onChange={(e) => setField('name', e.target.value)} /></Field>
+                <Field label="SKU"><Input value={form.sku} onChange={(e) => setField('sku', e.target.value)} placeholder="Autogenerado si vacío" /></Field>
+                <Field label="Categoría *">
+                  <Select value={form.category} onChange={(e) => setField('category', e.target.value)}>
+                    <option value="">— Elegir —</option>
+                    {categorias.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Precio comercial *"><Input type="number" min="0" value={form.price} onChange={(e) => setField('price', Number(e.target.value))} /></Field>
+                <Field className="sm:col-span-2" label="Descripción corta / detalles de materiales">
+                  <Textarea rows={2} value={form.description} onChange={(e) => setField('description', e.target.value)} placeholder="Ej: estructura de madera sólida, tapizado en tela…" />
+                </Field>
+              </div>
+            </div>
+
+            {/* Bloque B: dimensiones */}
+            <div>
+              <p className="mb-2 text-sm font-semibold gold-title">Dimensiones</p>
+              <div className="grid grid-cols-3 gap-3">
+                <Field label="Ancho (cm) *"><Input type="number" min="0" value={form.ancho} onChange={(e) => setField('ancho', e.target.value)} /></Field>
+                <Field label="Alto (cm) *"><Input type="number" min="0" value={form.alto} onChange={(e) => setField('alto', e.target.value)} /></Field>
+                <Field label="Profundidad (cm) *"><Input type="number" min="0" value={form.profundidad} onChange={(e) => setField('profundidad', e.target.value)} /></Field>
+              </div>
+            </div>
+
+            {/* Bloque C: ubicación y stock */}
+            <div>
+              <p className="mb-2 text-sm font-semibold gold-title">Ubicación y Stock</p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Field label="Bodega / sede inicial *">
+                  <Select value={form.warehouseId} onChange={(e) => setField('warehouseId', e.target.value)}>
+                    {ptBodegas.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Stock inicial *"><Input type="number" min="0" value={form.stock} onChange={(e) => setField('stock', Number(e.target.value))} /></Field>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

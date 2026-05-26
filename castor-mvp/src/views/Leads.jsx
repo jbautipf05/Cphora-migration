@@ -39,7 +39,7 @@ const ASESORES = ['Alexander Vivas', 'Thalia Cifuentes'];
 const EMPTY = {
   name: '', tipo: 'lead', razonSocial: '', nit: '', phone: '', email: '', doc: '',
   address: '', city: '', channel: 'Llamada', clasificacion: 'medio', estado: 'Nuevo',
-  asesor: 'Alexander Vivas', valor: 0,
+  asesor: '', valor: 0,
 };
 
 export default function Leads() {
@@ -51,6 +51,7 @@ export default function Leads() {
   const [tipo, setTipo] = useState('');
   const [selId, setSelId] = useState(null);
   const [form, setForm] = useState(null); // null | {…} (modal abierto)
+  const [errors, setErrors] = useState({}); // errores de validación inline (H-004)
   const [note, setNote] = useState('');
   const [segForm, setSegForm] = useState({ tipo: 'llamada', fechaProxima: '', texto: '' });
   const [recontactForm, setRecontactForm] = useState(null); // {leadId, fecha, nota}
@@ -98,10 +99,36 @@ export default function Leads() {
     [leads],
   );
 
-  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  // Setea un campo del form y limpia su error inline si lo tenía (H-004).
+  const set = (k, v) => {
+    setForm((f) => ({ ...f, [k]: v }));
+    setErrors((e) => (e[k] ? { ...e, [k]: undefined } : e));
+  };
+
+  // Valida los campos obligatorios del lead (espejo de los * de Demo6) + formato
+  // de teléfono. Nota: Demo6 sólo usa `required` nativo (sin chequeo de dígitos);
+  // el chequeo de teléfono se agrega por lógica (H-004). "Solo dígitos" se
+  // interpreta como "sin letras + ≥7 dígitos" para no romper teléfonos con
+  // espacios del seed ("300 555 1122").
+  function validate(f) {
+    const errs = {};
+    if (!f.name.trim()) errs.name = 'El nombre es obligatorio';
+    const phone = (f.phone || '').trim();
+    const numDigits = (phone.match(/\d/g) || []).length;
+    if (!phone) errs.phone = 'El teléfono es obligatorio';
+    else if (/[a-zA-Z]/.test(phone)) errs.phone = 'El teléfono no puede contener letras';
+    else if (numDigits < 7) errs.phone = 'El teléfono debe tener al menos 7 dígitos';
+    if (!f.asesor) errs.asesor = 'Selecciona un asesor';
+    return errs;
+  }
 
   function save() {
-    if (!form.name.trim()) return toast('El nombre es obligatorio', 'warn');
+    const errs = validate(form);
+    if (Object.keys(errs).length) {
+      setErrors(errs);
+      return toast('Revisa los campos marcados', 'warn');
+    }
+    setErrors({});
     const payload = { ...form, valor: Number(form.valor) || 0 };
     if (form.id) {
       update('leads', form.id, payload);
@@ -601,8 +628,9 @@ export default function Leads() {
       >
         {form && (
           <FormGrid cols={2}>
-            <Field label="Nombre" className="sm:col-span-2">
+            <Field label="Nombre *" className="sm:col-span-2">
               <Input value={form.name} onChange={(e) => set('name', e.target.value)} />
+              {errors.name && <span className="mt-1 block text-xs text-red-400">{errors.name}</span>}
             </Field>
             <Field label="Tipo">
               <Select value={form.tipo} onChange={(e) => set('tipo', e.target.value)}>
@@ -621,7 +649,10 @@ export default function Leads() {
                 <Field label="NIT"><Input value={form.nit} onChange={(e) => set('nit', e.target.value)} /></Field>
               </>
             )}
-            <Field label="Teléfono"><Input value={form.phone} onChange={(e) => set('phone', e.target.value)} /></Field>
+            <Field label="Teléfono *">
+              <Input value={form.phone} onChange={(e) => set('phone', e.target.value)} />
+              {errors.phone && <span className="mt-1 block text-xs text-red-400">{errors.phone}</span>}
+            </Field>
             <Field label="Email"><Input value={form.email} onChange={(e) => set('email', e.target.value)} /></Field>
             <Field label="Documento"><Input value={form.doc} onChange={(e) => set('doc', e.target.value)} /></Field>
             <Field label="Ciudad"><Input value={form.city} onChange={(e) => set('city', e.target.value)} /></Field>
@@ -631,10 +662,12 @@ export default function Leads() {
                 {CHANNELS.map((c) => <option key={c} value={c}>{c}</option>)}
               </Select>
             </Field>
-            <Field label="Asesor">
+            <Field label="Asesor *">
               <Select value={form.asesor} onChange={(e) => set('asesor', e.target.value)}>
+                <option value="">— Elegir —</option>
                 {ASESORES.map((a) => <option key={a} value={a}>{a}</option>)}
               </Select>
+              {errors.asesor && <span className="mt-1 block text-xs text-red-400">{errors.asesor}</span>}
             </Field>
             <Field label="Estado">
               <Select value={form.estado} onChange={(e) => set('estado', e.target.value)}>

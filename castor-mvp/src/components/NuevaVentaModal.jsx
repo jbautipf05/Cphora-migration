@@ -25,6 +25,8 @@ const emptyForm = () => ({
   deliveryAddress: '', medio: '', pdv: '', cierreVenta: '', abonoBancos: '',
   asesor: '', tiempo: 30, docType: 'factura', paid: 50,
   items: [{ productId: '', qty: 1, disc: 0, tipo: 'produccion', comment: '' }],
+  // H-036.2: productos propuestos (modo innovación)
+  innovItems: [{ name: '', desc: '', qty: 1, price: 0, areas: '', comment: '' }],
   // H-035.3: registro de pago
   payMethod: 'Transferencia', payBankId: '', payReference: '', paySoporte: '',
   payManual: false, payAmount: '',
@@ -41,6 +43,12 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
   const addItem = () =>
     setF((p) => ({ ...p, items: [...p.items, { productId: '', qty: 1, disc: 0, tipo: 'produccion', comment: '' }] }));
   const removeItem = (i) => setF((p) => ({ ...p, items: p.items.filter((_, idx) => idx !== i) }));
+  // H-036.2: helpers de productos propuestos
+  const setInnovItem = (i, k, v) =>
+    setF((p) => ({ ...p, innovItems: p.innovItems.map((it, idx) => (idx === i ? { ...it, [k]: v } : it)) }));
+  const addInnovItem = () =>
+    setF((p) => ({ ...p, innovItems: [...p.innovItems, { name: '', desc: '', qty: 1, price: 0, areas: '', comment: '' }] }));
+  const removeInnovItem = (i) => setF((p) => ({ ...p, innovItems: p.innovItems.filter((_, idx) => idx !== i) }));
 
   // Buscador inteligente: filtra clientes por el campo elegido.
   const results = useMemo(() => {
@@ -53,14 +61,16 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
 
   const priceOf = (id) => products.find((p) => p.id === id)?.price || 0;
   const itemTotal = (it) => priceOf(it.productId) * (Number(it.qty) || 0) * (1 - (Number(it.disc) || 0) / 100);
-  const total = f.items.reduce((a, it) => a + itemTotal(it), 0);
-  // H-035.3: liquidación
-  const subStock = f.items.filter((it) => it.tipo === 'stock').reduce((a, it) => a + itemTotal(it), 0);
-  const subProd = f.items.filter((it) => it.tipo === 'produccion').reduce((a, it) => a + itemTotal(it), 0);
-  const discTotal = f.items.reduce(
-    (a, it) => a + priceOf(it.productId) * (Number(it.qty) || 0) * ((Number(it.disc) || 0) / 100),
-    0,
-  );
+  const innovItemTotal = (it) => (Number(it.qty) || 0) * (Number(it.price) || 0);
+  // H-035.3 / H-036.2: liquidación (en innovación, los propuestos son producción estimada).
+  const stdTotal = f.items.reduce((a, it) => a + itemTotal(it), 0);
+  const innovTotal = f.innovItems.reduce((a, it) => a + innovItemTotal(it), 0);
+  const total = innovation ? innovTotal : stdTotal;
+  const subStock = innovation ? 0 : f.items.filter((it) => it.tipo === 'stock').reduce((a, it) => a + itemTotal(it), 0);
+  const subProd = innovation ? innovTotal : f.items.filter((it) => it.tipo === 'produccion').reduce((a, it) => a + itemTotal(it), 0);
+  const discTotal = innovation
+    ? 0
+    : f.items.reduce((a, it) => a + priceOf(it.productId) * (Number(it.qty) || 0) * ((Number(it.disc) || 0) / 100), 0);
   const suggestedPay = Math.round((total * (Number(f.paid) || 0)) / 100);
   const effectivePay = f.payManual ? Number(f.payAmount) || 0 : suggestedPay;
 
@@ -88,9 +98,10 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
 
   function handleSubmit() {
     if (!f.custName.trim()) return;
-    if (!f.items.some((it) => it.productId)) return;
+    if (innovation ? !f.innovItems.some((it) => it.name.trim()) : !f.items.some((it) => it.productId)) return;
     onSubmit?.({
       ...f,
+      innovation,
       total,
       payAmount: effectivePay,
       payBankId: f.payBankId || bankAccounts[0]?.id || '',
@@ -215,8 +226,39 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
           </div>
         </div>
 
-        {/* ── H-035.2: Bloque Items de la venta (dinámico) ── */}
-        <div className="panel-2 rounded-lg p-4">
+        {/* ── H-035.2 / H-036.2: items estándar (venta) o productos propuestos (innovación) ── */}
+        {innovation ? (
+          <div className="panel-2 rounded-lg p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm font-semibold gold-title">Productos propuestos</span>
+              <button type="button" onClick={addInnovItem} className="text-xs text-brand-gold hover:underline">+ Agregar item</button>
+            </div>
+            <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-[11px] text-amber-300">
+              ⚠ Los productos aún no existen en el catálogo. Se crearán en el módulo de Innovación y{' '}
+              <b>deben ser aprobados por gerencia</b> antes de entrar a producción.
+            </div>
+            <div className="space-y-3">
+              {f.innovItems.map((it, i) => (
+                <div key={i} className="panel rounded-lg p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-xs text-brand-gold">⚙ Producto propuesto (innovación)</span>
+                    <button type="button" onClick={() => removeInnovItem(i)} className="text-lg text-red-400" title="Quitar">×</button>
+                  </div>
+                  <div className="grid grid-cols-12 gap-2">
+                    <div className="col-span-12 sm:col-span-5"><span className="label text-[10px]">Nombre propuesto *</span><Input value={it.name} onChange={(e) => setInnovItem(i, 'name', e.target.value)} className="text-xs" /></div>
+                    <div className="col-span-12 sm:col-span-7"><span className="label text-[10px]">Descripción *</span><Input value={it.desc} onChange={(e) => setInnovItem(i, 'desc', e.target.value)} className="text-xs" /></div>
+                    <div className="col-span-4 sm:col-span-3"><span className="label text-[10px]">Cantidad *</span><Input type="number" min="1" value={it.qty} onChange={(e) => setInnovItem(i, 'qty', Number(e.target.value))} className="text-xs" /></div>
+                    <div className="col-span-8 sm:col-span-4"><span className="label text-[10px]">Precio estimado unit. *</span><Input type="number" min="0" value={it.price} onChange={(e) => setInnovItem(i, 'price', Number(e.target.value))} className="text-xs" /></div>
+                    <div className="col-span-12 sm:col-span-5"><span className="label text-[10px]">Áreas estimadas</span><Input value={it.areas} onChange={(e) => setInnovItem(i, 'areas', e.target.value)} placeholder="Ebanistería, Tapicería…" className="text-xs" /></div>
+                    <div className="col-span-12"><span className="label text-[10px]">Comentario</span><textarea value={it.comment} onChange={(e) => setInnovItem(i, 'comment', e.target.value)} rows={1} placeholder="Notas específicas del producto (opcional)" className="input-field text-xs" /></div>
+                  </div>
+                </div>
+              ))}
+              {f.innovItems.length === 0 && <p className="text-xs italic text-brand-muted">Sin productos propuestos.</p>}
+            </div>
+          </div>
+        ) : (
+          <div className="panel-2 rounded-lg p-4">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-sm font-semibold gold-title">Items de la venta</span>
             <button type="button" onClick={addItem} className="text-xs text-brand-gold hover:underline">+ Agregar item</button>
@@ -277,7 +319,8 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
             ))}
             {f.items.length === 0 && <p className="text-xs italic text-brand-muted">Sin items. Usa “+ Agregar item”.</p>}
           </div>
-        </div>
+          </div>
+        )}
 
         {/* Control general (anticipo simple en H-035.1; bloque de pago completo en H-035.3). */}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">

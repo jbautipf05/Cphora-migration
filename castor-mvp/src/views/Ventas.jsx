@@ -38,6 +38,7 @@ export default function Ventas() {
   const [asesor, setAsesor] = useState('');
   const [selId, setSelId] = useState(null);
   const [saleOpen, setSaleOpen] = useState(false); // H-035: modal Nueva venta
+  const [saleInnovation, setSaleInnovation] = useState(false); // H-036: modo innovación
   const [pay, setPay] = useState(null); // {orderId, amount, method, bankId}
 
   // OPs rechazadas por auditoría (espejo HTML línea 5216).
@@ -348,8 +349,8 @@ export default function Ventas() {
         <span className="ml-auto text-sm text-brand-muted">{rows.length} pedidos</span>
         {/* H-032: renombrar a "+ Nueva venta" + agregar "+ Venta innovación".
             El modal específico de innovación se construye en H-036 (flag innovation). Demo6:5275-5276. */}
-        <button className="btn-outline" onClick={() => setSaleOpen(true)}>+ Venta innovación</button>
-        <button className="btn-gold" onClick={() => setSaleOpen(true)}>+ Nueva venta</button>
+        <button className="btn-outline" onClick={() => { setSaleInnovation(true); setSaleOpen(true); }}>+ Venta innovación</button>
+        <button className="btn-gold" onClick={() => { setSaleInnovation(false); setSaleOpen(true); }}>+ Nueva venta</button>
       </Toolbar>
 
       {/* H-033: ayuda de doble clic (Demo6:5280). */}
@@ -420,6 +421,7 @@ export default function Ventas() {
         customers={customers}
         asesores={ASESORES}
         bankAccounts={bankAccounts}
+        innovation={saleInnovation}
         onSubmit={submitSale}
       />
 

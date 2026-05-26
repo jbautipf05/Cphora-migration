@@ -30,7 +30,7 @@ const emptyForm = () => ({
   payManual: false, payAmount: '',
 });
 
-export default function NuevaVentaModal({ open, onClose, products = [], customers = [], asesores = [], bankAccounts = [], onSubmit }) {
+export default function NuevaVentaModal({ open, onClose, products = [], customers = [], asesores = [], bankAccounts = [], innovation = false, onSubmit }) {
   const [f, setF] = useState(emptyForm());
   const [searchField, setSearchField] = useState('name');
   const [searchQ, setSearchQ] = useState('');
@@ -102,7 +102,7 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
     <Modal
       open={open}
       onClose={handleClose}
-      title="Nueva venta"
+      title={innovation ? 'Nueva venta — Innovación' : 'Nueva venta'}
       size="lg"
       footer={
         <>
@@ -111,7 +111,7 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
             <span className="font-semibold text-brand-gold">{fmtCOP(total)}</span>
           </div>
           <button className="btn-outline" onClick={handleClose}>Cancelar</button>
-          <button className="btn-gold" onClick={handleSubmit}>Registrar venta</button>
+          <button className="btn-gold" onClick={handleSubmit}>{innovation ? 'Registrar venta innovación' : 'Registrar venta'}</button>
         </>
       }
     >

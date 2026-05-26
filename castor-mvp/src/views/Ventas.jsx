@@ -39,6 +39,7 @@ export default function Ventas() {
   const [tipo, setTipo] = useState('');
   const [medio, setMedio] = useState('');
   const [pdv, setPdv] = useState('');
+  const [asesor, setAsesor] = useState('');
   const [selId, setSelId] = useState(null);
   const [form, setForm] = useState(null);
   const [pay, setPay] = useState(null); // {orderId, amount, method, bankId}
@@ -52,6 +53,10 @@ export default function Ventas() {
   const sel = orders.find((o) => o.id === selId) || null;
   const estados = useMemo(() => [...new Set(orders.map((o) => o.estado))], [orders]);
   const tipos = useMemo(() => [...new Set(orders.map((o) => o.tipo))], [orders]);
+  const asesores = useMemo(
+    () => [...new Set(orders.map((o) => o.asesor).filter(Boolean))].sort(),
+    [orders],
+  );
   const pName = (id) => products.find((p) => p.id === id)?.name || id;
   // B2 (ADR-011): nombre a mostrar resuelto por customerId (refleja renombres);
   // fallback al clientName almacenado para datos legacy sin FK.
@@ -64,6 +69,7 @@ export default function Ventas() {
       if (tipo && o.tipo !== tipo) return false;
       if (medio && o.medio !== medio) return false;
       if (pdv && o.pdv !== pdv) return false;
+      if (asesor && o.asesor !== asesor) return false;
       if (
         t &&
         !`${o.id} ${o.clientName} ${o.asesor || ''} ${o.medio || ''} ${o.pdv || ''}`
@@ -73,7 +79,7 @@ export default function Ventas() {
         return false;
       return true;
     });
-  }, [orders, q, estado, tipo, medio, pdv]);
+  }, [orders, q, estado, tipo, medio, pdv, asesor]);
 
   const kpis = useMemo(() => {
     const valor = orders.reduce((a, o) => a + (o.total || 0), 0);
@@ -275,9 +281,10 @@ export default function Ventas() {
         <SelectFilter value={tipo} onChange={setTipo} options={tipos} allLabel="Todos los tipos" />
         <SelectFilter value={medio} onChange={setMedio} options={MEDIOS} allLabel="Todos los medios" />
         <SelectFilter value={pdv} onChange={setPdv} options={PDVS} allLabel="Todos los PDV" />
+        <SelectFilter value={asesor} onChange={setAsesor} options={asesores} allLabel="Todos los asesores" />
         <ClearFiltersButton
-          active={!!(q || estado || tipo || medio || pdv)}
-          onClear={() => { setQ(''); setEstado(''); setTipo(''); setMedio(''); setPdv(''); }}
+          active={!!(q || estado || tipo || medio || pdv || asesor)}
+          onClear={() => { setQ(''); setEstado(''); setTipo(''); setMedio(''); setPdv(''); setAsesor(''); }}
         />
         <span className="ml-auto text-sm text-brand-muted">{rows.length} pedidos</span>
         <button className="btn-gold" onClick={() => setForm(emptyOrder())}>+ Nuevo pedido</button>

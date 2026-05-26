@@ -1,30 +1,29 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
-import { KpiCard, Badge, Chip } from '../components/ui';
+import { KpiCard, Chip } from '../components/ui';
 import { fmtCOP } from '../lib/accounting';
-import {
-  Toolbar,
-  SearchBox,
-  SelectFilter,
-  SlidePanel,
-  ClearFiltersButton,
-} from '../components/widgets';
+import { SlidePanel } from '../components/widgets';
 import { IconBox, IconTag, IconBank, IconShield } from '../components/icons';
+import { useToast } from '../components/Toast';
+import { exportPriceListPDF } from '../lib/priceListPdf';
+import Modal from '../components/Modal';
+import { Field, Input, Select, Textarea } from '../components/form';
+import { uid } from '../lib/format';
 
 // Lista de precios — catálogo de productos con filtros completos.
 // Espejo HTML: search + categoría + bodega + rango de precio.
 export default function ListaPrecios() {
-  const { products, warehouses, finishedStock } = useApp();
+  const { products, warehouses, finishedStock, add, nextId } = useApp();
   const [q, setQ] = useState('');
   const [cat, setCat] = useState('');
   const [bodega, setBodega] = useState('');
-  const [precioMin, setPrecioMin] = useState('');
-  const [precioMax, setPrecioMax] = useState('');
   const [sel, setSel] = useState(null);
+  const [form, setForm] = useState(null); // H-041: modal nuevo producto
+  const toast = useToast();
+  const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   const categorias = useMemo(() => [...new Set(products.map((p) => p.category).filter(Boolean))], [products]);
   const ptBodegas = warehouses.filter((w) => w.tipo === 'terminado');
-  const wName = (id) => warehouses.find((w) => w.id === id)?.code || id;
 
   // Cantidad disponible por producto a partir de finishedStock.
   const stockByProduct = useMemo(() => {
@@ -39,22 +38,50 @@ export default function ListaPrecios() {
 
   const rows = useMemo(() => {
     const t = q.toLowerCase();
-    const min = Number(precioMin) || 0;
-    const max = Number(precioMax) || Infinity;
     return products.filter((p) => {
       if (cat && p.category !== cat) return false;
       if (bodega) {
         const st = stockByProduct[p.id];
         if (!st || !st.byW[bodega]) return false;
       }
-      if (p.price < min || p.price > max) return false;
       if (t && !`${p.name} ${p.sku || ''} ${p.description || ''}`.toLowerCase().includes(t)) return false;
       return true;
     });
-  }, [products, q, cat, bodega, precioMin, precioMax, stockByProduct]);
+  }, [products, q, cat, bodega, stockByProduct]);
 
-  const hasFilters = !!(q || cat || bodega || precioMin || precioMax);
-  const clearAll = () => { setQ(''); setCat(''); setBodega(''); setPrecioMin(''); setPrecioMax(''); };
+  const hasFilters = !!(q || cat || bodega);
+  const clearAll = () => { setQ(''); setCat(''); setBodega(''); };
+  // H-040: exporta la lista (filtrada) a PDF corporativo.
+  const handleExportPdf = () => {
+    exportPriceListPDF(rows, { warehouses });
+    toast(`PDF de ${rows.length} producto(s) generado`, 'ok');
+  };
+
+  // H-041: alta rápida de producto al catálogo (modal simple, sin BOM).
+  const emptyProduct = () => ({
+    name: '', sku: '', category: '', price: 0, description: '',
+    ancho: '', alto: '', profundidad: '', warehouseId: ptBodegas[0]?.id || '', stock: 1, photo: '📦',
+  });
+  const saveNewProduct = () => {
+    if (!form.name.trim()) return toast('El nombre es obligatorio', 'warn');
+    if (!form.category) return toast('Selecciona la categoría', 'warn');
+    if (!(Number(form.price) > 0)) return toast('Indica el precio comercial', 'warn');
+    const id = nextId('PROD', 'prod', 0);
+    const sku = form.sku.trim() || `${form.category.slice(0, 3).toUpperCase()}-${id.toUpperCase()}`;
+    const stockIni = Number(form.stock) || 0;
+    add('products', {
+      id, sku, name: form.name.trim(), category: form.category, photo: form.photo || '📦',
+      warehouseId: form.warehouseId, description: form.description,
+      dimensions: { ancho: Number(form.ancho) || 0, alto: Number(form.alto) || 0, profundidad: Number(form.profundidad) || 0 },
+      stock: stockIni, min: 0, cost: 0, price: Number(form.price) || 0, verified: true,
+    });
+    // Stock inicial → registro en finishedStock para que aparezca en el catálogo/disponibilidad.
+    if (stockIni > 0 && form.warehouseId) {
+      add('finishedStock', { id: uid('FS'), productId: id, warehouseId: form.warehouseId, qty: stockIni, status: 'disponible' });
+    }
+    toast(`Producto ${sku} creado`, 'ok');
+    setForm(null);
+  };
 
   // KPIs
   const totalStock = Object.values(stockByProduct).reduce((a, s) => a + s.total, 0);
@@ -93,35 +120,39 @@ export default function ListaPrecios() {
         />
       </div>
 
-      {/* Panel filtros */}
+      {/* H-038: texto sutil + filtros simplificados + botones (Demo6). */}
+      <p className="text-[11px] text-muted">
+        Catálogo completo con medidas finales, precio, descripción y ubicación.
+      </p>
       <div className="panel p-4">
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-3 xl:grid-cols-6">
-          <SearchBox value={q} onChange={setQ} placeholder="Nombre, SKU…" />
-          <select value={cat} onChange={(e) => setCat(e.target.value)} className="input-field">
-            <option value="">Todas las categorías</option>
-            {categorias.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <select value={bodega} onChange={(e) => setBodega(e.target.value)} className="input-field">
-            <option value="">Todas las bodegas</option>
-            {ptBodegas.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
-          </select>
-          <input
-            type="number"
-            value={precioMin}
-            onChange={(e) => setPrecioMin(e.target.value)}
-            placeholder="Precio mín"
-            className="input-field"
-          />
-          <input
-            type="number"
-            value={precioMax}
-            onChange={(e) => setPrecioMax(e.target.value)}
-            placeholder="Precio máx"
-            className="input-field"
-          />
-          <div className="flex items-center gap-2">
-            <ClearFiltersButton active={hasFilters} onClear={clearAll} />
-            <span className="ml-auto text-xs text-muted">{rows.length} productos</span>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[240px] flex-1">
+            <label className="label">Buscar</label>
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Buscar por nombre, SKU o descripción"
+              className="input-field"
+            />
+          </div>
+          <div>
+            <label className="label">Categoría</label>
+            <select value={cat} onChange={(e) => setCat(e.target.value)} className="input-field">
+              <option value="">Todas</option>
+              {categorias.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label">Bodega</label>
+            <select value={bodega} onChange={(e) => setBodega(e.target.value)} className="input-field">
+              <option value="">Todas</option>
+              {ptBodegas.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
+            </select>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            {hasFilters && <button onClick={clearAll} className="btn-outline text-xs">Limpiar</button>}
+            <button onClick={handleExportPdf} className="btn-outline text-xs">📄 Exportar PDF</button>
+            <button onClick={() => setForm(emptyProduct())} className="btn-gold">+ Nuevo producto</button>
           </div>
         </div>
       </div>
@@ -139,44 +170,49 @@ export default function ListaPrecios() {
               <div className="mb-3 grid h-32 place-items-center rounded-lg bg-brand-bg/60 text-5xl">
                 {p.photo}
               </div>
+              {/* H-039: SKU arriba (mono gris), nombre grande; un solo badge categoría (ocre). */}
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="font-semibold text-white">{p.name}</p>
                   <p className="font-mono text-[11px] text-muted">{p.sku}</p>
+                  <p className="text-lg font-bold text-white">{p.name}</p>
                 </div>
                 <Chip variant="gold">{p.category}</Chip>
               </div>
               {p.description && (
                 <p className="mt-2 line-clamp-2 text-xs text-muted">{p.description}</p>
               )}
-              <div className="mt-3 flex items-end justify-between">
-                <span className="text-lg font-bold text-gold-accent">{fmtCOP(p.price)}</span>
-                <span
-                  className={`text-xs ${stock.total === 0 ? 'text-red-300' : stock.total <= 2 ? 'text-amber-300' : 'text-emerald-300'}`}
-                >
-                  {stock.total} und disp.
-                </span>
-              </div>
-              {Object.keys(stock.byW).length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {Object.entries(stock.byW).map(([wid, q]) => {
-                    const w = warehouses.find((x) => x.id === wid);
-                    return (
-                      <span
-                        key={wid}
-                        className="warehouse-pill !text-[10px]"
-                        style={{
-                          color: w?.color,
-                          borderColor: `${w?.color}55`,
-                          background: `${w?.color}1f`,
-                        }}
-                      >
-                        {w?.code}: {q}
-                      </span>
-                    );
-                  })}
+              {/* Especificaciones: Medidas (dorado) + Bodega (color por sede). */}
+              <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <div className="text-muted">Medidas</div>
+                  <div className="font-semibold text-brand-gold-light">
+                    {p.dimensions ? `${p.dimensions.ancho} × ${p.dimensions.alto} × ${p.dimensions.profundidad} cm` : '—'}
+                  </div>
                 </div>
-              )}
+                <div>
+                  <div className="text-muted">Bodega</div>
+                  <div className="font-semibold" style={{ color: warehouses.find((w) => w.id === p.warehouseId)?.color }}>
+                    {warehouses.find((w) => w.id === p.warehouseId)?.code || '—'}
+                  </div>
+                </div>
+              </div>
+              {/* Cierre: precio comercial + stock (solo número, sin "und disp."). */}
+              <div className="mt-3 flex items-end justify-between border-t border-white/10 pt-3">
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted">Precio comercial</div>
+                  <div className="text-xl font-bold text-gold-accent">{fmtCOP(p.price)}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px] text-muted">Stock</div>
+                  <div
+                    className={`text-lg font-semibold ${
+                      stock.total === 0 ? 'text-red-400' : stock.total <= (p.min || 0) ? 'text-amber-300' : 'text-white'
+                    }`}
+                  >
+                    {stock.total}
+                  </div>
+                </div>
+              </div>
             </button>
           );
         })}
@@ -244,6 +280,71 @@ export default function ListaPrecios() {
           </div>
         )}
       </SlidePanel>
+
+      {/* H-041: Modal Nuevo producto (A datos+imagen · B dimensiones · C ubicación/stock). */}
+      <Modal
+        open={!!form}
+        onClose={() => setForm(null)}
+        title="Nuevo producto"
+        size="lg"
+        footer={
+          <>
+            <button className="btn-outline" onClick={() => setForm(null)}>Cancelar</button>
+            <button className="btn-gold" onClick={saveNewProduct}>Crear producto</button>
+          </>
+        }
+      >
+        {form && (
+          <div className="space-y-5">
+            {/* Bloque A: datos básicos + imagen */}
+            <div className="flex flex-col gap-4 sm:flex-row">
+              <div className="sm:w-40">
+                <div className="grid h-32 place-items-center rounded-lg border border-dashed border-white/15 bg-brand-bg/60 text-5xl">
+                  {form.photo || '➕'}
+                </div>
+                <Input className="mt-2 text-center" value={form.photo} onChange={(e) => setField('photo', e.target.value)} placeholder="+ Imagen (emoji)" />
+              </div>
+              <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2">
+                <Field label="Nombre del producto *"><Input value={form.name} onChange={(e) => setField('name', e.target.value)} /></Field>
+                <Field label="SKU"><Input value={form.sku} onChange={(e) => setField('sku', e.target.value)} placeholder="Autogenerado si vacío" /></Field>
+                <Field label="Categoría *">
+                  <Select value={form.category} onChange={(e) => setField('category', e.target.value)}>
+                    <option value="">— Elegir —</option>
+                    {categorias.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Precio comercial *"><Input type="number" min="0" value={form.price} onChange={(e) => setField('price', Number(e.target.value))} /></Field>
+                <Field className="sm:col-span-2" label="Descripción corta / detalles de materiales">
+                  <Textarea rows={2} value={form.description} onChange={(e) => setField('description', e.target.value)} placeholder="Ej: estructura de madera sólida, tapizado en tela…" />
+                </Field>
+              </div>
+            </div>
+
+            {/* Bloque B: dimensiones */}
+            <div>
+              <p className="mb-2 text-sm font-semibold gold-title">Dimensiones</p>
+              <div className="grid grid-cols-3 gap-3">
+                <Field label="Ancho (cm) *"><Input type="number" min="0" value={form.ancho} onChange={(e) => setField('ancho', e.target.value)} /></Field>
+                <Field label="Alto (cm) *"><Input type="number" min="0" value={form.alto} onChange={(e) => setField('alto', e.target.value)} /></Field>
+                <Field label="Profundidad (cm) *"><Input type="number" min="0" value={form.profundidad} onChange={(e) => setField('profundidad', e.target.value)} /></Field>
+              </div>
+            </div>
+
+            {/* Bloque C: ubicación y stock */}
+            <div>
+              <p className="mb-2 text-sm font-semibold gold-title">Ubicación y Stock</p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Field label="Bodega / sede inicial *">
+                  <Select value={form.warehouseId} onChange={(e) => setField('warehouseId', e.target.value)}>
+                    {ptBodegas.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Stock inicial *"><Input type="number" min="0" value={form.stock} onChange={(e) => setField('stock', Number(e.target.value))} /></Field>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

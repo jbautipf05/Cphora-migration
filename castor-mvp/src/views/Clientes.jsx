@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
-import { KpiCard, Badge, Chip, TIPO_LEAD } from '../components/ui';
+import { KpiCard, Badge, Chip } from '../components/ui';
 import { fmtCOP } from '../lib/accounting';
 import { fmtDate, daysBetween, today, nowISO } from '../lib/format';
-import { Toolbar, SearchBox, SelectFilter, DataTable, SlidePanel, ClearFiltersButton, EstadoBadge } from '../components/widgets';
-import { IconSearch } from '../components/icons';
+import { DataTable, SlidePanel, ClearFiltersButton } from '../components/widgets';
+import { IconUsers, IconCheck, IconBadge, IconPhone } from '../components/icons';
 import { useToast } from '../components/Toast';
 
 export default function Clientes() {
@@ -98,11 +98,18 @@ export default function Clientes() {
     const totals = Object.values(summary);
     return {
       total: customers.length,
-      institucionales: customers.filter((c) => c.tipo === 'institucional').length,
       activos: totals.filter((s) => s.procesos > 0).length,
-      pendientesPostventa: totals.reduce((a, s) => a + (s.postventaAbiertos || 0), 0),
+      // VIP: histórico ≥ $20M (igual que Demo6 customerTotalHist >= 20000000).
+      vip: totals.filter((s) => s.historico >= 20000000).length,
+      // Postventa pendiente: nº de CLIENTES con ≥1 seguimiento 'pendiente' (Demo6:4258),
+      // no la suma total de seguimientos abiertos (bug previo que daba 3).
+      pendientesPostventa: customers.filter((c) =>
+        (postSales || []).some(
+          (p) => (p.customerId === c.id || p.clientName === c.name) && p.estado === 'pendiente',
+        ),
+      ).length,
     };
-  }, [customers, summary]);
+  }, [customers, summary, postSales]);
 
   const columns = [
     {
@@ -124,28 +131,31 @@ export default function Clientes() {
       key: 'tipo',
       label: 'Tipo',
       sortValue: (r) => r.tipo,
-      render: (r) => <Chip variant={TIPO_LEAD[r.tipo] || 'gray'}>{r.tipo}</Chip>,
+      // Demo6 (clientes): institucional → badge-info (azul) "Institucional"; resto → badge-ok
+      // (verde) "Persona", con mayúscula inicial (sin uppercase). Ver Demo6:4312.
+      render: (r) => {
+        const inst = r.tipo === 'institucional';
+        return (
+          <Chip variant={inst ? 'info' : 'ok'} uppercase={false}>
+            {inst ? 'Institucional' : 'Persona'}
+          </Chip>
+        );
+      },
     },
     { key: 'doc', label: 'Documento', render: (r) => <span className="text-muted">{r.doc}</span> },
     { key: 'city', label: 'Ciudad', render: (r) => <span className="text-muted">{r.city}</span> },
+    // H-018: columna TELÉFONO entre Ciudad y Asesor (Demo6:4287).
+    { key: 'phone', label: 'Teléfono', render: (r) => <span className="text-muted">{r.phone || '—'}</span> },
     { key: 'asesor', label: 'Asesor', render: (r) => <span className="text-muted">{r.asesor}</span> },
     {
       key: 'procesos',
       label: 'Procesos',
       align: 'right',
       sortValue: (r) => summary[r.id]?.procesos || 0,
+      // Demo6 (Demo6:4317): número único consolidado, dorado si >0 (suma de sub-procesos).
       render: (r) => {
-        const s = summary[r.id];
-        if (!s || s.procesos === 0) return <span className="text-muted/50">—</span>;
-        return (
-          <span className="text-xs">
-            <span className="text-emerald-300">{s.pedidos.length}</span>
-            <span className="text-muted/50">/</span>
-            <span className="text-sky-300">{s.cotizaciones.length}</span>
-            <span className="text-muted/50">/</span>
-            <span className="text-gold-accent">{s.leadsVinc.length}</span>
-          </span>
-        );
+        const n = summary[r.id]?.procesos || 0;
+        return <span className={`font-bold ${n ? 'text-gold-accent' : 'text-muted/50'}`}>{n}</span>;
       },
     },
     {
@@ -162,15 +172,8 @@ export default function Clientes() {
       render: (r) => {
         const u = summary[r.id]?.ultimo;
         if (!u) return <span className="text-muted/50">—</span>;
-        const dd = daysBetween(u, today());
-        return (
-          <span className="text-xs text-muted">
-            {fmtDate(u)}
-            {dd != null && (
-              <span className="ml-1 text-[10px] opacity-70">hace {dd}d</span>
-            )}
-          </span>
-        );
+        // Demo6 muestra solo la fecha limpia, sin texto relativo "hace Nd".
+        return <span className="text-xs text-muted">{fmtDate(u)}</span>;
       },
     },
   ];
@@ -179,37 +182,66 @@ export default function Clientes() {
 
   return (
     <div className="space-y-5">
+      {/* H-016: orden y tarjetas según Demo6:4261-4264 (Total → Con procesos → VIP → Postventa),
+          con subtítulos e iconos. */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Total clientes" value={kpis.total} accent="#38bdf8" />
-        <KpiCard label="Institucionales" value={kpis.institucionales} accent="#a78bfa" />
-        <KpiCard label="Con procesos activos" value={kpis.activos} accent="#34d399" />
-        <KpiCard label="Postventa pendiente" value={kpis.pendientesPostventa} accent="#f87171" />
+        <KpiCard label="Total clientes" value={kpis.total} hint="En la base" accent="#C9A961" icon={<IconUsers width={18} height={18} />} />
+        <KpiCard label="Con procesos activos" value={kpis.activos} hint="Lead/Cot/Venta/Postventa" accent="#3b82f6" icon={<IconCheck width={18} height={18} />} />
+        <KpiCard label="VIP" value={kpis.vip} hint="Histórico ≥ $20M" accent="#f59e0b" icon={<IconBadge width={18} height={18} />} />
+        <KpiCard label="Postventa pendiente" value={kpis.pendientesPostventa} hint="Seguimientos abiertos" accent={kpis.pendientesPostventa ? '#ef4444' : '#10b981'} icon={<IconPhone width={18} height={18} />} />
       </div>
 
-      <Toolbar>
-        <div className="relative">
-          <IconSearch
-            width={14}
-            height={14}
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"
-          />
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Buscar nombre, doc, teléfono o email…"
-            className="w-72 rounded-lg border border-white/10 bg-brand-bg/60 py-2 pl-9 pr-3 text-sm text-white placeholder-muted/60 outline-none transition focus:border-gold-accent/60"
-          />
+      {/* H-017: filtros con labels (mayúsc. pequeñas), buscador ancho y contenedor unificado.
+          Réplica de Demo6:4267-4276 (panel + grid 6 cols, Buscar = col-span-2). */}
+      <div className="panel mb-5 p-4">
+        <div className="mb-3 grid grid-cols-2 gap-3 md:grid-cols-6">
+          <div className="col-span-2">
+            <label className="label">Buscar</label>
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Nombre, doc, teléfono..."
+              className="input-field py-1.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="label">Ciudad</label>
+            <select value={ciudad} onChange={(e) => setCiudad(e.target.value)} className="input-field py-1.5 text-sm">
+              <option value="">Todas</option>
+              {ciudades.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label">Asesor</label>
+            <select value={asesor} onChange={(e) => setAsesor(e.target.value)} className="input-field py-1.5 text-sm">
+              <option value="">Todos</option>
+              {asesores.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label">Tipo</label>
+            <select value={tipo} onChange={(e) => setTipo(e.target.value)} className="input-field py-1.5 text-sm">
+              <option value="">Todos</option>
+              <option value="lead">Persona</option>
+              <option value="institucional">Institucional</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">Estado</label>
+            <select value={estado} onChange={(e) => setEstado(e.target.value)} className="input-field py-1.5 text-sm">
+              <option value="">Todos</option>
+              <option value="activo">Activo</option>
+              <option value="inactivo">Inactivo</option>
+              <option value="vip">VIP</option>
+            </select>
+          </div>
         </div>
-        <SelectFilter value={ciudad} onChange={setCiudad} options={ciudades} allLabel="Todas las ciudades" />
-        <SelectFilter value={asesor} onChange={setAsesor} options={asesores} allLabel="Todos los asesores" />
-        <SelectFilter value={tipo} onChange={setTipo} options={['lead', 'institucional']} allLabel="Todos los tipos" />
-        <SelectFilter value={estado} onChange={setEstado} options={['activo', 'inactivo', 'vip']} allLabel="Todos los estados" />
         <ClearFiltersButton
           active={!!(q || ciudad || asesor || tipo || estado)}
           onClear={() => { setQ(''); setCiudad(''); setAsesor(''); setTipo(''); setEstado(''); }}
+          label="× Limpiar filtros"
         />
-        <span className="ml-auto text-sm text-muted">{rows.length} clientes</span>
-      </Toolbar>
+      </div>
 
       <DataTable columns={columns} rows={rows} getKey={(r) => r.id} onRowClick={setSel} />
 
@@ -219,14 +251,15 @@ export default function Clientes() {
         title={
           sel ? (
             <span className="inline-flex items-center gap-2">
-              <span className="font-mono text-xs text-muted">{sel.id}</span>
-              <Chip variant={TIPO_LEAD[sel.tipo] || 'gray'}>
+              <span className="font-mono text-xs text-brand-gold">{sel.id}</span>
+              <Chip variant={sel.tipo === 'institucional' ? 'info' : 'ok'} uppercase={false}>
                 {sel.tipo === 'institucional' ? 'Institucional' : 'Persona'}
               </Chip>
+              {selSummary?.estadoCli === 'vip' && <Badge tone="gold">VIP</Badge>}
             </span>
           ) : ''
         }
-        subtitle={sel?.name}
+        subtitle={sel ? <span className="text-lg font-bold text-gold-accent">{sel.name}</span> : ''}
       >
         {sel && selSummary && (() => {
           const cliPagos = payments.filter((p) =>
@@ -249,7 +282,7 @@ export default function Clientes() {
               {/* Header con info de contacto */}
               <div className="space-y-1 text-sm">
                 {sel.phone && (
-                  <p className="text-white">📞 <span className="text-white">{sel.phone}</span> · ✉ <span className="text-white">{sel.email}</span> · 🆔 <span className="text-white">{sel.doc}</span> · 📍 <span className="text-white">{sel.city}</span></p>
+                  <p className="text-white">📱 <span className="text-white">{sel.phone}</span> · ✉ <span className="text-white">{sel.email}</span> · 🪪 <span className="text-white">{sel.doc}</span> · 📍 <span className="text-white">{sel.city}</span></p>
                 )}
                 {sel.address && <p className="text-muted">🏠 {sel.address}</p>}
                 {sel.address && <p className="text-muted">🚚 Entrega: {sel.address}</p>}
@@ -257,26 +290,28 @@ export default function Clientes() {
               </div>
 
               {/* KPIs */}
+              {/* H-026: títulos con mayúscula inicial (sin uppercase), Histórico dorado,
+                  Saldo rojo/coral vivo. Ver Demo6:4364-4366. */}
               <div className="grid grid-cols-3 gap-2">
                 <div className="panel-2 rounded-lg p-3">
-                  <p className="text-[11px] uppercase text-muted">Histórico</p>
-                  <p className="mt-0.5 text-lg font-bold text-white">{fmtCOP(selSummary.historico)}</p>
+                  <p className="text-[11px] text-muted">Histórico</p>
+                  <p className="mt-0.5 text-lg font-bold text-gold-accent">{fmtCOP(selSummary.historico)}</p>
                 </div>
                 <div className="panel-2 rounded-lg p-3">
-                  <p className="text-[11px] uppercase text-muted">Saldo</p>
-                  <p className={`mt-0.5 text-lg font-bold ${saldoPendiente > 0 ? 'text-red-300' : 'text-emerald-300'}`}>
+                  <p className="text-[11px] text-muted">Saldo</p>
+                  <p className={`mt-0.5 text-lg font-bold ${saldoPendiente > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
                     {fmtCOP(saldoPendiente)}
                   </p>
                 </div>
                 <div className="panel-2 rounded-lg p-3">
-                  <p className="text-[11px] uppercase text-muted">Procesos activos</p>
+                  <p className="text-[11px] text-muted">Procesos activos</p>
                   <p className="mt-0.5 text-lg font-bold text-white">{selSummary.procesos}</p>
                 </div>
               </div>
 
               {/* Sección Leads */}
               <div className="panel-2 rounded-lg p-4">
-                <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-white">
+                <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-gold-accent">
                   🔥 Leads ({selSummary.leadsVinc.length})
                 </p>
                 {selSummary.leadsVinc.length === 0 ? (
@@ -296,7 +331,7 @@ export default function Clientes() {
 
               {/* Sección Cotizaciones */}
               <div className="panel-2 rounded-lg p-4">
-                <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-white">
+                <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-gold-accent">
                   📄 Cotizaciones ({selSummary.cotizaciones.length})
                 </p>
                 {selSummary.cotizaciones.length === 0 ? (
@@ -318,7 +353,7 @@ export default function Clientes() {
 
               {/* Sección Ventas / Pedidos */}
               <div className="panel-2 rounded-lg p-4">
-                <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
+                <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-gold-accent">
                   🛒 Ventas / Pedidos ({selSummary.pedidos.length})
                 </p>
                 {selSummary.pedidos.length === 0 ? (
@@ -342,7 +377,8 @@ export default function Clientes() {
                           <tr key={o.id} className="border-t border-white/5">
                             <td className="py-1 font-mono text-gold-accent">{o.id}</td>
                             <td className="py-1">
-                              <Chip variant={o.estado === 'entregado' ? 'ok' : 'info'}>
+                              {/* H-028: badge minúsculas + azul (info), id PED- se mantiene (decisión cosmética). Demo6:4381 */}
+                              <Chip variant="info" uppercase={false}>
                                 {o.estado}
                               </Chip>
                             </td>
@@ -362,7 +398,7 @@ export default function Clientes() {
 
               {/* Sección Pagos */}
               <div className="panel-2 rounded-lg p-4">
-                <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-white">
+                <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-gold-accent">
                   💰 Pagos ({cliPagos.length})
                 </p>
                 {cliPagos.length === 0 ? (
@@ -386,7 +422,7 @@ export default function Clientes() {
               {/* Sección Postventa */}
               <div className="panel-2 rounded-lg p-4">
                 <div className="mb-2 flex items-center justify-between">
-                  <p className="flex items-center gap-2 text-sm font-semibold text-white">
+                  <p className="flex items-center gap-2 text-sm font-semibold text-gold-accent">
                     📞 Postventa ({cliPostventa.length})
                   </p>
                   {pendientesPSV > 0 && (
@@ -423,7 +459,7 @@ export default function Clientes() {
 
               {/* Sección Garantías */}
               <div className="panel-2 rounded-lg p-4">
-                <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-white">
+                <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-gold-accent">
                   🛡 Garantías ({cliGarantias.length})
                 </p>
                 {cliGarantias.length === 0 ? (
@@ -444,7 +480,7 @@ export default function Clientes() {
               {/* Notas */}
               <div className="panel-2 rounded-lg p-4">
                 <div className="mb-2 flex items-center justify-between">
-                  <p className="flex items-center gap-2 text-sm font-semibold text-white">
+                  <p className="flex items-center gap-2 text-sm font-semibold text-gold-accent">
                     📝 Notas y seguimientos
                   </p>
                   <button

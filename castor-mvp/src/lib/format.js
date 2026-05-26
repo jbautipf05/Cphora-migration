@@ -19,7 +19,8 @@ export const fmtDate = (d) => {
   if (!d) return '—';
   const date = _toDate(d);
   if (isNaN(date)) return String(d);
-  return date.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' });
+  // Demo6 usa day:'numeric' (sin cero a la izquierda) — ver Demo6 fmtDate (línea 149).
+  return date.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
 export const fmtDateTime = (d) => {

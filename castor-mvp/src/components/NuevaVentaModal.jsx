@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Modal from './Modal';
 import { Field, Input, Select } from './form';
 import { fmtCOP } from '../lib/format';
@@ -34,10 +34,24 @@ const emptyForm = () => ({
   innovRefPhoto: '', innovConsentPhoto: '',
 });
 
-export default function NuevaVentaModal({ open, onClose, products = [], customers = [], asesores = [], bankAccounts = [], innovation = false, onSubmit }) {
+export default function NuevaVentaModal({ open, onClose, products = [], customers = [], asesores = [], bankAccounts = [], innovation = false, prefill = null, onSubmit }) {
   const [f, setF] = useState(emptyForm());
   const [searchField, setSearchField] = useState('name');
   const [searchQ, setSearchQ] = useState('');
+
+  // EX-F2-03: al abrir, sembrar el form con la precarga (cotización→venta) o
+  // dejarlo vacío. La precarga llega ya en el shape del form (cliente + items),
+  // así que basta mergearla sobre emptyForm(). Se siembra solo en la transición
+  // de apertura para no pisar la edición del usuario.
+  useEffect(() => {
+    if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setF(prefill ? { ...emptyForm(), ...prefill } : emptyForm());
+      setSearchField('name');
+      setSearchQ('');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   const setItem = (i, k, v) =>

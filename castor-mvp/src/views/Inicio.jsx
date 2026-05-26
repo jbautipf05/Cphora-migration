@@ -138,8 +138,8 @@ export default function Inicio({ onNavigate }) {
             {k.finishedQty} <span className="text-sm font-normal text-brand-muted">unidades listas</span>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-2">
+            {/* H-002: mostrar TODAS las bodegas (incl. Insumos 1/2 en 0), espejo de Demo6 */}
             {warehouses
-              .filter((w) => w.tipo === 'terminado')
               .map((w) => {
                 const q = finishedStock.filter((f) => f.warehouseId === w.id).reduce((a, f) => a + f.qty, 0);
                 return (

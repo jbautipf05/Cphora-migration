@@ -16,7 +16,12 @@ export function exportQuotePDF(q, { products = [], leads = [], customers = [], e
 
   // Datos del lead/cliente para llenar el header
   const lead = q.leadId ? leads.find((x) => x.id === q.leadId) : null;
-  const customer = lead || customers.find((c) => c.name === q.clientName) || {};
+  // B2 (ADR-011): preferir customerId (FK); luego lead; luego match por nombre (legacy).
+  const customer =
+    (q.customerId && customers.find((c) => c.id === q.customerId)) ||
+    lead ||
+    customers.find((c) => c.name === q.clientName) ||
+    {};
   const asesorEmp = employees.find((e) => e.name === q.asesor);
 
   const sub = subtotal(q);

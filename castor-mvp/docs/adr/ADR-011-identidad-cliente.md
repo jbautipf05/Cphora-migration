@@ -5,10 +5,10 @@
 **Decisores:** Usuario/cliente + equipo de desarrollo
 **Relacionado:** REVISION_TECNICA_PRE_FASE2 §BLOQUEANTES (B2) · TD-29 · ADR-010 (Firebase)
 
-> ⚠️ **Nota de numeración:** `ADR-010` (línea 81) reservó "ADR-011" como placeholder para el
-> *modelo de datos Firestore detallado*. Este ADR ocupa el número 011 por instrucción
-> explícita del usuario. Conviene renumerar aquel placeholder a ADR-012 (y correr la cadena
-> 012→013, 013→014) para evitar colisión. **Decisión de renumeración: pendiente del usuario.**
+> ℹ️ **Nota de numeración (resuelta):** `ADR-010` reservaba "ADR-011" como placeholder para el
+> *modelo de datos Firestore detallado*. Por decisión del usuario (2026-05-26) este ADR de
+> identidad de cliente ocupa el **011**, y los placeholders de ADR-010 se corrieron:
+> Firestore data-model → **ADR-012**, Cloud Functions → **ADR-013**, reglas de seguridad → **ADR-014**.
 
 ---
 
@@ -119,11 +119,23 @@ identidad. **Descartada como identidad; adoptada como criterio de matching en el
 - **A revisar luego:** unificar también el vínculo lead↔cliente (`linkedLeadId`/`linkedCustomerId`),
   hoy parcialmente poblado.
 
-## Action items (NO ejecutar hasta OK del usuario)
-1. [ ] OK del usuario a la Opción A y a la renumeración del placeholder ADR-011→012 de ADR-010.
+## Decisiones del usuario (2026-05-26)
+- ✅ **Opción A** aprobada.
+- ✅ **Walk-in:** crear el cliente automáticamente al **crear un pedido** sin match.
+- ✅ **Display:** reflejar el nombre actual (resolver por `customerId`, fallback `clientName`).
+- ✅ **Numeración:** placeholders de ADR-010 corridos a 012/013/014.
+
+> **Matiz de implementación (cotizaciones):** una cotización es **pre-venta** (etapa de lead).
+> Para no contaminar el embudo de Clientes con prospectos, B2 enlaza `customerId` en una
+> cotización **solo si es resoluble** (lead con `linkedCustomerId`, o cliente existente por
+> doc/nombre) y **NO** auto-crea cliente desde una cotización. El auto-crear aplica a **pedidos**
+> (venta confirmada). Si el usuario prefiere auto-crear también desde cotización, se ajusta.
+
+## Action items
+1. [x] OK del usuario (Opción A + renumeración).
 2. [ ] Rutina de migración idempotente (seed + localStorage), versionada, sin bump de `STORAGE_KEY`.
 3. [ ] `Ventas.saveOrder`: resolver/crear `customerId`; ajustar `savePayment`/hooks contables.
-4. [ ] Guardado de cotización: derivar `customerId`.
+4. [ ] Guardado de cotización: derivar `customerId` (solo si resoluble).
 5. [ ] `Clientes.summary`: basar en `customerId` (nombre solo fallback).
 6. [ ] Display por `customerId` con fallback a `clientName` (que el renombre se refleje).
 7. [ ] Verificación: crear pedido → tiene `customerId`; renombrar cliente → su historial persiste.

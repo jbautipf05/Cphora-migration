@@ -33,6 +33,7 @@ import {
   DISPATCH_REQUESTS,
 } from '../data/erpSeed';
 import { loadState, saveState, resetState } from '../lib/persistence';
+import { migrateCustomerFk } from '../lib/migrations';
 import { nowISO, uid } from '../lib/format';
 import {
   postJournalEntry as engPostJE,
@@ -89,7 +90,7 @@ function buildInitialState() {
     marketingAssets: MARKETING_ASSETS,
     dispatchRequests: DISPATCH_REQUESTS,
     notifications: [],
-    counters: { lead: 105, cot: 2002, ped: 1253, op: 5004, gar: 51, pag: 504, out: 32, emp: 7, inn: 2, mkt: 12, sup: 5, insumo: 8, oc: 3003, prod: 8, dsp: 2, fac: 2, rem: 14 },
+    counters: { lead: 105, cot: 2002, ped: 1253, op: 5004, gar: 51, pag: 504, out: 32, emp: 7, inn: 2, mkt: 12, sup: 5, insumo: 8, oc: 3003, prod: 8, dsp: 2, fac: 2, rem: 14, cli: 4 },
     currentUser: { id: 'u1', name: 'Alexander Vivas', role: 'gerencia' },
   };
 }
@@ -99,14 +100,17 @@ function buildInitialState() {
 function hydrate() {
   const base = buildInitialState();
   const saved = loadState();
-  if (!saved) return base;
-  return {
-    ...base,
-    ...saved,
-    ...ACCOUNTING_SEED(), // catálogo/asientos estáticos siempre desde código
-    counters: { ...base.counters, ...(saved.counters || {}) },
-    currentUser: saved.currentUser || base.currentUser,
-  };
+  const merged = !saved
+    ? base
+    : {
+        ...base,
+        ...saved,
+        ...ACCOUNTING_SEED(), // catálogo/asientos estáticos siempre desde código
+        counters: { ...base.counters, ...(saved.counters || {}) },
+        currentUser: saved.currentUser || base.currentUser,
+      };
+  // Migración idempotente: rellena customerId (FK) en pedidos/cotizaciones (ADR-011 / B2).
+  return migrateCustomerFk(merged);
 }
 
 const AppContext = createContext(null);
@@ -128,6 +132,16 @@ export function AppProvider({ children }) {
     return () => clearTimeout(timer.current);
   }, [state]);
 
+  // CR-09 / TD-30: espejo síncrono de los contadores. nextId() antes leía y
+  // devolvía el id desde DENTRO del updater de setState, lo que solo funciona
+  // para el primer setState del tick (eager-eval de React); una segunda llamada
+  // en el mismo handler devolvía undefined. Con este ref, nextId calcula el id
+  // de forma síncrona y consecutiva sin depender de ese detalle.
+  const countersRef = useRef(state.counters);
+  useEffect(() => {
+    countersRef.current = state.counters;
+  }, [state.counters]);
+
   const actions = useMemo(
     () => ({
       // ── CRUD genérico por colección ──
@@ -147,14 +161,13 @@ export function AppProvider({ children }) {
       setCollection: (collection, value) => setState((s) => ({ ...s, [collection]: value })),
 
       // Genera un id incremental tipo "PED-1254" y avanza el contador.
+      // Calcula el id de forma síncrona desde countersRef (bump inmediato), por
+      // lo que soporta varias llamadas en el mismo evento sin colisión ni undefined.
       nextId: (prefix, counterKey, pad = 0) => {
-        let out;
-        setState((s) => {
-          const n = (s.counters[counterKey] || 0) + 1;
-          out = `${prefix}-${pad ? String(n).padStart(pad, '0') : n}`;
-          return { ...s, counters: { ...s.counters, [counterKey]: n } };
-        });
-        return out;
+        const n = (countersRef.current[counterKey] || 0) + 1;
+        countersRef.current = { ...countersRef.current, [counterKey]: n };
+        setState((s) => ({ ...s, counters: { ...s.counters, [counterKey]: n } }));
+        return `${prefix}-${pad ? String(n).padStart(pad, '0') : n}`;
       },
 
       // ── Notificaciones ──

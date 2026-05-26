@@ -1,15 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
-import { KpiCard, Badge, Chip } from '../components/ui';
+import { KpiCard, Chip } from '../components/ui';
 import { fmtCOP } from '../lib/accounting';
-import {
-  Toolbar,
-  SearchBox,
-  SelectFilter,
-  SlidePanel,
-  ClearFiltersButton,
-} from '../components/widgets';
+import { SlidePanel } from '../components/widgets';
 import { IconBox, IconTag, IconBank, IconShield } from '../components/icons';
+import { useToast } from '../components/Toast';
 
 // Lista de precios — catálogo de productos con filtros completos.
 // Espejo HTML: search + categoría + bodega + rango de precio.
@@ -18,13 +13,11 @@ export default function ListaPrecios() {
   const [q, setQ] = useState('');
   const [cat, setCat] = useState('');
   const [bodega, setBodega] = useState('');
-  const [precioMin, setPrecioMin] = useState('');
-  const [precioMax, setPrecioMax] = useState('');
   const [sel, setSel] = useState(null);
+  const toast = useToast();
 
   const categorias = useMemo(() => [...new Set(products.map((p) => p.category).filter(Boolean))], [products]);
   const ptBodegas = warehouses.filter((w) => w.tipo === 'terminado');
-  const wName = (id) => warehouses.find((w) => w.id === id)?.code || id;
 
   // Cantidad disponible por producto a partir de finishedStock.
   const stockByProduct = useMemo(() => {
@@ -39,22 +32,21 @@ export default function ListaPrecios() {
 
   const rows = useMemo(() => {
     const t = q.toLowerCase();
-    const min = Number(precioMin) || 0;
-    const max = Number(precioMax) || Infinity;
     return products.filter((p) => {
       if (cat && p.category !== cat) return false;
       if (bodega) {
         const st = stockByProduct[p.id];
         if (!st || !st.byW[bodega]) return false;
       }
-      if (p.price < min || p.price > max) return false;
       if (t && !`${p.name} ${p.sku || ''} ${p.description || ''}`.toLowerCase().includes(t)) return false;
       return true;
     });
-  }, [products, q, cat, bodega, precioMin, precioMax, stockByProduct]);
+  }, [products, q, cat, bodega, stockByProduct]);
 
-  const hasFilters = !!(q || cat || bodega || precioMin || precioMax);
-  const clearAll = () => { setQ(''); setCat(''); setBodega(''); setPrecioMin(''); setPrecioMax(''); };
+  const hasFilters = !!(q || cat || bodega);
+  const clearAll = () => { setQ(''); setCat(''); setBodega(''); };
+  // H-040 implementa la exportación real; aquí queda el disparador (stub temporal).
+  const handleExportPdf = () => toast('Exportación de PDF disponible en H-040', 'info');
 
   // KPIs
   const totalStock = Object.values(stockByProduct).reduce((a, s) => a + s.total, 0);
@@ -93,35 +85,39 @@ export default function ListaPrecios() {
         />
       </div>
 
-      {/* Panel filtros */}
+      {/* H-038: texto sutil + filtros simplificados + botones (Demo6). */}
+      <p className="text-[11px] text-muted">
+        Catálogo completo con medidas finales, precio, descripción y ubicación.
+      </p>
       <div className="panel p-4">
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-3 xl:grid-cols-6">
-          <SearchBox value={q} onChange={setQ} placeholder="Nombre, SKU…" />
-          <select value={cat} onChange={(e) => setCat(e.target.value)} className="input-field">
-            <option value="">Todas las categorías</option>
-            {categorias.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <select value={bodega} onChange={(e) => setBodega(e.target.value)} className="input-field">
-            <option value="">Todas las bodegas</option>
-            {ptBodegas.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
-          </select>
-          <input
-            type="number"
-            value={precioMin}
-            onChange={(e) => setPrecioMin(e.target.value)}
-            placeholder="Precio mín"
-            className="input-field"
-          />
-          <input
-            type="number"
-            value={precioMax}
-            onChange={(e) => setPrecioMax(e.target.value)}
-            placeholder="Precio máx"
-            className="input-field"
-          />
-          <div className="flex items-center gap-2">
-            <ClearFiltersButton active={hasFilters} onClear={clearAll} />
-            <span className="ml-auto text-xs text-muted">{rows.length} productos</span>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[240px] flex-1">
+            <label className="label">Buscar</label>
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Buscar por nombre, SKU o descripción"
+              className="input-field"
+            />
+          </div>
+          <div>
+            <label className="label">Categoría</label>
+            <select value={cat} onChange={(e) => setCat(e.target.value)} className="input-field">
+              <option value="">Todas</option>
+              {categorias.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label">Bodega</label>
+            <select value={bodega} onChange={(e) => setBodega(e.target.value)} className="input-field">
+              <option value="">Todas</option>
+              {ptBodegas.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
+            </select>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            {hasFilters && <button onClick={clearAll} className="btn-outline text-xs">Limpiar</button>}
+            <button onClick={handleExportPdf} className="btn-outline text-xs">📄 Exportar PDF</button>
+            <button onClick={() => toast('Modal de nuevo producto disponible en H-041', 'info')} className="btn-gold">+ Nuevo producto</button>
           </div>
         </div>
       </div>

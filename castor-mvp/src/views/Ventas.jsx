@@ -4,6 +4,7 @@ import { KpiCard, Chip, TIPO_VENTA, TIPO_DOC, MEDIO_VENTA, PDV_VARIANT } from '.
 import { fmtCOP, fmtDate, today } from '../lib/format';
 import { resolveCustomerId } from '../lib/migrations';
 import { Toolbar, SearchBox, SelectFilter, DataTable, EstadoBadge, ProgressBar, SlidePanel, ClearFiltersButton } from '../components/widgets';
+import { IconCart, IconBank, IconCheck } from '../components/icons';
 import Modal from '../components/Modal';
 import { Field, Input, Select, FormGrid } from '../components/form';
 import { useToast } from '../components/Toast';
@@ -77,7 +78,13 @@ export default function Ventas() {
   const kpis = useMemo(() => {
     const valor = orders.reduce((a, o) => a + (o.total || 0), 0);
     const cobrado = orders.reduce((a, o) => a + (o.total || 0) * (o.paid / 100), 0);
-    return { pedidos: orders.length, valor, cobrado, saldo: valor - cobrado };
+    return {
+      pedidos: orders.length,
+      valor,
+      cobrado,
+      saldo: valor - cobrado,
+      recaudoPct: Math.round((cobrado / valor) * 100 || 0),
+    };
   }, [orders]);
 
   const setF = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -254,11 +261,12 @@ export default function Ventas() {
         </div>
       )}
 
+      {/* H-030: iconos + subtítulos (patrón H-016). Ver Demo6:5246-5249. */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Pedidos" value={kpis.pedidos} accent="#38bdf8" />
-        <KpiCard label="Valor ventas" value={fmtCOP(kpis.valor)} accent="#34d399" />
-        <KpiCard label="Cobrado" value={fmtCOP(kpis.cobrado)} accent="#C9A961" />
-        <KpiCard label="Saldo pendiente" value={fmtCOP(kpis.saldo)} accent="#f87171" />
+        <KpiCard label="Pedidos totales" value={kpis.pedidos} hint="Histórico" accent="#C9A961" icon={<IconCart width={18} height={18} />} />
+        <KpiCard label="Valor ventas" value={fmtCOP(kpis.valor)} hint="Suma" accent="#10b981" icon={<IconBank width={18} height={18} />} />
+        <KpiCard label="Cobrado" value={fmtCOP(kpis.cobrado)} hint={`${kpis.recaudoPct}% recaudo`} accent="#3b82f6" icon={<IconCheck width={18} height={18} />} />
+        <KpiCard label="Saldo pendiente" value={fmtCOP(kpis.saldo)} hint="Por cobrar" accent="#ef4444" icon={<IconBank width={18} height={18} />} />
       </div>
 
       <Toolbar>

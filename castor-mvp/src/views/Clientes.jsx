@@ -208,7 +208,6 @@ export default function Clientes() {
           active={!!(q || ciudad || asesor || tipo || estado)}
           onClear={() => { setQ(''); setCiudad(''); setAsesor(''); setTipo(''); setEstado(''); }}
         />
-        <span className="ml-auto text-sm text-muted">{rows.length} clientes</span>
       </Toolbar>
 
       <DataTable columns={columns} rows={rows} getKey={(r) => r.id} onRowClick={setSel} />

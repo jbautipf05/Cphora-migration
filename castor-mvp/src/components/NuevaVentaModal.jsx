@@ -11,6 +11,7 @@ const MEDIOS = ['TIENDA', 'LEAD', 'FERIA', 'REMARKETING', 'REFERIDO'];
 const PDVS = ['CASTOR 43', 'CASTOR CTG', 'PAGINA WEB', 'GERENCIA'];
 const CIERRES = ['PRESENCIAL', 'VIRTUAL'];
 const ABONOS = ['DATAFONO', 'TRANSFERENCIA', 'EFECTIVO', 'BOLD'];
+const PAY_METHODS = ['Transferencia', 'Tarjeta', 'Efectivo', 'Cheque'];
 const SEARCH_FIELDS = [
   { key: 'name', label: 'Nombre' },
   { key: 'phone', label: 'Celular' },
@@ -24,9 +25,12 @@ const emptyForm = () => ({
   deliveryAddress: '', medio: '', pdv: '', cierreVenta: '', abonoBancos: '',
   asesor: '', tiempo: 30, docType: 'factura', paid: 50,
   items: [{ productId: '', qty: 1, disc: 0, tipo: 'produccion', comment: '' }],
+  // H-035.3: registro de pago
+  payMethod: 'Transferencia', payBankId: '', payReference: '', paySoporte: '',
+  payManual: false, payAmount: '',
 });
 
-export default function NuevaVentaModal({ open, onClose, products = [], customers = [], asesores = [], onSubmit }) {
+export default function NuevaVentaModal({ open, onClose, products = [], customers = [], asesores = [], bankAccounts = [], onSubmit }) {
   const [f, setF] = useState(emptyForm());
   const [searchField, setSearchField] = useState('name');
   const [searchQ, setSearchQ] = useState('');
@@ -50,6 +54,15 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
   const priceOf = (id) => products.find((p) => p.id === id)?.price || 0;
   const itemTotal = (it) => priceOf(it.productId) * (Number(it.qty) || 0) * (1 - (Number(it.disc) || 0) / 100);
   const total = f.items.reduce((a, it) => a + itemTotal(it), 0);
+  // H-035.3: liquidación
+  const subStock = f.items.filter((it) => it.tipo === 'stock').reduce((a, it) => a + itemTotal(it), 0);
+  const subProd = f.items.filter((it) => it.tipo === 'produccion').reduce((a, it) => a + itemTotal(it), 0);
+  const discTotal = f.items.reduce(
+    (a, it) => a + priceOf(it.productId) * (Number(it.qty) || 0) * ((Number(it.disc) || 0) / 100),
+    0,
+  );
+  const suggestedPay = Math.round((total * (Number(f.paid) || 0)) / 100);
+  const effectivePay = f.payManual ? Number(f.payAmount) || 0 : suggestedPay;
 
   function selectCustomer(c) {
     setF((p) => ({
@@ -76,7 +89,12 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
   function handleSubmit() {
     if (!f.custName.trim()) return;
     if (!f.items.some((it) => it.productId)) return;
-    onSubmit?.({ ...f, total });
+    onSubmit?.({
+      ...f,
+      total,
+      payAmount: effectivePay,
+      payBankId: f.payBankId || bankAccounts[0]?.id || '',
+    });
     reset();
   }
 
@@ -280,7 +298,58 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
               <option value="remisión">Remisión</option>
             </Select>
           </Field>
-          <Field label="% Anticipo"><Input type="number" min="0" max="100" value={f.paid} onChange={(e) => set('paid', Number(e.target.value))} /></Field>
+          <Field label="% Anticipo"><Input type="number" min="0" max="100" value={f.paid} onChange={(e) => setF((p) => ({ ...p, paid: Number(e.target.value), payManual: false }))} /></Field>
+        </div>
+
+        {/* ── H-035.3: Bloque Registro de pago ── */}
+        <div className="panel-2 rounded-lg p-4" style={{ border: '1px solid #C9A961' }}>
+          <span className="mb-3 block text-sm font-semibold gold-title">💰 Registro de pago</span>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <Field label="Monto recibido *">
+              <Input
+                type="number"
+                min="0"
+                value={f.payManual ? f.payAmount : suggestedPay}
+                onChange={(e) => setF((p) => ({ ...p, payManual: true, payAmount: e.target.value }))}
+              />
+            </Field>
+            <Field label="Método *">
+              <Select value={f.payMethod} onChange={(e) => set('payMethod', e.target.value)}>
+                {PAY_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+              </Select>
+            </Field>
+            <Field label="Cuenta receptora *">
+              <Select value={f.payBankId || bankAccounts[0]?.id || ''} onChange={(e) => set('payBankId', e.target.value)}>
+                {bankAccounts.map((b) => <option key={b.id} value={b.id}>{b.bank} · {b.type}</option>)}
+              </Select>
+            </Field>
+            <Field className="sm:col-span-3" label="Referencia / comprobante *">
+              <Input value={f.payReference} onChange={(e) => set('payReference', e.target.value)} placeholder="Nº transacción, voucher…" />
+            </Field>
+            <div className="sm:col-span-3">
+              <span className="label">Soporte de pago</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => set('paySoporte', `soporte_${Date.now().toString(36)}.pdf`)}
+                  className="btn-outline text-xs"
+                >
+                  📎 Adjuntar soporte
+                </button>
+                <span className="text-xs text-brand-muted">
+                  {f.paySoporte ? <span className="text-emerald-300">✓ {f.paySoporte}</span> : 'Sin adjuntar'}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Caja de liquidación */}
+        <div className="panel-2 rounded-lg p-4">
+          <div className="mb-1 flex justify-between text-sm"><span className="text-brand-muted">Subtotal stock</span><span className="text-white">{fmtCOP(subStock)}</span></div>
+          <div className="mb-1 flex justify-between text-sm"><span className="text-brand-muted">Subtotal producción</span><span className="text-white">{fmtCOP(subProd)}</span></div>
+          <div className="mb-1 flex justify-between text-sm"><span className="text-brand-muted">Descuento total</span><span className="text-red-400">-{fmtCOP(discTotal)}</span></div>
+          <div className="mt-2 flex justify-between border-t border-brand-border pt-2 text-base"><span className="font-bold gold-title">Total venta</span><span className="font-bold text-brand-gold">{fmtCOP(total)}</span></div>
         </div>
       </div>
     </Modal>

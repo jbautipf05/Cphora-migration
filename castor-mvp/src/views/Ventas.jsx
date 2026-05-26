@@ -114,10 +114,14 @@ export default function Ventas() {
     const first = items[0];
     const tiposItem = [...new Set(items.map((it) => it.tipo))];
     const tipo = tiposItem.length > 1 ? 'mixto' : tiposItem[0] || 'produccion';
+    // H-035.3: el avance (paid%) se deriva del pago realmente registrado (no de un % suelto),
+    // por lo que queda respaldado por un registro PAYMENTS (evita la inconsistencia EX-F2-02).
+    const payAmount = Number(data.payAmount) || 0;
+    const paidPct = data.total ? Math.min(100, Math.round((payAmount / data.total) * 100)) : 0;
 
     add('orders', {
       id, quoteId: null, customerId, clientName, asesor: data.asesor,
-      total: data.total, paid: Number(data.paid) || 0, tiempo: Number(data.tiempo) || 30,
+      total: data.total, paid: paidPct, tiempo: Number(data.tiempo) || 30,
       orderDate, estado: tipo === 'stock' ? 'produccion' : 'pendiente_op',
       area: null, tipo, docType: data.docType, deliveryAddress: data.deliveryAddress,
       medio: data.medio, pdv: data.pdv, cierreVenta: data.cierreVenta, abonoBancos: data.abonoBancos,
@@ -125,6 +129,20 @@ export default function Ventas() {
       items, // H-035.2: ítems de la venta (multi-ítem)
     });
     toast(`Venta ${id} registrada`, 'ok');
+
+    // H-035.3: registrar el pago (abono) + asiento de cobro.
+    if (payAmount > 0) {
+      const pagId = nextId('PAG', 'pag');
+      add('payments', {
+        id: pagId, orderId: id, amount: payAmount, method: data.payMethod, bankId: data.payBankId,
+        type: 'anticipo', date: orderDate, reference: data.payReference || pagId, estado: 'confirmado',
+        soporte: data.paySoporte ? { filename: data.paySoporte } : null,
+      });
+      const collection = postCustomerCollection({
+        id: pagId, date: orderDate, customerId, bankAccountId: data.payBankId, amount: payAmount, invoiceId: id,
+      });
+      if (collection?.ok) toast(`Asiento ${collection.journalEntry.id} de cobro generado`, 'ok');
+    }
 
     const sale = postSale({
       id, date: orderDate, type: data.docType,
@@ -401,6 +419,7 @@ export default function Ventas() {
         products={products}
         customers={customers}
         asesores={ASESORES}
+        bankAccounts={bankAccounts}
         onSubmit={submitSale}
       />
 

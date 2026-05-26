@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
 import { KpiCard, Chip, TIPO_VENTA } from '../components/ui';
 import { fmtCOP, fmtDate, today, addDays, daysUntil } from '../lib/format';
@@ -20,6 +20,8 @@ export default function Ventas() {
     orders,
     products,
     customers,
+    quotes,
+    leads,
     payments,
     invoices,
     bankAccounts,
@@ -28,6 +30,8 @@ export default function Ventas() {
     nextId,
     postSale,
     postCustomerCollection,
+    pendingForm,
+    setPendingForm,
   } = useApp();
   const toast = useToast();
   const [q, setQ] = useState('');
@@ -39,7 +43,70 @@ export default function Ventas() {
   const [selId, setSelId] = useState(null);
   const [saleOpen, setSaleOpen] = useState(false); // H-035: modal Nueva venta
   const [saleInnovation, setSaleInnovation] = useState(false); // H-036: modo innovación
+  const [salePrefill, setSalePrefill] = useState(null); // EX-F2-03: precarga desde cotización
+  const [saleQuoteId, setSaleQuoteId] = useState(null); // EX-F2-03: quote origen (trazabilidad + paso-4)
   const [pay, setPay] = useState(null); // {orderId, amount, method, bankId}
+
+  // EX-F2-03: construye el prefill (shape del form de NuevaVentaModal) desde una
+  // cotización. Cliente: si la quote ya tiene customerId, copia el customer; si no,
+  // copia los datos del lead (customerId queda vacío → submitSale creará el cliente);
+  // si no hay ninguno, solo el nombre. Items: precio recalculado desde la lista (disc 0),
+  // por diseño del modal (decisión A de EX-F2-03; ver VALIDACION_EX_F2_03.md).
+  function buildSalePrefill(quote) {
+    if (!quote) return null;
+    const items = (quote.items || []).map((it) => ({
+      productId: it.productId || '',
+      qty: Number(it.qty) || 1,
+      disc: 0,
+      tipo: 'produccion',
+      comment: it.desc || '',
+    }));
+    const base = { asesor: quote.asesor || '' };
+    if (items.length) base.items = items;
+
+    const cust = quote.customerId ? customers.find((c) => c.id === quote.customerId) : null;
+    if (cust) {
+      return {
+        ...base,
+        customerId: cust.id,
+        custName: cust.name || '', custDoc: cust.doc || '', custPhone: cust.phone || '',
+        custEmail: cust.email || '', custCity: cust.city || '', custAddress: cust.address || '',
+        deliveryAddress: cust.address || '',
+      };
+    }
+    const lead = quote.leadId ? leads.find((l) => l.id === quote.leadId) : null;
+    if (lead) {
+      return {
+        ...base,
+        customerId: '',
+        custName: lead.name || quote.clientName || '', custDoc: lead.doc || '', custPhone: lead.phone || '',
+        custEmail: lead.email || '', custCity: lead.city || '', custAddress: lead.address || '',
+        deliveryAddress: lead.address || '',
+      };
+    }
+    return { ...base, custName: quote.clientName || '' };
+  }
+
+  // EX-F2-03: consume el intent "→ Crear venta" de Cotizaciones. Abre el modal
+  // Nueva venta (no innovación) precargado y recuerda la quote origen.
+  useEffect(() => {
+    if (pendingForm?.type === 'sale') {
+      const quote = quotes.find((qq) => qq.id === pendingForm.quoteId) || null;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSalePrefill(buildSalePrefill(quote));
+      setSaleQuoteId(quote?.id || null);
+      setSaleInnovation(false);
+      setSaleOpen(true);
+      setPendingForm(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingForm]);
+
+  function closeSale() {
+    setSaleOpen(false);
+    setSalePrefill(null);
+    setSaleQuoteId(null);
+  }
 
   // OPs rechazadas por auditoría (espejo HTML línea 5216).
   const rechazadas = useMemo(
@@ -120,6 +187,17 @@ export default function Ventas() {
       toast(`Cliente ${customerId} creado`, 'ok');
     }
 
+    // EX-F2-03 paso-4 retroactivo: si la venta nace de una cotización, fijar
+    // retroactivamente su customerId (estaba en null por ser pre-venta, o quedó
+    // desincronizado). Así la cascada B2 (nombre por customerId) alcanza también
+    // a la cotización origen y queda la trazabilidad quote↔customer.
+    if (saleQuoteId) {
+      const srcQuote = quotes.find((qq) => qq.id === saleQuoteId);
+      if (srcQuote && srcQuote.customerId !== customerId) {
+        update('quotes', saleQuoteId, { customerId });
+      }
+    }
+
     const id = nextId('PED', 'ped');
     // H-035.3: el avance (paid%) se deriva del pago realmente registrado (no de un % suelto),
     // por lo que queda respaldado por un registro PAYMENTS (evita la inconsistencia EX-F2-02).
@@ -134,7 +212,7 @@ export default function Ventas() {
       const innovItems = (data.innovItems || []).filter((it) => it.name?.trim());
       const fp = innovItems[0] || {};
       add('orders', {
-        id, quoteId: null, customerId, clientName, asesor: data.asesor,
+        id, quoteId: saleQuoteId || null, customerId, clientName, asesor: data.asesor,
         total: data.total, paid: paidPct, tiempo: Number(data.tiempo) || 30,
         orderDate, estado: 'pendiente_innovacion', area: null, tipo: 'innovacion',
         docType: data.docType, deliveryAddress: data.deliveryAddress,
@@ -151,7 +229,7 @@ export default function Ventas() {
       const tiposItem = [...new Set(items.map((it) => it.tipo))];
       const tipo = tiposItem.length > 1 ? 'mixto' : tiposItem[0] || 'produccion';
       add('orders', {
-        id, quoteId: null, customerId, clientName, asesor: data.asesor,
+        id, quoteId: saleQuoteId || null, customerId, clientName, asesor: data.asesor,
         total: data.total, paid: paidPct, tiempo: Number(data.tiempo) || 30,
         orderDate, estado: tipo === 'stock' ? 'produccion' : 'pendiente_op',
         area: null, tipo, docType: data.docType, deliveryAddress: data.deliveryAddress,
@@ -187,7 +265,7 @@ export default function Ventas() {
       else if (sale?.error) toast(`Aviso contable: ${sale.message || sale.error}`, 'warn');
     }
 
-    setSaleOpen(false);
+    closeSale();
   }
 
   function savePayment() {
@@ -384,8 +462,8 @@ export default function Ventas() {
         <span className="ml-auto text-sm text-brand-muted">{rows.length} pedidos</span>
         {/* H-032: renombrar a "+ Nueva venta" + agregar "+ Venta innovación".
             El modal específico de innovación se construye en H-036 (flag innovation). Demo6:5275-5276. */}
-        <button className="btn-outline" onClick={() => { setSaleInnovation(true); setSaleOpen(true); }}>+ Venta innovación</button>
-        <button className="btn-gold" onClick={() => { setSaleInnovation(false); setSaleOpen(true); }}>+ Nueva venta</button>
+        <button className="btn-outline" onClick={() => { setSaleInnovation(true); setSalePrefill(null); setSaleQuoteId(null); setSaleOpen(true); }}>+ Venta innovación</button>
+        <button className="btn-gold" onClick={() => { setSaleInnovation(false); setSalePrefill(null); setSaleQuoteId(null); setSaleOpen(true); }}>+ Nueva venta</button>
       </Toolbar>
 
       {/* H-033: ayuda de doble clic (Demo6:5280). */}
@@ -451,12 +529,13 @@ export default function Ventas() {
       {/* H-035: Modal Nueva venta (reemplaza el antiguo "Nuevo pedido"). */}
       <NuevaVentaModal
         open={saleOpen}
-        onClose={() => setSaleOpen(false)}
+        onClose={closeSale}
         products={products}
         customers={customers}
         asesores={ASESORES}
         bankAccounts={bankAccounts}
         innovation={saleInnovation}
+        prefill={salePrefill}
         onSubmit={submitSale}
       />
 

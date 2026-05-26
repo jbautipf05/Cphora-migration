@@ -139,44 +139,49 @@ export default function ListaPrecios() {
               <div className="mb-3 grid h-32 place-items-center rounded-lg bg-brand-bg/60 text-5xl">
                 {p.photo}
               </div>
+              {/* H-039: SKU arriba (mono gris), nombre grande; un solo badge categoría (ocre). */}
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="font-semibold text-white">{p.name}</p>
                   <p className="font-mono text-[11px] text-muted">{p.sku}</p>
+                  <p className="text-lg font-bold text-white">{p.name}</p>
                 </div>
                 <Chip variant="gold">{p.category}</Chip>
               </div>
               {p.description && (
                 <p className="mt-2 line-clamp-2 text-xs text-muted">{p.description}</p>
               )}
-              <div className="mt-3 flex items-end justify-between">
-                <span className="text-lg font-bold text-gold-accent">{fmtCOP(p.price)}</span>
-                <span
-                  className={`text-xs ${stock.total === 0 ? 'text-red-300' : stock.total <= 2 ? 'text-amber-300' : 'text-emerald-300'}`}
-                >
-                  {stock.total} und disp.
-                </span>
-              </div>
-              {Object.keys(stock.byW).length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {Object.entries(stock.byW).map(([wid, q]) => {
-                    const w = warehouses.find((x) => x.id === wid);
-                    return (
-                      <span
-                        key={wid}
-                        className="warehouse-pill !text-[10px]"
-                        style={{
-                          color: w?.color,
-                          borderColor: `${w?.color}55`,
-                          background: `${w?.color}1f`,
-                        }}
-                      >
-                        {w?.code}: {q}
-                      </span>
-                    );
-                  })}
+              {/* Especificaciones: Medidas (dorado) + Bodega (color por sede). */}
+              <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <div className="text-muted">Medidas</div>
+                  <div className="font-semibold text-brand-gold-light">
+                    {p.dimensions ? `${p.dimensions.ancho} × ${p.dimensions.alto} × ${p.dimensions.profundidad} cm` : '—'}
+                  </div>
                 </div>
-              )}
+                <div>
+                  <div className="text-muted">Bodega</div>
+                  <div className="font-semibold" style={{ color: warehouses.find((w) => w.id === p.warehouseId)?.color }}>
+                    {warehouses.find((w) => w.id === p.warehouseId)?.code || '—'}
+                  </div>
+                </div>
+              </div>
+              {/* Cierre: precio comercial + stock (solo número, sin "und disp."). */}
+              <div className="mt-3 flex items-end justify-between border-t border-white/10 pt-3">
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted">Precio comercial</div>
+                  <div className="text-xl font-bold text-gold-accent">{fmtCOP(p.price)}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px] text-muted">Stock</div>
+                  <div
+                    className={`text-lg font-semibold ${
+                      stock.total === 0 ? 'text-red-400' : stock.total <= (p.min || 0) ? 'text-amber-300' : 'text-white'
+                    }`}
+                  >
+                    {stock.total}
+                  </div>
+                </div>
+              </div>
             </button>
           );
         })}

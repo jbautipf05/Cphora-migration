@@ -296,7 +296,7 @@ export default function Clientes() {
 
               {/* Sección Leads */}
               <div className="panel-2 rounded-lg p-4">
-                <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-white">
+                <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-gold-accent">
                   🔥 Leads ({selSummary.leadsVinc.length})
                 </p>
                 {selSummary.leadsVinc.length === 0 ? (
@@ -316,7 +316,7 @@ export default function Clientes() {
 
               {/* Sección Cotizaciones */}
               <div className="panel-2 rounded-lg p-4">
-                <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-white">
+                <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-gold-accent">
                   📄 Cotizaciones ({selSummary.cotizaciones.length})
                 </p>
                 {selSummary.cotizaciones.length === 0 ? (
@@ -338,7 +338,7 @@ export default function Clientes() {
 
               {/* Sección Ventas / Pedidos */}
               <div className="panel-2 rounded-lg p-4">
-                <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
+                <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-gold-accent">
                   🛒 Ventas / Pedidos ({selSummary.pedidos.length})
                 </p>
                 {selSummary.pedidos.length === 0 ? (
@@ -382,7 +382,7 @@ export default function Clientes() {
 
               {/* Sección Pagos */}
               <div className="panel-2 rounded-lg p-4">
-                <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-white">
+                <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-gold-accent">
                   💰 Pagos ({cliPagos.length})
                 </p>
                 {cliPagos.length === 0 ? (
@@ -406,7 +406,7 @@ export default function Clientes() {
               {/* Sección Postventa */}
               <div className="panel-2 rounded-lg p-4">
                 <div className="mb-2 flex items-center justify-between">
-                  <p className="flex items-center gap-2 text-sm font-semibold text-white">
+                  <p className="flex items-center gap-2 text-sm font-semibold text-gold-accent">
                     📞 Postventa ({cliPostventa.length})
                   </p>
                   {pendientesPSV > 0 && (
@@ -443,7 +443,7 @@ export default function Clientes() {
 
               {/* Sección Garantías */}
               <div className="panel-2 rounded-lg p-4">
-                <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-white">
+                <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-gold-accent">
                   🛡 Garantías ({cliGarantias.length})
                 </p>
                 {cliGarantias.length === 0 ? (

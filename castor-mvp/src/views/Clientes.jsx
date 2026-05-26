@@ -365,7 +365,8 @@ export default function Clientes() {
                           <tr key={o.id} className="border-t border-white/5">
                             <td className="py-1 font-mono text-gold-accent">{o.id}</td>
                             <td className="py-1">
-                              <Chip variant={o.estado === 'entregado' ? 'ok' : 'info'}>
+                              {/* H-028: badge minúsculas + azul (info), id PED- se mantiene (decisión cosmética). Demo6:4381 */}
+                              <Chip variant="info" uppercase={false}>
                                 {o.estado}
                               </Chip>
                             </td>

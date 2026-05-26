@@ -48,3 +48,16 @@ Verificado: `vite build` ✓ (68 módulos, sin errores) · `eslint` ✓ (0 error
 ### Pendientes
 - Bloque 2 (Venta · críticas): A13–A21 — reconstruir modal "Nueva venta" (buscador cliente, campos completos, MEDIO/PDV/CIERRE/ABONO, ítems múltiples stock/producción, registro de pago inline) + precarga desde cotización + botón "→ Crear venta" condicionado.
 - Bloque 3 (resto): A22 (PAY_METHODS), A23 (seguimientos lead: orden + nota), A24 (lista cotizaciones del lead), A25 (alinear LEAD_* también en `Leads.jsx`).
+
+### Post-verificación (auto-verificación dual Demo6 ↔ React)
+
+Divergencias **descubiertas** durante la verificación del Bloque 1 (ver
+`VERIFICACION_BLOQUE_1.md`) y su disposición:
+
+| ID | Disposición | Detalle |
+|----|-------------|---------|
+| **A27** (anclaje de fechas) | ✅ **CORREGIDO** | `save()` y `genQuoteSeguimientos` ahora usan `today()` (DEMO_TODAY) en vez de `nowISO()` para `createdAt`, base de seguimientos, vigencia y `createdAt` del lead nuevo (espejo de `saveQuote` de Demo6). `verifySeguimiento` ya usaba `today()`. Verificado en vivo: `createdAt=2026-04-16`, seguimientos `04-19…06-15`, etiquetas relativas coherentes **"En 3d…En 60d"** (antes "En 47d…"), `completadoAt=2026-04-16 ≥ createdAt`. Archivo: `Cotizaciones.jsx`. Build+lint OK. |
+| A26 (título h2/700 vs h3/600) | ⏸ NO corregir | → `MEJORAS_PROPUESTAS.md` (M3) |
+| A28 (counter cot seed 2000 vs 2002) | ⏸ NO corregir | Dato seed, fuera de alcance |
+| A29 (acciones detalle cotización) | ⏸ Diferido | → `PENDIENTES_BLOQUE2.md` |
+| B2 (select estado muestra "borrador" con `pendiente_aprob`) | ⏸ Heredado | → `BUGS_HEREDADOS.md` (presente en ambos) |

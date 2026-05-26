@@ -29,7 +29,7 @@ const genQuoteSeguimientos = (baseDate) =>
   QUOTE_SEG_OFFSETS.map((d, i) => ({
     id: `QS-${Date.now().toString(36)}-${i}`,
     n: i + 1,
-    fechaProxima: addDays((baseDate || nowISO()).slice(0, 10), d),
+    fechaProxima: addDays((baseDate || today()).slice(0, 10), d),
     estado: 'pendiente',
     notas: '',
     completadoAt: null,
@@ -253,7 +253,7 @@ export default function Cotizaciones({ onNavigate }) {
         phone: form.newLeadPhone || '', email: form.newLeadEmail || '', doc: form.newLeadDoc || '',
         address: form.newLeadAddress || '', city: form.city || '', channel: form.channel,
         clasificacion: 'medio', estado: 'En gestión', asesor: form.asesor, valor: 0,
-        productosInteres: [], createdAt: nowISO(),
+        productosInteres: [], createdAt: today(),
         notes: [{ at: nowISO(), by: form.asesor || 'Sistema', text: 'Lead creado desde cotización.' }],
         seguimientos: [],
       });
@@ -265,7 +265,7 @@ export default function Cotizaciones({ onNavigate }) {
       ? `${vigDias === 20 ? 'Vigencia 20 días' : ''}${discount > 20 ? `${vigDias === 20 ? ' + ' : ''}Descuento ${discount}%` : ''}`
       : '';
     const id = nextId('COT', 'cot');
-    const createdAt = nowISO();
+    const createdAt = today(); // anclar al "hoy" del demo (DEMO_TODAY), espejo de saveQuote() de Demo6
     add('quotes', {
       id, leadId, clientName: form.clientName.trim(), city: form.city || '', channel: form.channel,
       items, discount, notes: form.notes || '', asesor: form.asesor,

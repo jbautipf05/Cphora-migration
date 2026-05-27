@@ -171,8 +171,25 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
     return errs;
   }
 
+  // REG-H035-09 — Registro de pago. Demo6 (openSaleForm:5649-5661 "Todos los campos
+  // son obligatorios"; backstop soporte en saveSale:5985) exige los 5 campos SIEMPRE,
+  // con monto≥1; NO admite venta sin pago ni tope monto≤total, y un solo método por
+  // venta. Decisión usuario 2026-05-26: FIEL A DEMO6 (se elimina la flexibilidad
+  // previa de React de registrar venta sin pago). El monto efectivo es el sugerido
+  // (anticipo%·total) salvo edición manual.
+  function validatePayment(v) {
+    const errs = {};
+    const amount = v.payManual ? Number(v.payAmount) || 0 : suggestedPay;
+    if (amount < 1) errs.payAmount = 'El monto recibido debe ser al menos 1';
+    if (!v.payMethod) errs.payMethod = 'Selecciona un método';
+    if (!(v.payBankId || bankAccounts[0]?.id)) errs.payBankId = 'Selecciona la cuenta receptora';
+    if (!v.payReference.trim()) errs.payReference = 'La referencia / comprobante es obligatoria';
+    if (!v.paySoporte) errs.paySoporte = 'Adjunta el soporte de pago';
+    return errs;
+  }
+
   function handleSubmit() {
-    const errs = { ...validateClient(f), ...validateControl(f) };
+    const errs = { ...validateClient(f), ...validateControl(f), ...validatePayment(f) };
     if (Object.keys(errs).length) {
       setErrors(errs);
       return toast('Revisa los campos marcados', 'warn');
@@ -453,7 +470,7 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
             </Select>
             {errLine('docType')}
           </Field>
-          <Field label="% Anticipo"><Input type="number" min="0" max="100" value={f.paid} onChange={(e) => setF((p) => ({ ...p, paid: Number(e.target.value), payManual: false }))} /></Field>
+          <Field label="% Anticipo"><Input type="number" min="0" max="100" value={f.paid} onChange={(e) => { setF((p) => ({ ...p, paid: Number(e.target.value), payManual: false })); setErrors((er) => (er.payAmount ? { ...er, payAmount: undefined } : er)); }} /></Field>
         </div>
 
         {/* ── H-035.3: Bloque Registro de pago ── */}
@@ -465,24 +482,28 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
                 type="number"
                 min="0"
                 value={f.payManual ? f.payAmount : suggestedPay}
-                onChange={(e) => setF((p) => ({ ...p, payManual: true, payAmount: e.target.value }))}
+                onChange={(e) => { setF((p) => ({ ...p, payManual: true, payAmount: e.target.value })); setErrors((er) => (er.payAmount ? { ...er, payAmount: undefined } : er)); }}
               />
+              {errLine('payAmount')}
             </Field>
             <Field label="Método *">
               <Select value={f.payMethod} onChange={(e) => set('payMethod', e.target.value)}>
                 {PAY_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
               </Select>
+              {errLine('payMethod')}
             </Field>
             <Field label="Cuenta receptora *">
               <Select value={f.payBankId || bankAccounts[0]?.id || ''} onChange={(e) => set('payBankId', e.target.value)}>
                 {bankAccounts.map((b) => <option key={b.id} value={b.id}>{b.bank} · {b.type}</option>)}
               </Select>
+              {errLine('payBankId')}
             </Field>
             <Field className="sm:col-span-3" label="Referencia / comprobante *">
               <Input value={f.payReference} onChange={(e) => set('payReference', e.target.value)} placeholder="Nº transacción, voucher…" />
+              {errLine('payReference')}
             </Field>
             <div className="sm:col-span-3">
-              <span className="label">Soporte de pago</span>
+              <span className="label">Soporte de pago *</span>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -495,6 +516,7 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
                   {f.paySoporte ? <span className="text-emerald-300">✓ {f.paySoporte}</span> : 'Sin adjuntar'}
                 </span>
               </div>
+              {errLine('paySoporte')}
             </div>
           </div>
         </div>

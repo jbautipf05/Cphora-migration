@@ -249,10 +249,10 @@ cada mutación en un `setState` atómico (cascada B2):
   Demo6). El spec mencionaba solo `pedidoId`, pero las órdenes React no traen `pedidoId` (usan
   `id` + `customerId`); usar solo `pedidoId` marcaría pedidos de cliente como `disponible` →
   incorrecto.
-- **`stockMove.type = 'entrada_produccion'`** (no el `_pendiente` de Demo6) y **NO se suma a
-  `product.stock`**: la verificación de recepción (pending→recibido + suma a stock maestro) es el
-  flujo **EX-F3-03** (`verifyCEDIReception`), aún diferido. El `finishedStock` ya queda visible en
-  Inventario Terminado.
+- **`stockMove.type = 'entrada_produccion_pendiente'`** (ajustado al cerrar EX-F3-03; fiel a
+  Demo6) — la recepción en CEDI (EX-F3-03) lo convierte en `'entrada_produccion'`. En la creación
+  **NO se suma a `product.stock`**: eso ocurre al verificar la recepción (EX-F3-03). El
+  `finishedStock` ya queda visible en Inventario Terminado desde la creación.
 - **Ids:** `finishedStock`/`stockMove` con `uid('FS')`/`uid('SM')` (consistente con EX-F2-07 y
   `uid('FS')` de Demo6); `invoiceRequest` con `nextId('IREQ','ireq')` (id legible, como Demo6).
 
@@ -260,24 +260,46 @@ cada mutación en un `setState` atómico (cascada B2):
 - Columnas **"Costo real" / "Desv."** de la tabla de cierre siguen en `0` / `0%`: dependen de
   `supplyIssues` (consumo real de producción), **no poblado** en React (sin módulo de salidas a
   producción). Demo6 lo calcula desde `supplyIssues` (7568-7570). Gap declarado; sin inventar.
-- **EX-F3-03** (recepción CEDI) sigue pendiente; ahora **desbloqueado** por este EX-F3-02.
+- **EX-F3-03** (recepción CEDI): ✅ RESUELTO (ver abajo).
 
 ---
 
-## EX-F3-03 — Recepción CEDI / "stock listo va a CEDI automáticamente" [DIFERIDO EN H-107, decisión del usuario]
+## EX-F3-03 — Recepción CEDI / "stock listo va a CEDI automáticamente" · ✅ RESUELTO
 
-**Ubicación:** flujo producción→CEDI (no es parte del despacho a cliente).
+**Ubicación:** `src/views/InventarioTerminado.jsx` (acción + UI) + ajuste menor en
+`src/views/Auditoria.jsx` (tipo del stockMove). Espejo de `verifyCEDIReception` (Demo6:7691-7720).
 
-- El inventario de H-107 mezclaba dos flujos: (A) **despacho a cliente** (resuelto en H-107) y
-  (B) **recepción de producción en CEDI**. (B) se difiere conscientemente.
-- **Depende de:** **EX-F3-02** (cierre de OP en Auditoría que genera el `stockMove`/`finishedStock`).
-- **Alcance (3 piezas), espejo de Demo6:**
-  1. **Cierre de OP crea el ingreso**: `crearProductoInventario` (Demo6:6440) inserta
-     `finishedStock` en `W-CEDI` con `receptionStatus:'pendiente_recepcion'` + un `stockMove`
-     `entrada_produccion`.
-  2. **Recepción en CEDI**: `confirmarRecepcionCEDI`/`markCEDIReceived` (Demo6:6472 / 1664) marca
-     la recepción y deja el `finishedStock` `disponible` en CEDI.
-  3. **UI de Despacho/Inventario**: sección "pendiente de recepción" + botón "Confirmar recepción".
-- **Severidad:** media. **Por qué se difiere (decisión del usuario 2026-05-27):** Demo6 lo modela
-  como pipeline separado del despacho; tocarlo arriesga regresión sobre Auditoría (H-106 estable);
-  el flujo A es demostrable end-to-end por sí solo; B puede agregarse después sin romper A.
+Cierra el ciclo que EX-F3-02 dejó listo: los `finishedStock` con
+`receptionStatus:'pendiente_recepcion'` (creados al "Crear producto en CEDI") se confirman como
+recibidos.
+
+**Implementado:**
+- **Acción `confirmarRecepcion(fsId)`** (1 `setState` atómico): `finishedStock` →
+  `receptionStatus:'recibido'` + `readyDate/receivedAt/receivedBy`; **suma `f.qty` al stock
+  maestro** `products[productId].stock` (y `warehouseId` si faltaba); **OP → `estado:'listo'`**
+  (fiel a Demo6:7707; sigue despachable, `reqReady` acepta `listo`); convierte el
+  `stockMove` `entrada_produccion_pendiente` → `entrada_produccion` + `verifiedAt/verifiedBy`.
+  Guard: si ya está `'recibido'` → toast info, no-op.
+- **UI:** banner "📦 Pendiente de recepción en CEDI" que lista los pendientes (producto, OP,
+  bodega, cliente / stock libre) con botón "✓ Confirmar recepción". Desaparece cuando no hay
+  pendientes (contador en la cabecera del banner).
+- **Ajuste en `crearProductoCEDI` (EX-F3-02):** el `stockMove` se crea como
+  `entrada_produccion_pendiente` (se convierte en definitivo al recibir). Seguro: `stockMoves`
+  solo se **muestra** como label en `AlmacenMP` (`moveCols`); ningún conteo de stock sale de
+  `stockMoves` (el inventario se cuenta desde `finishedStock`/`product.stock`).
+
+**No-doble-conteo (verificado):** el conteo de unidades de Inventario Terminado e Inicio sale
+**solo de `finishedStock`**; `product.stock` no se agrega junto a `finishedStock` en ningún KPI
+(grep confirmado: `Inicio`, `ListaPrecios`, `InventarioTerminado` cuentan `finishedStock`;
+`product.stock` solo se usa como display y se decrementa en venta EX-F2-07). Sumar al maestro en
+la recepción incrementa `product.stock` exactamente una vez sin duplicar.
+
+**Ciclo cerrado de punta a punta:** Producción ("Listo") → Auditoría (cerrar OP → crear producto
+CEDI [pendiente] → aprobar facturar [IREQ `aprobada_auditoria`]) → Inventario (confirmar
+recepción → stock maestro + OP `listo` + move definitivo) → Despacho (flujo A). Sin estados
+intermedios contradictorios; ningún `finishedStock` queda atascado en `pendiente_recepcion` sin
+forma de recibirlo.
+
+**Validación:** test node del ciclo 7/7 (recibido, +1 al maestro, sin doble conteo, OP listo,
+move convertido, guard idempotente, sin pendientes atascados) + `eslint` 0 errores en los
+archivos tocados + `vite build` OK.

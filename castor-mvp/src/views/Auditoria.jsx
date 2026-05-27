@@ -211,7 +211,9 @@ export default function Auditoria() {
         ...(s.finishedStock || []),
       ],
       stockMoves: [
-        { id: smId, orderId: o.id, pedidoId: o.pedidoId || null, productId, qty: o.qty || 1, type: 'entrada_produccion', date, warehouseId: cedi.id, reason: `Producción OP ${o.id}`, by },
+        // 'entrada_produccion_pendiente' = ingreso aún no verificado físicamente; la recepción en
+        // CEDI (EX-F3-03, InventarioTerminado.confirmarRecepcion) lo convierte en 'entrada_produccion'.
+        { id: smId, orderId: o.id, pedidoId: o.pedidoId || null, productId, qty: o.qty || 1, type: 'entrada_produccion_pendiente', date, warehouseId: cedi.id, reason: `Producción OP ${o.id}`, by },
         ...(s.stockMoves || []),
       ],
       orders: (s.orders || []).map((x) => (x.id === o.id ? { ...x, cediRequestedAt: date, cediClassification: classification } : x)),

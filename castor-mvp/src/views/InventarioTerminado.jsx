@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
-import { KpiCard, Badge, Chip } from '../components/ui';
+import { KpiCard, Chip } from '../components/ui';
 import { fmtCOP } from '../lib/accounting';
-import { fmtDate } from '../lib/format';
+import { fmtDate, today, nowISO } from '../lib/format';
 import { ClearFiltersButton } from '../components/widgets';
-import { IconBox, IconDashboard, IconArrow, IconCheck, IconShield, IconBank } from '../components/icons';
+import { IconBox, IconDashboard, IconCheck, IconShield, IconBank } from '../components/icons';
 import { useToast } from '../components/Toast';
 import Modal from '../components/Modal';
 import { Field, Input, Select, FormGrid } from '../components/form';
@@ -16,7 +16,7 @@ import { Field, Input, Select, FormGrid } from '../components/form';
 // estado y acción "Trasladar".
 // ─────────────────────────────────────────────────────────────────────────────
 export default function InventarioTerminado() {
-  const { finishedStock, products, warehouses, orders, customers, setState, nextId, currentUser } = useApp();
+  const { finishedStock, products, warehouses, customers, setState, currentUser } = useApp();
   const toast = useToast();
   const [bodega, setBodega] = useState(''); // '' = todas
   const [vista, setVista] = useState('stock'); // stock | clientes
@@ -45,6 +45,47 @@ export default function InventarioTerminado() {
     const pendientes = finishedStock.filter((f) => f.status === 'en_transito').length;
     return { unidades, disp, valor, pendientes };
   }, [finishedStock, products]);
+
+  // EX-F3-03: ingresos de producción esperando verificación de recepción en CEDI.
+  const pendientesRecep = useMemo(
+    () => finishedStock.filter((f) => f.receptionStatus === 'pendiente_recepcion'),
+    [finishedStock],
+  );
+
+  // Confirma la recepción física en CEDI (espejo de verifyCEDIReception, Demo6:7691-7720). En UN
+  // setState atómico (cascada B2): marca el finishedStock 'recibido', suma al stock maestro del
+  // producto, deja la OP 'listo' y convierte el stockMove pendiente en entrada definitiva.
+  const confirmarRecepcion = (fsId) => {
+    const f = finishedStock.find((x) => x.id === fsId);
+    if (!f) return;
+    if (f.receptionStatus === 'recibido') return toast('Ya estaba marcado como recibido', 'info');
+    const date = today();
+    const at = nowISO();
+    const by = currentUser?.name || 'Logística';
+    setState((s) => {
+      const rec = s.finishedStock.find((x) => x.id === fsId);
+      if (!rec) return s;
+      const { qty = 0, productId: pid, warehouseId: wid, orderId: oid } = rec;
+      return {
+        ...s,
+        finishedStock: s.finishedStock.map((x) =>
+          x.id === fsId ? { ...x, receptionStatus: 'recibido', readyDate: date, receivedAt: at, receivedBy: by } : x,
+        ),
+        // Suma al maestro UNA sola vez. El conteo de unidades de Inventario/Inicio sale de
+        // finishedStock (NO de product.stock), así que esto no duplica en ningún KPI.
+        products: s.products.map((p) =>
+          p.id === pid ? { ...p, stock: (p.stock || 0) + (Number(qty) || 0), warehouseId: p.warehouseId || wid } : p,
+        ),
+        orders: s.orders.map((o) => (oid && o.id === oid ? { ...o, estado: 'listo' } : o)),
+        stockMoves: (s.stockMoves || []).map((m) =>
+          m.orderId === oid && m.type === 'entrada_produccion_pendiente'
+            ? { ...m, type: 'entrada_produccion', verifiedAt: date, verifiedBy: by }
+            : m,
+        ),
+      };
+    });
+    toast('✓ Recepción confirmada · producto disponible en CEDI', 'ok');
+  };
 
   // Resumen por bodega usado en las tarjetas (líneas, terminados, valor).
   const summaryByW = useMemo(() => {
@@ -158,6 +199,40 @@ export default function InventarioTerminado() {
         <KpiCard label="Valor inventario" value={fmtCOP(kpis.valor)} accent="#3b82f6" icon={<IconBank width={18} height={18} />} />
         <KpiCard label="En tránsito" value={kpis.pendientes} accent="#f59e0b" icon={<IconShield width={18} height={18} />} />
       </div>
+
+      {/* EX-F3-03: pendientes de recepción en CEDI (producción esperando verificación) */}
+      {pendientesRecep.length > 0 && (
+        <div className="panel p-4" style={{ borderLeft: '4px solid #C9A961' }}>
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="font-semibold text-gold-accent">📦 Pendiente de recepción en CEDI</h3>
+            <span className="text-xs text-muted">{pendientesRecep.length} por verificar</span>
+          </div>
+          <div className="space-y-2">
+            {pendientesRecep.map((f) => {
+              const p = prod(f.productId);
+              return (
+                <div key={f.id} className="panel-2 flex flex-wrap items-center justify-between gap-2 rounded p-3">
+                  <div className="min-w-0">
+                    <div className="text-sm text-white">
+                      {p?.photo || '📦'} {p?.name || f.productId} <span className="text-muted">×{f.qty}</span>
+                    </div>
+                    <div className="text-[11px] text-muted">
+                      OP <span className="font-mono text-gold-accent">{f.orderId || '—'}</span> · {wName(f.warehouseId)}
+                      {f.clientName ? ` · ${f.clientName}` : ' · stock libre'}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => confirmarRecepcion(f.id)}
+                    className="rounded-lg border border-emerald-500/30 px-3 py-1.5 text-xs text-emerald-300 transition hover:bg-emerald-500/10"
+                  >
+                    ✓ Confirmar recepción
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Título de bodegas */}
       <div className="flex items-center gap-2 text-sm">

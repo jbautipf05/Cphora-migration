@@ -62,6 +62,8 @@ export default function AlmacenMP() {
   const [ocForm, setOcForm] = useState(null); // AMP-01: alta de orden de compra
   const [recForm, setRecForm] = useState(null); // AMP-02: recepción de insumos (entrada)
   const [issForm, setIssForm] = useState(null); // AMP-03: salida/devolución de insumos
+  const [selSup, setSelSup] = useState(null); // detalle de proveedor (doble clic)
+  const [selRec, setSelRec] = useState(null); // detalle de entrada (doble clic)
 
   const insumoBodegas = warehouses.filter((w) => w.tipo === 'insumos');
   const supName = (id) => suppliers.find((s) => s.id === id)?.name || id;
@@ -160,8 +162,10 @@ export default function AlmacenMP() {
   }
   function saveSupplier() {
     if (!supForm.name.trim()) return toast('Indica el nombre', 'warn');
+    if (!supForm.address.trim()) return toast('Indica la dirección', 'warn');
+    if (!supForm.actividadEconomica.trim()) return toast('Indica la actividad económica', 'warn');
     const id = nextId('SUP', 'sup', 2);
-    add('suppliers', { id, ...supForm, pais: 'Colombia' });
+    add('suppliers', { id, ...supForm, pais: supForm.pais || 'Colombia' });
     toast(`Proveedor ${id} creado`, 'ok');
     setSupForm(null);
   }
@@ -664,6 +668,7 @@ export default function AlmacenMP() {
                     city: '',
                     address: '',
                     actividadEconomica: '',
+                    pais: 'Colombia',
                   })
                 }
               >
@@ -672,18 +677,31 @@ export default function AlmacenMP() {
             </div>
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {fProveedores.map((s) => (
-              <div key={s.id} className="panel p-4">
-                <div className="flex items-start justify-between">
-                  <p className="font-semibold text-white">{s.name}</p>
-                  <Chip variant="gold">{s.category}</Chip>
-                </div>
-                <p className="mt-0.5 font-mono text-xs text-muted">{s.nit}</p>
-                <p className="mt-2 text-sm text-muted">{s.contact} · {s.phone}</p>
-                <p className="text-xs text-muted">{s.email}</p>
-                <p className="mt-1 text-xs text-muted">📍 {s.city} · {s.address}</p>
-              </div>
-            ))}
+            {fProveedores.map((s) => {
+              const ocCount = purchaseOrders.filter((o) => o.supplierId === s.id).length;
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => setSelSup(s)}
+                  className="panel p-4 text-left transition hover:border-gold-accent"
+                  title="Clic para ver el detalle del proveedor"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-white">{s.name}</p>
+                      <p className="font-mono text-[11px] text-muted">{s.id}</p>
+                    </div>
+                    <Chip variant="gold">{s.category}</Chip>
+                  </div>
+                  <p className="mt-2 text-xs text-muted">👤 {s.contact || '—'} · {s.phone || ''}</p>
+                  <p className="text-xs text-muted">✉ {s.email || '—'}</p>
+                  <p className="mt-1 text-xs text-muted">📍 {s.city || '—'} · {s.address || ''}</p>
+                  <div className="mt-3 border-t border-white/10 pt-2 text-[11px] text-muted">
+                    📄 {ocCount} OC(s) enviada(s)
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </>
       )}
@@ -746,7 +764,8 @@ export default function AlmacenMP() {
                 {(supplyReceipts || []).map((r) => {
                   const total = (r.items || []).reduce((a, it) => a + (Number(it.qty) || 0) * (Number(it.cost) || 0), 0);
                   return (
-                    <tr key={r.id} className="border-b border-white/5 hover:bg-white/5">
+                    <tr key={r.id} className="cursor-pointer border-b border-white/5 hover:bg-white/5" onDoubleClick={() => setSelRec(r)} title="Doble clic para ver el detalle">
+
                       <td className="px-3 py-2 font-mono text-xs text-gold-accent">{r.id}</td>
                       <td className="px-3 py-2 text-muted">{fmtDate(r.date)}</td>
                       <td className="px-3 py-2 font-mono text-xs text-gold-accent">{r.purchaseOrderId || '—'}</td>
@@ -949,14 +968,14 @@ export default function AlmacenMP() {
         footer={
           <>
             <button className="btn-outline" onClick={() => setSupForm(null)}>Cancelar</button>
-            <button className="btn-gold" onClick={saveSupplier}>Guardar</button>
+            <button className="btn-gold" onClick={saveSupplier}>Crear</button>
           </>
         }
       >
         {supForm && (
           <FormGrid cols={2}>
-            <Field label="Nombre" className="sm:col-span-2"><Input value={supForm.name} onChange={(e) => setSupForm((f) => ({ ...f, name: e.target.value }))} /></Field>
-            <Field label="NIT"><Input value={supForm.nit} onChange={(e) => setSupForm((f) => ({ ...f, nit: e.target.value }))} /></Field>
+            <Field label="Nombre *" className="sm:col-span-2"><Input value={supForm.name} onChange={(e) => setSupForm((f) => ({ ...f, name: e.target.value }))} /></Field>
+            <Field label="NIT/RUT"><Input value={supForm.nit} onChange={(e) => setSupForm((f) => ({ ...f, nit: e.target.value }))} /></Field>
             <Field label="Categoría">
               <Select value={supForm.category} onChange={(e) => setSupForm((f) => ({ ...f, category: e.target.value }))}>
                 {SUPPLY_CATS.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -964,9 +983,11 @@ export default function AlmacenMP() {
             </Field>
             <Field label="Contacto"><Input value={supForm.contact} onChange={(e) => setSupForm((f) => ({ ...f, contact: e.target.value }))} /></Field>
             <Field label="Teléfono"><Input value={supForm.phone} onChange={(e) => setSupForm((f) => ({ ...f, phone: e.target.value }))} /></Field>
-            <Field label="Email"><Input value={supForm.email} onChange={(e) => setSupForm((f) => ({ ...f, email: e.target.value }))} /></Field>
+            <Field label="Correo"><Input value={supForm.email} onChange={(e) => setSupForm((f) => ({ ...f, email: e.target.value }))} /></Field>
             <Field label="Ciudad"><Input value={supForm.city} onChange={(e) => setSupForm((f) => ({ ...f, city: e.target.value }))} /></Field>
-            <Field label="Dirección" className="sm:col-span-2"><Input value={supForm.address} onChange={(e) => setSupForm((f) => ({ ...f, address: e.target.value }))} /></Field>
+            <Field label="País *"><Input value={supForm.pais} onChange={(e) => setSupForm((f) => ({ ...f, pais: e.target.value }))} /></Field>
+            <Field label="Dirección *"><Input value={supForm.address} onChange={(e) => setSupForm((f) => ({ ...f, address: e.target.value }))} /></Field>
+            <Field label="Actividad Económica *" className="sm:col-span-2"><Input value={supForm.actividadEconomica} onChange={(e) => setSupForm((f) => ({ ...f, actividadEconomica: e.target.value }))} placeholder="Ej: Comercio al por mayor de madera" /></Field>
           </FormGrid>
         )}
       </Modal>
@@ -1067,7 +1088,22 @@ export default function AlmacenMP() {
                   {insumoBodegas.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
                 </Select>
               </Field>
-              <Field label="Foto de remisión *"><Input value={recForm.photo} onChange={(e) => setRecForm((f) => ({ ...f, photo: e.target.value }))} placeholder="remision_REM-12345.jpg" /></Field>
+              <Field label="Foto de remisión *">
+                {recForm.photo ? (
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-xs text-emerald-300">📸 {recForm.photo}</span>
+                    <button type="button" className="text-xs text-red-300 hover:underline" onClick={() => setRecForm((f) => ({ ...f, photo: '' }))}>Quitar</button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn-outline w-full text-xs"
+                    onClick={() => setRecForm((f) => ({ ...f, photo: `remision_${(f.remision || 'SIN-REM').replace(/\s+/g, '-')}_${Date.now().toString(36)}.jpg` }))}
+                  >
+                    📎 Adjuntar foto
+                  </button>
+                )}
+              </Field>
             </FormGrid>
 
             <div className="panel-2 rounded p-4">
@@ -1209,6 +1245,148 @@ export default function AlmacenMP() {
           </div>
         )}
       </Modal>
+
+      {/* Detalle de proveedor (espejo de openSupplierDetail Demo6:2075) */}
+      <SlidePanel
+        open={!!selSup}
+        onClose={() => setSelSup(null)}
+        title={selSup?.name}
+        subtitle={selSup ? `${selSup.id} · ${selSup.category || '—'}` : ''}
+      >
+        {selSup && (() => {
+          const ocs = purchaseOrders.filter((o) => o.supplierId === selSup.id).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+          const recs = (supplyReceipts || []).filter((r) => r.supplierId === selSup.id).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+          const insumosLinkados = supplies.filter((i) => i.supplierId === selSup.id);
+          const totalCompras = ocs.reduce((a, o) => a + (Number(o.total) || 0), 0);
+          const ocsAbiertas = ocs.filter((o) => o.estado === 'abierta' || o.estado === 'parcial').length;
+          return (
+            <div className="space-y-5">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                {[
+                  ['NIT/RUT', selSup.nit], ['Contacto', selSup.contact], ['Teléfono', selSup.phone],
+                  ['Correo', selSup.email], ['Ciudad', selSup.city], ['País', selSup.pais],
+                ].map(([k, v]) => (
+                  <div key={k} className="rounded-lg border border-white/5 bg-brand-bg/40 p-3">
+                    <p className="text-[11px] uppercase text-muted">{k}</p>
+                    <p className="mt-0.5 text-white">{v || '—'}</p>
+                  </div>
+                ))}
+                <div className="col-span-2 rounded-lg border border-white/5 bg-brand-bg/40 p-3">
+                  <p className="text-[11px] uppercase text-muted">Actividad económica</p>
+                  <p className="mt-0.5 text-white">{selSup.actividadEconomica || '—'}</p>
+                </div>
+                <div className="col-span-2 rounded-lg border border-white/5 bg-brand-bg/40 p-3">
+                  <p className="text-[11px] uppercase text-muted">Dirección</p>
+                  <p className="mt-0.5 text-white">{selSup.address || '—'}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="panel-2 rounded p-3"><p className="text-[11px] text-muted">OCs históricas</p><p className="text-lg font-bold text-white">{ocs.length}</p></div>
+                <div className="panel-2 rounded p-3"><p className="text-[11px] text-muted">OCs abiertas</p><p className="text-lg font-bold text-amber-300">{ocsAbiertas}</p></div>
+                <div className="panel-2 rounded p-3"><p className="text-[11px] text-muted">Total comprado</p><p className="text-lg font-bold text-gold-accent">{fmtCOP(totalCompras)}</p></div>
+              </div>
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gold-accent/80">Órdenes de compra ({ocs.length})</p>
+                <div className="space-y-1">
+                  {ocs.length ? ocs.map((o) => (
+                    <div key={o.id} className="flex items-center justify-between rounded border border-white/5 bg-brand-bg/40 px-3 py-1.5 text-xs">
+                      <span className="font-mono text-gold-accent">{o.id}</span>
+                      <span className="text-muted">{fmtDate(o.date)}</span>
+                      <EstadoBadge value={o.estado} />
+                      <span className="text-gold-accent">{fmtCOP(o.total)}</span>
+                    </div>
+                  )) : <p className="text-xs italic text-muted">Sin OCs</p>}
+                </div>
+              </div>
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gold-accent/80">Entradas recibidas ({recs.length})</p>
+                <div className="space-y-1">
+                  {recs.length ? recs.map((r) => {
+                    const tot = (r.items || []).reduce((a, it) => a + (Number(it.qty) || 0) * (Number(it.cost) || 0), 0);
+                    return (
+                      <div key={r.id} className="flex items-center justify-between rounded border border-white/5 bg-brand-bg/40 px-3 py-1.5 text-xs">
+                        <span className="font-mono text-gold-accent">{r.id}</span>
+                        <span className="text-muted">{fmtDate(r.date)}</span>
+                        <span className="text-white">REM {r.remision || '—'}</span>
+                        <span className="text-gold-accent">{fmtCOP(tot)}</span>
+                      </div>
+                    );
+                  }) : <p className="text-xs italic text-muted">Sin entradas</p>}
+                </div>
+              </div>
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gold-accent/80">Insumos suministrados ({insumosLinkados.length})</p>
+                <div className="space-y-1">
+                  {insumosLinkados.length ? insumosLinkados.map((i) => (
+                    <div key={i.id} className="flex items-center justify-between rounded border border-white/5 bg-brand-bg/40 px-3 py-1.5 text-xs">
+                      <span className="text-white">{i.name}</span>
+                      <span className="text-muted">{i.category}</span>
+                      <span className="text-gold-accent">{fmtCOP(i.cost)}/{i.unit || ''}</span>
+                    </div>
+                  )) : <p className="text-xs italic text-muted">Sin insumos asociados</p>}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+      </SlidePanel>
+
+      {/* Detalle de entrada (espejo de openReceiptDetail Demo6:2139) */}
+      <SlidePanel
+        open={!!selRec}
+        onClose={() => setSelRec(null)}
+        title={selRec?.id}
+        subtitle={selRec ? `Entrada · ${supName(selRec.supplierId)}` : ''}
+      >
+        {selRec && (() => {
+          const oc = purchaseOrders.find((o) => o.id === selRec.purchaseOrderId);
+          const total = (selRec.items || []).reduce((a, it) => a + (Number(it.qty) || 0) * (Number(it.cost) || 0), 0);
+          return (
+            <div className="space-y-5">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                {[
+                  ['Fecha', fmtDate(selRec.date)], ['N° remisión', selRec.remision || '—'],
+                  ['Bodega', wName(selRec.warehouseId)], ['Registró', selRec.registeredBy || '—'],
+                ].map(([k, v]) => (
+                  <div key={k} className="rounded-lg border border-white/5 bg-brand-bg/40 p-3">
+                    <p className="text-[11px] uppercase text-muted">{k}</p>
+                    <p className="mt-0.5 text-white">{v}</p>
+                  </div>
+                ))}
+              </div>
+              {oc && (
+                <div className="rounded-lg border border-white/5 bg-brand-bg/40 p-3" style={{ borderLeft: '3px solid #C9A961' }}>
+                  <p className="text-[11px] uppercase text-gold-accent">🔗 Orden de Compra vinculada</p>
+                  <p className="mt-0.5 text-white">{oc.id} · {oc.supplier || ''}</p>
+                  <p className="text-[10px] text-muted">Estado OC: {oc.estado} · Total OC: {fmtCOP(oc.total)}</p>
+                </div>
+              )}
+              <div className="rounded-lg border border-white/5 bg-brand-bg/40 p-3">
+                <p className="text-[11px] uppercase text-muted">Foto remisión</p>
+                {selRec.photo?.filename
+                  ? <p className="mt-0.5 text-xs text-emerald-300">📸 {selRec.photo.filename}</p>
+                  : <p className="mt-0.5 text-xs text-red-400">✗ Sin foto de remisión</p>}
+              </div>
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gold-accent/80">Ítems recibidos ({(selRec.items || []).length})</p>
+                <div className="space-y-1">
+                  {(selRec.items || []).map((it, i) => (
+                    <div key={i} className="flex items-center justify-between rounded border border-white/5 bg-brand-bg/40 px-3 py-1.5 text-xs">
+                      <span className="text-white">{supplyName(it.supplyId)}</span>
+                      <span className="text-muted">{it.qty} {it.unit || ''}</span>
+                      <span className="text-gold-accent">{fmtCOP((Number(it.qty) || 0) * (Number(it.cost) || 0))}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-2 flex justify-between border-t border-white/10 pt-2 text-sm">
+                  <span className="text-muted">Total entrada</span>
+                  <span className="font-bold text-gold-accent">{fmtCOP(total)}</span>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+      </SlidePanel>
     </div>
   );
 }

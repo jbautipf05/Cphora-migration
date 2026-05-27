@@ -159,11 +159,23 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
     return errs;
   }
 
+  // REG-H035-08 — Control General. Demo6 (openSaleForm:5641-5643) exige asesor,
+  // tiempo y docType con `required` nativo (docType además con backstop JS en
+  // saveSale:5984). En React tiempo/docType arrancan con default no vacío (30 /
+  // 'factura'), así que su validación es defensiva; asesor sí puede quedar vacío.
+  function validateControl(v) {
+    const errs = {};
+    if (!v.asesor) errs.asesor = 'Selecciona un asesor';
+    if (!v.tiempo) errs.tiempo = 'Selecciona el tiempo de producción';
+    if (!v.docType) errs.docType = 'Selecciona el tipo de documento';
+    return errs;
+  }
+
   function handleSubmit() {
-    const errs = validateClient(f);
+    const errs = { ...validateClient(f), ...validateControl(f) };
     if (Object.keys(errs).length) {
       setErrors(errs);
-      return toast('Revisa los campos del cliente marcados', 'warn');
+      return toast('Revisa los campos marcados', 'warn');
     }
     setErrors({});
     if (innovation ? !f.innovItems.some((it) => it.name.trim()) : !f.items.some((it) => it.productId)) return;
@@ -426,17 +438,20 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
               <option value="">— Elegir —</option>
               {asesores.map((a) => <option key={a} value={a}>{a}</option>)}
             </Select>
+            {errLine('asesor')}
           </Field>
           <Field label="Tiempo producción (días) *">
             <Select value={f.tiempo} onChange={(e) => set('tiempo', Number(e.target.value))}>
               {[20, 30, 45, 60, 90].map((v) => <option key={v} value={v}>{v} días</option>)}
             </Select>
+            {errLine('tiempo')}
           </Field>
           <Field label="Documento *">
             <Select value={f.docType} onChange={(e) => set('docType', e.target.value)}>
               <option value="factura">Factura</option>
               <option value="remisión">Remisión</option>
             </Select>
+            {errLine('docType')}
           </Field>
           <Field label="% Anticipo"><Input type="number" min="0" max="100" value={f.paid} onChange={(e) => setF((p) => ({ ...p, paid: Number(e.target.value), payManual: false }))} /></Field>
         </div>

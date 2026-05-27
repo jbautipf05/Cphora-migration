@@ -138,3 +138,37 @@ Validado E2E (5 tests) en `docs/parity/FASE3/VALIDACION_EX_F2_05.md`.
   e Inventario dependen de estos registros). Vender stock no reserva ni mueve inventario.
 - **Plan:** evaluar al portar los módulos de inventario/despacho en Fase 3. Verificar si la reserva debe
   ocurrir en la venta (como Demo6) o en otro punto del flujo de despacho del modelo React.
+
+---
+
+## EX-F2-08 — Acabados del ítem no se persisten en `order.acabados` [DETECTADO EN FASE 2.5.2 REG-01/02/07-cond]
+
+**Ubicación:** `src/views/Ventas.jsx` `submitSale` (construcción de la orden a partir de los ítems).
+
+- **Contexto:** Fase 2.5.2 (REG-H035-01/02 + 07-condicional) agregó al modal Nueva Venta los selectores de
+  acabado (color madera/metal/tejido + tela de tapicería), condicionales por `product.areas`, y su
+  validación de obligatoriedad. Los valores se capturan en el estado del ítem (`colorMadera`,
+  `colorMaderaOtro`, `colorMetal`, `telaId`, `colorTejido`) y viajan al handler vía `onSubmit({...f})`.
+- **Comparación con Demo6:** `saveSale` (`:6092-6099`) escribe `acabados:{ colorMadera, colorMetal, telaId,
+  colorTejido }` en cada orden creada. **React `submitSale` aún NO lee ni persiste `item.acabados`** en las
+  órdenes → el dato capturado en el modal se pierde al guardar.
+- **Severidad:** media — necesaria para **paridad 1:1** del dato persistido; **alta relevancia** cuando se
+  porten **Producción/Auditoría** (que en Demo6 leen `order.acabados` para mostrar el detalle de fabricación).
+- **Por qué no se toca ahora:** fuera del alcance del modal (Fase 2.5.2 cierra el modal Nueva Venta H-035);
+  tocar `submitSale` + el shape de `orders` es trabajo downstream.
+- **Plan (decisión del usuario 2026-05-26):** evaluar al portar Producción/Auditoría que consuman
+  `order.acabados`. Follow-up acotado a `submitSale`.
+
+---
+
+## EX-F2-09 — Alta rápida de tela ("+" quickAddTela) no portada [DECISIÓN FASE 2.5.2 REG-02]
+
+**Ubicación:** modal Nueva Venta, buscador de tela de tapicería (`NuevaVentaModal` `TelaPicker`).
+
+- **Comparación con Demo6:** `renderSaleAcabados` incluye un botón "+" (`quickAddTela`, `:5877`) que pide
+  nombre/costo por `prompt()` y crea una nueva tela en `supplies` al vuelo.
+- **Estado React:** REG-H035-02 implementó el **buscador con autocompletado** (lo que pedía el inventario:
+  "reusar ProductPicker"), pero **NO el botón "+"** de alta rápida (muta inventario; usa `prompt()`).
+- **Severidad:** baja (conveniencia; el buscador cubre las telas del seed).
+- **Plan (decisión del usuario 2026-05-26):** no agregar por ahora; si el cliente lo pide tras la demo,
+  incorporarlo como EX. Registrado para trazabilidad.

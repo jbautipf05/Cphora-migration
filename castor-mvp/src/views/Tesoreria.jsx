@@ -15,11 +15,16 @@ const BANK_TYPES = ['Corriente', 'Ahorros', 'Empresarial', 'Recaudo', 'Efectivo'
 const emptyBank = () => ({ mode: 'new', id: null, bank: '', type: 'Corriente', number: '****', holder: 'Castor SAS', balance: 0, color: '#C9A961' });
 
 export default function Tesoreria() {
-  const { bankAccounts, payments, outgoingPayments, suppliers, employees, pucAccounts, journalLines, update, add, setState, nextId } = useApp();
+  const {
+    bankAccounts, payments, outgoingPayments, orders, suppliers, employees, pucAccounts, journalLines,
+    update, add, setState, nextId,
+    postCustomerCollection, postSupplierPayment, postBankAdjustment,
+  } = useApp();
   const toast = useToast();
   const [tab, setTab] = useState('entrantes');
   const [out, setOut] = useState(null);
   const [bankForm, setBankForm] = useState(null); // CRUD de cuentas (§7.8)
+  const [adjForm, setAdjForm] = useState(null); // conciliación / ajuste de saldo (T4)
 
   const bankName = (id) => bankAccounts.find((b) => b.id === id)?.bank || id;
 
@@ -59,10 +64,57 @@ export default function Tesoreria() {
     };
   }, [payments]);
 
-  const approve = (id) => { update('payments', id, { estado: 'confirmado' }); toast('Pago confirmado', 'ok'); };
+  // T1 — Aprobar pago entrante: estado + acreditar banco + paid% del pedido + asiento de cobro.
+  const approve = (id) => {
+    const p = payments.find((x) => x.id === id);
+    if (!p || p.estado === 'confirmado') return;
+    const order = orders.find((o) => o.id === p.orderId);
+    setState((s) => {
+      const np = s.payments.map((x) =>
+        x.id === id ? { ...x, estado: 'confirmado', approvedAt: today(), approvedBy: s.currentUser?.name || 'Tesorería' } : x,
+      );
+      const nb = s.bankAccounts.map((b) => (b.id === p.bankId ? { ...b, balance: (b.balance || 0) + (p.amount || 0) } : b));
+      let no = s.orders;
+      if (order) {
+        const sumPag = np.filter((x) => x.orderId === p.orderId && x.estado === 'confirmado').reduce((a, x) => a + (x.amount || 0), 0);
+        const pct = order.total ? Math.min(100, Math.round((sumPag / order.total) * 100)) : 0;
+        no = s.orders.map((o) => (o.id === p.orderId ? { ...o, paid: pct } : o));
+      }
+      return { ...s, payments: np, bankAccounts: nb, orders: no };
+    });
+    const res = postCustomerCollection({ id, date: today(), customerId: order?.customerId || null, bankAccountId: p.bankId, amount: p.amount, invoiceId: p.orderId });
+    if (res?.ok) toast(`Ingreso aprobado · asiento ${res.journalEntry.id}`, 'ok');
+    else toast(`Ingreso aprobado (aviso contable: ${res?.message || res?.error || '—'})`, 'warn');
+  };
+  // reject solo aplica a pendientes (nunca se posteó asiento) → estado simple.
   const reject = (id) => { update('payments', id, { estado: 'rechazado' }); toast('Pago rechazado', 'warn'); };
-  const confirmOut = (id) => { update('outgoingPayments', id, { estado: 'confirmado' }); toast('Egreso confirmado', 'ok'); };
-  const annulOut = (id) => { update('outgoingPayments', id, { estado: 'anulado' }); toast('Egreso anulado', 'warn'); };
+
+  // T2 — Confirmar pago saliente: estado + debitar banco + asiento de egreso.
+  const confirmOut = (id) => {
+    const p = outgoingPayments.find((x) => x.id === id);
+    if (!p || p.estado === 'confirmado') return;
+    setState((s) => ({
+      ...s,
+      outgoingPayments: s.outgoingPayments.map((x) => (x.id === id ? { ...x, estado: 'confirmado', confirmedAt: today() } : x)),
+      bankAccounts: s.bankAccounts.map((b) => (b.id === p.bankId ? { ...b, balance: Math.max(0, (b.balance || 0) - (p.amount || 0)) } : b)),
+    }));
+    const res = postSupplierPayment({ id, date: p.date || today(), beneficiario: p.beneficiario, beneficiarioId: p.beneficiario, bankAccountId: p.bankId, amount: p.amount, purchaseOrderId: p.ocId || null });
+    if (res?.ok) toast(`Egreso confirmado · asiento ${res.journalEntry.id}`, 'ok');
+    else toast(`Egreso confirmado (aviso contable: ${res?.message || res?.error || '—'})`, 'warn');
+  };
+  // annulOut: si estaba confirmado, re-acredita el banco (revertir el asiento queda como follow-up).
+  const annulOut = (id) => {
+    const p = outgoingPayments.find((x) => x.id === id);
+    if (!p || p.estado === 'anulado') return;
+    setState((s) => ({
+      ...s,
+      outgoingPayments: s.outgoingPayments.map((x) => (x.id === id ? { ...x, estado: 'anulado' } : x)),
+      bankAccounts: p.estado === 'confirmado'
+        ? s.bankAccounts.map((b) => (b.id === p.bankId ? { ...b, balance: (b.balance || 0) + (p.amount || 0) } : b))
+        : s.bankAccounts,
+    }));
+    toast('Egreso anulado', 'warn');
+  };
 
   const setO = (k, v) => setOut((o) => ({ ...o, [k]: v }));
   const benefList = out?.tipo === 'empleado' ? employees.map((e) => e.name) : suppliers.map((s) => s.name);
@@ -125,6 +177,21 @@ export default function Tesoreria() {
     toast(`Cuenta ${b.bank} eliminada`, 'ok');
   }
 
+  // T4 — Conciliación: ajusta el saldo (+/-) y genera el asiento de ajuste.
+  function saveAdjust() {
+    const delta = Number(adjForm.delta) || 0;
+    if (!delta) return toast('Ingresa un ajuste distinto de 0', 'warn');
+    if (!adjForm.concept.trim()) return toast('Indica el concepto', 'warn');
+    setState((s) => ({
+      ...s,
+      bankAccounts: s.bankAccounts.map((b) => (b.id === adjForm.bankId ? { ...b, balance: Math.max(0, (b.balance || 0) + delta) } : b)),
+    }));
+    const res = postBankAdjustment({ id: uid('BADJ'), bankId: adjForm.bankId, delta, concept: adjForm.concept.trim(), date: today() });
+    if (res?.ok) toast(`Saldo ajustado · asiento ${res.journalEntry.id}`, 'ok');
+    else toast(`Saldo ajustado (aviso contable: ${res?.message || res?.error || '—'})`, 'warn');
+    setAdjForm(null);
+  }
+
   const inCols = [
     { key: 'id', label: 'ID', render: (r) => <span className="font-mono text-xs text-brand-gold">{r.id}</span> },
     { key: 'orderId', label: 'Pedido', render: (r) => <span className="text-brand-muted">{r.orderId}</span> },
@@ -185,6 +252,7 @@ export default function Tesoreria() {
             <p className="mt-1 text-[11px] text-brand-muted">{b.holder || ''} · PUC {b.pucCode}</p>
             <div className="mt-3 flex gap-3 border-t border-white/5 pt-2">
               <button className="text-[11px] text-brand-gold hover:underline" onClick={() => setBankForm({ mode: 'edit', ...b })}>✎ Editar</button>
+              <button className="text-[11px] text-sky-300 hover:underline" onClick={() => setAdjForm({ bankId: b.id, delta: '', concept: '' })}>⚖ Conciliar</button>
               <button className="text-[11px] text-red-300 hover:underline" onClick={() => deleteBank(b)}>🗑 Eliminar</button>
             </div>
           </div>
@@ -294,6 +362,33 @@ export default function Tesoreria() {
             {bankForm.mode === 'new' && (
               <p className="text-[11px] text-brand-muted">Se creará automáticamente la auxiliar PUC <b className="text-brand-gold-light">{nextBankPuc()}</b> (1110-XX).</p>
             )}
+          </FormGrid>
+        )}
+      </Modal>
+
+      {/* Conciliación / ajuste de saldo (T4) */}
+      <Modal
+        open={!!adjForm}
+        onClose={() => setAdjForm(null)}
+        title={adjForm ? `Conciliar ${bankName(adjForm.bankId)}` : 'Conciliar'}
+        size="sm"
+        footer={
+          <>
+            <button className="btn-outline" onClick={() => setAdjForm(null)}>Cancelar</button>
+            <button className="btn-gold" onClick={saveAdjust}>Aplicar</button>
+          </>
+        }
+      >
+        {adjForm && (
+          <FormGrid cols={1}>
+            <div className="rounded-lg border border-brand-border bg-brand-bg/40 p-3 text-sm">
+              Saldo actual: <b className="text-brand-gold">{fmtCOP(bankAccounts.find((b) => b.id === adjForm.bankId)?.balance || 0)}</b>
+            </div>
+            <Field label="Ajuste (+/- COP)"><Input type="number" value={adjForm.delta} onChange={(e) => setAdjForm((f) => ({ ...f, delta: e.target.value }))} placeholder="Ej: 5000000 o -2000000" /></Field>
+            <Field label="Concepto"><Input value={adjForm.concept} onChange={(e) => setAdjForm((f) => ({ ...f, concept: e.target.value }))} /></Field>
+            <p className="text-[11px] text-brand-muted">
+              {(Number(adjForm.delta) || 0) >= 0 ? 'Genera DB 1110-XX / CR 425095 (ingreso por ajuste).' : 'Genera DB 539595 / CR 1110-XX (gasto por ajuste).'}
+            </p>
           </FormGrid>
         )}
       </Modal>

@@ -137,6 +137,9 @@ export default function Innovacion() {
     areas: p.areas || [],
     // BOM editable: copia de trabajo desde p.bom (o una fila vacía si no tiene).
     bom: p.bom?.length ? p.bom.map((b) => ({ supplyId: b.supplyId, qty: b.qty })) : [{ supplyId: '', qty: '' }],
+    // FLAG 1 (paridad Demo6 recalcBomCostMaster al abrir): si el producto tiene BOM, el costo
+    // arranca reflejando la suma del BOM; si no tiene BOM, conserva el costo guardado.
+    cost: p.bom?.length ? bomCost(p.bom) : (p.cost || 0),
     costTouched: false, // mismo flag que el modal Nuevo: el costo se auto-rellena del BOM hasta override manual
   });
   const toggleEditArea = (a) => setEdit((f) => ({
@@ -152,8 +155,12 @@ export default function Innovacion() {
   // Toggle verificado (espejo de toggleProductVerified): persiste en el producto y refleja en el form.
   const toggleEditVerified = () => {
     const nv = !edit.verified;
-    update('products', edit.id, { verified: nv });
-    setEdit((f) => ({ ...f, verified: nv }));
+    // FLAG 2: lifecycleStatus debe concordar con verified (el estado se deriva de
+    // lifecycleStatus || (verified ? 'Activo' : 'Borrador')). Al verificar → 'Activo'
+    // (igual que verifyProduct en Auditoria); al enviar a auditoría → 'Borrador'.
+    const lifecycleStatus = nv ? 'Activo' : 'Borrador';
+    update('products', edit.id, { verified: nv, lifecycleStatus });
+    setEdit((f) => ({ ...f, verified: nv, lifecycleStatus }));
     toast(nv ? `${edit.name} marcado como verificado` : `${edit.name} enviado a auditoría`, nv ? 'ok' : 'info');
   };
   const saveEdit = () => {

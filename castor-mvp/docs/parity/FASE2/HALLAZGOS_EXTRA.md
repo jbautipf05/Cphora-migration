@@ -150,23 +150,27 @@ KPIs de inventario en vivo. Validado: test de algoritmo node 17/17 + lint + buil
 
 ---
 
-## EX-F2-08 — Acabados del ítem no se persisten en `order.acabados` [DETECTADO EN FASE 2.5.2 REG-01/02/07-cond]
+## EX-F2-08 — Mostrar los acabados del pedido donde se necesitan · ✅ RESUELTO (premisa corregida)
 
-**Ubicación:** `src/views/Ventas.jsx` `submitSale` (construcción de la orden a partir de los ítems).
+**Ubicación:** `src/views/Produccion.jsx` y `src/views/Ventas.jsx` (solo render).
 
-- **Contexto:** Fase 2.5.2 (REG-H035-01/02 + 07-condicional) agregó al modal Nueva Venta los selectores de
-  acabado (color madera/metal/tejido + tela de tapicería), condicionales por `product.areas`, y su
-  validación de obligatoriedad. Los valores se capturan en el estado del ítem (`colorMadera`,
-  `colorMaderaOtro`, `colorMetal`, `telaId`, `colorTejido`) y viajan al handler vía `onSubmit({...f})`.
-- **Comparación con Demo6:** `saveSale` (`:6092-6099`) escribe `acabados:{ colorMadera, colorMetal, telaId,
-  colorTejido }` en cada orden creada. **React `submitSale` aún NO lee ni persiste `item.acabados`** en las
-  órdenes → el dato capturado en el modal se pierde al guardar.
-- **Severidad:** media — necesaria para **paridad 1:1** del dato persistido; **alta relevancia** cuando se
-  porten **Producción/Auditoría** (que en Demo6 leen `order.acabados` para mostrar el detalle de fabricación).
-- **Por qué no se toca ahora:** fuera del alcance del modal (Fase 2.5.2 cierra el modal Nueva Venta H-035);
-  tocar `submitSale` + el shape de `orders` es trabajo downstream.
-- **Plan (decisión del usuario 2026-05-26):** evaluar al portar Producción/Auditoría que consuman
-  `order.acabados`. Follow-up acotado a `submitSale`.
+- **CORRECCIÓN DE LA PREMISA ORIGINAL:** el título viejo ("los acabados no se persisten en
+  `order.acabados`") era **incorrecto**. Los acabados **SÍ se persisten** — pero **planos en cada
+  `order.items[i]`** (`colorMadera`, `colorMaderaOtro`, `colorMetal`, `telaId`, `colorTejido`), no
+  bajo un objeto `order.acabados:{}` como en Demo6. El verdadero gap era que **no se renderizaban
+  en ningún lado**. Este hallazgo agrega el **display** (no toca la persistencia, que ya funciona).
+- **Implementado (solo render):** helper `acabadosParts(item)` (en ambas vistas) que lee los
+  campos planos del ítem y devuelve solo los presentes; resuelve `telaId → nombre` vía `supplies`
+  (categoría Telas), mostrando el nombre y no el id; "Otro" usa `colorMaderaOtro`. Si no hay
+  ninguno, no se muestra el bloque.
+  - **Producción** (SlidePanel `selOP`): bloque "Acabados" leyendo `selOP.items?.[0]`.
+  - **Ventas** (SlidePanel `sel`): bloque "Acabados" **por ítem** (prefija el nombre del producto
+    si es multi-ítem).
+- **NO se tocó:** la persistencia (`submitSale`), `NuevaVentaModal`, la validación REG-H035,
+  `PROD_ESTADOS`. **NO se normalizó** a `acabados:{}` (diferido a un pase futuro #6 si se quiere
+  paridad de *shape* con Demo6; hoy el dato plano es suficiente para mostrarlo).
+- **Validación:** test node del helper 8/8 (telaId→nombre, "Otro", ausencia, orden) + `eslint` 0 +
+  `vite build` OK.
 
 ---
 

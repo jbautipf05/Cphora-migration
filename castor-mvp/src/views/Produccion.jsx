@@ -23,7 +23,7 @@ import { fmtCOP } from '../lib/format';
 const PROD_ESTADOS = ['produccion', 'pendiente_op', 'listo', 'op_cerrada'];
 
 export default function Produccion() {
-  const { orders, products, customers, setState } = useApp();
+  const { orders, products, customers, supplies, setState } = useApp();
   const [mode, setMode] = useState('tarjetas');
   const [sortBy, setSortBy] = useState('vence');
   const [search, setSearch] = useState('');
@@ -56,6 +56,20 @@ export default function Produccion() {
   }, [orders, search, areaFilter, productoFilter, asesorFilter]);
   const pName = (id) => products.find((p) => p.id === id)?.name || id;
   const cName = (o) => customers.find((c) => c.id === o.customerId)?.name || o.clientName;
+
+  // EX-F2-08: lee los acabados planos de un ítem (colorMadera/Otro, colorMetal, telaId→nombre,
+  // colorTejido) y devuelve solo los presentes. telaId resuelve a su nombre en supplies (Telas).
+  const acabadosParts = (it) => {
+    if (!it) return [];
+    const madera = it.colorMadera === 'Otro' ? (it.colorMaderaOtro || 'Otro') : it.colorMadera;
+    const tela = it.telaId ? (supplies.find((s) => s.id === it.telaId)?.name || it.telaId) : '';
+    const parts = [];
+    if (madera) parts.push(`🪵 ${madera}`);
+    if (it.colorMetal) parts.push(`🛠 ${it.colorMetal}`);
+    if (tela) parts.push(`🧵 ${tela}`);
+    if (it.colorTejido) parts.push(`🪡 ${it.colorTejido}`);
+    return parts;
+  };
 
   // H-105: áreas por las que pasa el producto de la OP. Espejo de Demo6 (areasOfProduct =
   // prod?.areas || PROD_AREAS, :6382): el selector de área de cada OP solo ofrece las áreas
@@ -378,6 +392,14 @@ export default function Produccion() {
                 </div>
               ))}
             </div>
+
+            {/* EX-F2-08: acabados del ítem de producción (solo si hay alguno) */}
+            {acabadosParts(selOP.items?.[0]).length > 0 && (
+              <div className="rounded-lg border border-white/5 bg-brand-bg/40 p-3 text-sm">
+                <p className="text-[11px] uppercase text-muted">Acabados</p>
+                <p className="mt-0.5 text-white">{acabadosParts(selOP.items?.[0]).join(' · ')}</p>
+              </div>
+            )}
 
             {selOP.deliveryAddress && (
               <div className="rounded-lg border border-white/5 bg-brand-bg/40 p-3 text-sm">

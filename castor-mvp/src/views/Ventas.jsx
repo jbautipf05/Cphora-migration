@@ -130,6 +130,20 @@ export default function Ventas() {
   // fallback al clientName almacenado para datos legacy sin FK.
   const custName = (o) => customers.find((c) => c.id === o.customerId)?.name || o.clientName;
 
+  // EX-F2-08: acabados planos de un ítem (colorMadera/Otro, colorMetal, telaId→nombre, colorTejido);
+  // devuelve solo los presentes. telaId resuelve a su nombre en supplies (Telas).
+  const acabadosParts = (it) => {
+    if (!it) return [];
+    const madera = it.colorMadera === 'Otro' ? (it.colorMaderaOtro || 'Otro') : it.colorMadera;
+    const tela = it.telaId ? (supplies.find((s) => s.id === it.telaId)?.name || it.telaId) : '';
+    const parts = [];
+    if (madera) parts.push(`🪵 ${madera}`);
+    if (it.colorMetal) parts.push(`🛠 ${it.colorMetal}`);
+    if (tela) parts.push(`🧵 ${tela}`);
+    if (it.colorTejido) parts.push(`🪡 ${it.colorTejido}`);
+    return parts;
+  };
+
   const rows = useMemo(() => {
     const t = q.toLowerCase();
     return orders.filter((o) => {
@@ -565,6 +579,24 @@ export default function Ventas() {
               <p className="mt-0.5 text-white">{pName(sel.productId)} × {sel.qty} · área {sel.area || '—'}</p>
               <p className="mt-1 text-xs text-brand-muted">Entrega: {sel.deliveryAddress}</p>
             </div>
+            {/* EX-F2-08: acabados por ítem (solo si hay alguno) */}
+            {(sel.items || []).some((it) => acabadosParts(it).length) && (
+              <div className="rounded-lg border border-brand-border bg-brand-bg/40 p-3 text-sm">
+                <p className="text-[11px] uppercase text-brand-muted">Acabados</p>
+                <div className="mt-1 space-y-1">
+                  {(sel.items || []).map((it, i) => {
+                    const parts = acabadosParts(it);
+                    if (!parts.length) return null;
+                    return (
+                      <p key={i} className="text-white">
+                        {sel.items.length > 1 && <span className="text-brand-muted">{pName(it.productId)}: </span>}
+                        {parts.join(' · ')}
+                      </p>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <div>
               <div className="mb-2 flex items-center justify-between">
                 <p className="text-xs font-semibold uppercase tracking-wide text-brand-gold-light/80">Pagos</p>

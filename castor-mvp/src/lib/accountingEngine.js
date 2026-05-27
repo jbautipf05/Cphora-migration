@@ -432,7 +432,7 @@ export function postPayroll(run, ctx) {
     });
   if (provisionesPorPagar > 0)
     lines.push({
-      accountCode: '251005',
+      accountCode: '261005', // provisión cesantías/prima/vacaciones (existe en el catálogo y lo usa el seed)
       debit: 0,
       credit: provisionesPorPagar,
       description: 'Provisión cesantías/prima/vacaciones',

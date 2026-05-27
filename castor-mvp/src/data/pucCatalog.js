@@ -69,6 +69,7 @@ export const PUC_CATALOG = [
   A('220505', 'Proveedores nacionales', 'credito'),
   A('23', 'CUENTAS POR PAGAR', 'credito'),
   A('2365', 'RETENCIÓN EN LA FUENTE', 'credito'),
+  A('236505', 'Rentas de trabajo (retención laboral)', 'credito'),
   A('236540', 'Compras (ReteFte 2.5%)', 'credito'),
   A('2367', 'IMPUESTO A LAS VENTAS RETENIDO', 'credito'),
   A('236701', 'ReteIVA (15%)', 'credito'),

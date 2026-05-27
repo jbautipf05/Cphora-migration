@@ -3,6 +3,8 @@ import { useApp } from '../store/AppContext';
 import { calcPayrollPreview, fmtCOP } from '../lib/accounting';
 import { Panel, Badge } from '../components/ui';
 import { IconCheck, IconPlus, IconTrash } from '../components/icons';
+import { useToast } from '../components/Toast';
+import { today } from '../lib/format';
 
 // ── Inputs controlados reutilizables ──
 function TextField({ label, value, onChange, type = 'text', suffix, ...rest }) {
@@ -60,7 +62,8 @@ function Toggle({ label, checked, onChange }) {
 }
 
 export default function ConfiguracionNomina() {
-  const { companyTaxProfile, payrollParams, bankAccounts, employees, saveTaxAndPayroll, setState } = useApp();
+  const { companyTaxProfile, payrollParams, bankAccounts, employees, saveTaxAndPayroll, setState, postPayroll } = useApp();
+  const toast = useToast();
 
   // Draft local: todos los campos son editables; se confirma al Guardar.
   const [tax, setTax] = useState(() => ({ ...companyTaxProfile }));
@@ -75,6 +78,24 @@ export default function ConfiguracionNomina() {
 
   // Preview de nómina recalculado en vivo a partir de los parámetros del draft.
   const preview = useMemo(() => calcPayrollPreview(employees, params), [employees, params]);
+
+  // C2c: contabiliza la nómina del periodo actual (postPayroll). totalSalarios = devengado
+  // bruto (base + aux) para que la retención (deducciones del empleado) cuadre el asiento.
+  // Idempotente por periodo (sourceId NOM-<YYYY-MM>): re-correr no duplica el asiento.
+  const runPayroll = () => {
+    const periodId = today().slice(0, 7);
+    const t = preview.totales;
+    const res = postPayroll({
+      id: `NOM-${periodId}`, periodId, date: today(),
+      totalSalarios: (t.base || 0) + (t.aux || 0),
+      totalNeto: t.neto || 0,
+      totalAportes: t.aportesEmpr || 0,
+      totalProvisiones: t.provisiones || 0,
+    });
+    if (res?.ok) toast(`Nómina ${periodId} contabilizada · asiento ${res.journalEntry.id}`, 'ok');
+    else if (res?.warning === 'already_posted') toast(`La nómina ${periodId} ya estaba contabilizada (${res.journalId})`, 'info');
+    else toast(`Aviso contable: ${res?.message || res?.error || '—'}`, 'warn');
+  };
 
   const dirty = useMemo(
     () =>
@@ -226,6 +247,11 @@ export default function ConfiguracionNomina() {
       <Panel
         title="Vista previa de nómina"
         subtitle="Recalculada en vivo con los parámetros de arriba · 7 empleados"
+        actions={
+          <button onClick={runPayroll} className="btn-gold">
+            Correr y contabilizar nómina
+          </button>
+        }
       >
         <div className="-m-5 overflow-x-auto">
           <table className="w-full border-collapse text-sm">

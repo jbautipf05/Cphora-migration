@@ -9,6 +9,19 @@ import { fmtCOP } from '../lib/format';
 //   - tarjetas: kanban por área (vista más visual, opción por defecto)
 //   - compacto: tabla densa con cambio de área inline
 //   - heatmap : barra de saturación por área con conteo y % de capacidad
+
+// FIX H-100 (bug crítico reportado por el cliente: "al actualizar el estado de una OP
+// se borra el pedido"). El tablero solo admitía {produccion, pendiente_op}; en cuanto el
+// estado avanzaba en su ciclo de vida —a 'listo' (al llegar a "Listo", ver moveArea) o a
+// 'op_cerrada' (cierre en Auditoría)— la OP dejaba de pasar el filtro y su tarjeta
+// DESAPARECÍA del tablero. El pedido nunca se elimina de state.orders (no hay remove); solo
+// se caía del filtro, pero el cliente lo percibía como borrado. Demo6 evita esto con una
+// blacklist (PAGE_RENDERERS.produccion:6215 muestra toda OP no entregada/cancelada). Aquí se
+// usa una whitelist equivalente acotada al vocabulario de estados de React: incluye TODO el
+// ciclo de producción y excluye 'pendiente_innovacion' (pertenece al módulo Innovación, que
+// Demo6 segrega vía el flag verified) y los estados terminales entregado/despachado/cancelado.
+const PROD_ESTADOS = ['produccion', 'pendiente_op', 'listo', 'op_cerrada'];
+
 export default function Produccion() {
   const { orders, products, customers, setState } = useApp();
   const [mode, setMode] = useState('tarjetas');
@@ -29,7 +42,7 @@ export default function Produccion() {
   const ops = useMemo(() => {
     const t = search.toLowerCase();
     return orders
-      .filter((o) => o.estado === 'produccion' || o.estado === 'pendiente_op')
+      .filter((o) => PROD_ESTADOS.includes(o.estado))
       .filter((o) => {
         if (areaFilter && o.area !== areaFilter) return false;
         if (productoFilter && o.productId !== productoFilter) return false;
@@ -43,6 +56,18 @@ export default function Produccion() {
   }, [orders, search, areaFilter, productoFilter, asesorFilter]);
   const pName = (id) => products.find((p) => p.id === id)?.name || id;
   const cName = (o) => customers.find((c) => c.id === o.customerId)?.name || o.clientName;
+
+  // H-105: áreas por las que pasa el producto de la OP. Espejo de Demo6 (areasOfProduct =
+  // prod?.areas || PROD_AREAS, :6382): el selector de área de cada OP solo ofrece las áreas
+  // marcadas en su producto, así no se puede mover la OP a un área irrelevante (y por tanto
+  // su tarjeta nunca aparece en columnas no pertinentes del Kanban). Si el producto no tiene
+  // áreas definidas, se cae a PROD_AREAS. Se incluye el área actual aunque no esté en la
+  // lista del producto, para no ocultar/forzar el valor vigente (evita "perder" el área).
+  const areasOf = (o) => {
+    const p = products.find((x) => x.id === o.productId);
+    const list = p?.areas?.length ? p.areas : PROD_AREAS;
+    return o.area && !list.includes(o.area) ? [o.area, ...list] : list;
+  };
 
   const hasFilters = !!(search || areaFilter || productoFilter || asesorFilter);
   const clearAll = () => { setSearch(''); setAreaFilter(''); setProductoFilter(''); setAsesorFilter(''); };
@@ -114,10 +139,22 @@ export default function Produccion() {
     }));
   }, [byArea]);
 
+  // Cambia el área de una OP. Espejo de updateOrderArea (Demo6:6480-6486): al llegar a
+  // "Listo" sincroniza estado='listo' si la OP seguía en 'produccion' (habilita el cierre
+  // en Auditoría). 'listo' está dentro de PROD_ESTADOS, así que la tarjeta NO desaparece del
+  // tablero (FIX H-100). Área vacía → null, igual que Demo6 (`o.area = area || null`).
   const moveArea = (id, area) =>
     setState((s) => ({
       ...s,
-      orders: s.orders.map((o) => (o.id === id ? { ...o, area } : o)),
+      orders: s.orders.map((o) =>
+        o.id === id
+          ? {
+              ...o,
+              area: area || null,
+              estado: area === 'Listo' && o.estado === 'produccion' ? 'listo' : o.estado,
+            }
+          : o,
+      ),
     }));
 
   const diasBadge = (o) => {
@@ -285,7 +322,7 @@ export default function Produccion() {
                         className="rounded-lg border border-white/10 bg-brand-bg/60 px-2 py-1 text-xs text-white outline-none focus:border-gold-accent/60"
                       >
                         <option value="">—</option>
-                        {PROD_AREAS.map((a) => (
+                        {areasOf(o).map((a) => (
                           <option key={a} value={a}>
                             {a}
                           </option>
@@ -356,13 +393,18 @@ export default function Produccion() {
               <select
                 value={selOP.area || ''}
                 onChange={(e) => {
-                  moveArea(selOP.id, e.target.value);
-                  setSelOP((o) => ({ ...o, area: e.target.value }));
+                  const area = e.target.value;
+                  moveArea(selOP.id, area);
+                  setSelOP((o) => ({
+                    ...o,
+                    area: area || null,
+                    estado: area === 'Listo' && o.estado === 'produccion' ? 'listo' : o.estado,
+                  }));
                 }}
                 className="input-field"
               >
                 <option value="">— sin asignar —</option>
-                {PROD_AREAS.map((a) => (
+                {areasOf(selOP).map((a) => (
                   <option key={a} value={a}>{a}</option>
                 ))}
               </select>

@@ -181,3 +181,68 @@ KPIs de inventario en vivo. Validado: test de algoritmo node 17/17 + lint + buil
 - **Severidad:** baja (conveniencia; el buscador cubre las telas del seed).
 - **Plan (decisión del usuario 2026-05-26):** no agregar por ahora; si el cliente lo pide tras la demo,
   incorporarlo como EX. Registrado para trazabilidad.
+
+---
+
+## EX-F3-01 — Editor de BOM en el modal de EDICIÓN de producto (Innovación) · ✅ RESUELTO (ampliado: paridad completa del modal de edición)
+
+**Ubicación:** `src/views/Innovacion.jsx` — modal "Editar ficha (master card)".
+
+- El modal de **Nuevo producto** tenía tabla BOM + costo automático (H-104a); el modal de
+  **edición** no tenía editor de BOM. Resuelto con paridad completa vs `openProductMasterEdit`
+  de Demo6 (8388-8507), reusando el patrón del modal Nuevo.
+
+**Entregado (9 puntos + header):**
+1. Editor BOM en edición (dropdown insumo + qty + subtotal por fila + "+ Agregar" + "×").
+   `openEdit` inicializa `edit.bom` desde `p.bom`; `saveEdit` persiste `bom` filtrando filas sin
+   insumo o `qty≤0` (antes **no** guardaba `bom`).
+2. Costo auto-rellenado desde el BOM con flag `costTouched` (override manual respetado; campo no
+   deshabilitado).
+3. Línea "Costo calculado (suma insumos)" gris + total en dorado bajo la tabla.
+4. Margen con color dinámico: verde >30 / ámbar >15 / rojo ≤15.
+5. Botón verificado en el footer (izq): "✓ Marcar verificado" / "⏳ Enviar a auditoría"
+   (`toggleEditVerified`, espejo de `toggleProductVerified`).
+6. Asteriscos en labels obligatorios (Nombre *, Costo final *, Precio venta *).
+7. Footer relabel: "Costo"→"Costo final *", "Precio"→"Precio venta *".
+8. Botón principal: "Guardar ficha" → "💾 Guardar cambios".
+9. Medidas en 1 fila de 5 columnas (se agregó `cols=5` a `FormGrid`, antes caía a 2).
+- **Header (adicional pedido por el usuario):** overline "Master card · Producto" + título más
+  grande, vía prop opcional `overline` en `components/Modal.jsx` (aditivo).
+
+**Decisión técnica:** en `openEdit` el costo arranca con el `p.cost` guardado y `costTouched:false`;
+se re-sincroniza al total del BOM **al editar el BOM** (no al mero abrir), igual que el modal
+Nuevo. Diverge levemente de Demo6 (que recalcula al abrir) para **no pisar** un costo guardado
+sin que el usuario toque nada. Documentado.
+
+---
+
+## EX-F3-02 — Acciones de cierre de OP en Auditoría (cerrar / crear producto CEDI / aprobar) [DETECTADO EN H-106]
+
+**Ubicación:** `src/views/Auditoria.jsx` — tabla "Cierre de OPs" + modal detalle de cierre.
+
+- H-106 agregó el modal de **detalle** del cierre (informativo). Demo6 además tiene el flujo de
+  **acciones**: `cerrarOP`/`solicitarCierreOP` (:6418-6438), `crearProductoInventario` (:6440-6470)
+  que crea `finishedStock` en CEDI, y la aprobación para facturar. React no porta esas acciones.
+- **Severidad:** media (necesario para el ciclo completo producción→inventario→facturación).
+- **Plan:** portar las 3 acciones con sus guards (área "Listo", OP cerrada habilita ingreso).
+  **Prerrequisito de EX-F3-03.**
+
+---
+
+## EX-F3-03 — Recepción CEDI / "stock listo va a CEDI automáticamente" [DIFERIDO EN H-107, decisión del usuario]
+
+**Ubicación:** flujo producción→CEDI (no es parte del despacho a cliente).
+
+- El inventario de H-107 mezclaba dos flujos: (A) **despacho a cliente** (resuelto en H-107) y
+  (B) **recepción de producción en CEDI**. (B) se difiere conscientemente.
+- **Depende de:** **EX-F3-02** (cierre de OP en Auditoría que genera el `stockMove`/`finishedStock`).
+- **Alcance (3 piezas), espejo de Demo6:**
+  1. **Cierre de OP crea el ingreso**: `crearProductoInventario` (Demo6:6440) inserta
+     `finishedStock` en `W-CEDI` con `receptionStatus:'pendiente_recepcion'` + un `stockMove`
+     `entrada_produccion`.
+  2. **Recepción en CEDI**: `confirmarRecepcionCEDI`/`markCEDIReceived` (Demo6:6472 / 1664) marca
+     la recepción y deja el `finishedStock` `disponible` en CEDI.
+  3. **UI de Despacho/Inventario**: sección "pendiente de recepción" + botón "Confirmar recepción".
+- **Severidad:** media. **Por qué se difiere (decisión del usuario 2026-05-27):** Demo6 lo modela
+  como pipeline separado del despacho; tocarlo arriesga regresión sobre Auditoría (H-106 estable);
+  el flujo A es demostrable end-to-end por sí solo; B puede agregarse después sin romper A.

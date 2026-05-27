@@ -29,6 +29,10 @@ export default function Innovacion() {
   const [form, setForm] = useState(null);   // nuevo producto
   const [edit, setEdit] = useState(null);    // master card
 
+  // H-102: un producto (terminado) solo puede vivir en una bodega de Producto Terminado;
+  // las bodegas de insumos (MP) no deben aparecer en su selector de bodega.
+  const ptWarehouses = useMemo(() => warehouses.filter((w) => w.tipo === 'terminado'), [warehouses]);
+
   const allCats = useMemo(
     () => [...new Set(products.map((p) => p.category).filter(Boolean))].sort(),
     [products],
@@ -77,19 +81,22 @@ export default function Innovacion() {
 
   // ── Nuevo producto ──
   const openNew = () => setForm({
-    name: '', sku: '', category: '', photo: '📦', warehouseId: warehouses[0]?.id || '',
+    name: '', sku: '', category: '', photo: '📦', warehouseId: ptWarehouses[0]?.id || '',
     description: '', ancho: '', alto: '', profundidad: '', min: 0,
-    areas: [], bom: [{ supplyId: '', qty: '' }], cost: 0, price: 0,
+    areas: [], bom: [{ supplyId: '', qty: '' }], cost: 0, price: 0, costTouched: false,
   });
   const toggleArea = (a) => setForm((f) => ({
     ...f, areas: f.areas.includes(a) ? f.areas.filter((x) => x !== a) : [...f.areas, a],
   }));
-  const setBomRow = (i, k, v) => setForm((f) => {
-    const bom = f.bom.map((r, idx) => (idx === i ? { ...r, [k]: v } : r));
-    return { ...f, bom };
-  });
-  const addBomRow = () => setForm((f) => ({ ...f, bom: [...f.bom, { supplyId: '', qty: '' }] }));
-  const delBomRow = (i) => setForm((f) => ({ ...f, bom: f.bom.filter((_, idx) => idx !== i) }));
+  // H-104a: mientras el usuario no edite manualmente "Costo final", éste se auto-rellena en
+  // vivo con el total del BOM (espejo de recalcBomCostMaster, Demo6:8488-8489). Al tocar el
+  // campo de costo se marca costTouched y deja de auto-actualizarse.
+  const syncCost = (f) => (f.costTouched ? f : { ...f, cost: bomCost(f.bom) });
+  const setBomRow = (i, k, v) => setForm((f) => syncCost({
+    ...f, bom: f.bom.map((r, idx) => (idx === i ? { ...r, [k]: v } : r)),
+  }));
+  const addBomRow = () => setForm((f) => syncCost({ ...f, bom: [...f.bom, { supplyId: '', qty: '' }] }));
+  const delBomRow = (i) => setForm((f) => syncCost({ ...f, bom: f.bom.filter((_, idx) => idx !== i) }));
 
   // Intent del header "+ Nuevo" → abrir el form de nuevo producto (H-001).
   useEffect(() => {
@@ -123,22 +130,48 @@ export default function Innovacion() {
     setForm(null);
   };
 
-  // ── Editar ficha (master card) ──
+  // ── Editar ficha (master card) ── (EX-F3-01: paridad con openProductMasterEdit de Demo6)
   const openEdit = (p) => setEdit({
     ...p,
     ancho: p.dimensions?.ancho || '', alto: p.dimensions?.alto || '', profundidad: p.dimensions?.profundidad || '',
     areas: p.areas || [],
+    // BOM editable: copia de trabajo desde p.bom (o una fila vacía si no tiene).
+    bom: p.bom?.length ? p.bom.map((b) => ({ supplyId: b.supplyId, qty: b.qty })) : [{ supplyId: '', qty: '' }],
+    // FLAG 1 (paridad Demo6 recalcBomCostMaster al abrir): si el producto tiene BOM, el costo
+    // arranca reflejando la suma del BOM; si no tiene BOM, conserva el costo guardado.
+    cost: p.bom?.length ? bomCost(p.bom) : (p.cost || 0),
+    costTouched: false, // mismo flag que el modal Nuevo: el costo se auto-rellena del BOM hasta override manual
   });
   const toggleEditArea = (a) => setEdit((f) => ({
     ...f, areas: f.areas.includes(a) ? f.areas.filter((x) => x !== a) : [...f.areas, a],
   }));
+  // Editor de BOM del modal de edición (mismo patrón que el modal Nuevo).
+  const syncEditCost = (f) => (f.costTouched ? f : { ...f, cost: bomCost(f.bom) });
+  const setEditBomRow = (i, k, v) => setEdit((f) => syncEditCost({
+    ...f, bom: f.bom.map((r, idx) => (idx === i ? { ...r, [k]: v } : r)),
+  }));
+  const addEditBomRow = () => setEdit((f) => syncEditCost({ ...f, bom: [...f.bom, { supplyId: '', qty: '' }] }));
+  const delEditBomRow = (i) => setEdit((f) => syncEditCost({ ...f, bom: f.bom.filter((_, idx) => idx !== i) }));
+  // Toggle verificado (espejo de toggleProductVerified): persiste en el producto y refleja en el form.
+  const toggleEditVerified = () => {
+    const nv = !edit.verified;
+    // FLAG 2: lifecycleStatus debe concordar con verified (el estado se deriva de
+    // lifecycleStatus || (verified ? 'Activo' : 'Borrador')). Al verificar → 'Activo'
+    // (igual que verifyProduct en Auditoria); al enviar a auditoría → 'Borrador'.
+    const lifecycleStatus = nv ? 'Activo' : 'Borrador';
+    update('products', edit.id, { verified: nv, lifecycleStatus });
+    setEdit((f) => ({ ...f, verified: nv, lifecycleStatus }));
+    toast(nv ? `${edit.name} marcado como verificado` : `${edit.name} enviado a auditoría`, nv ? 'ok' : 'info');
+  };
   const saveEdit = () => {
+    const cleanBom = (edit.bom || []).filter((b) => b.supplyId && Number(b.qty) > 0).map((b) => ({ supplyId: b.supplyId, qty: Number(b.qty) }));
     update('products', edit.id, {
       name: edit.name, sku: edit.sku, category: edit.category, photo: edit.photo,
       warehouseId: edit.warehouseId, description: edit.description,
       dimensions: { ancho: Number(edit.ancho) || 0, alto: Number(edit.alto) || 0, profundidad: Number(edit.profundidad) || 0 },
       stock: Number(edit.stock) || 0, min: Number(edit.min) || 0, areas: edit.areas,
-      cost: Number(edit.cost) || 0, price: Number(edit.price) || 0,
+      bom: cleanBom,
+      cost: Number(edit.cost) || bomCost(cleanBom), price: Number(edit.price) || 0,
     });
     toast(`Ficha de ${edit.name} actualizada`, 'ok');
     setEdit(null);
@@ -310,7 +343,7 @@ export default function Innovacion() {
               <Field label="Foto (emoji)"><Input value={form.photo} onChange={(e) => setForm((f) => ({ ...f, photo: e.target.value }))} /></Field>
               <Field label="Bodega inicial">
                 <Select value={form.warehouseId} onChange={(e) => setForm((f) => ({ ...f, warehouseId: e.target.value }))}>
-                  {warehouses.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
+                  {ptWarehouses.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
                 </Select>
               </Field>
               <Field label="Descripción" className="sm:col-span-3"><textarea rows={2} className="input-field" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} /></Field>
@@ -343,16 +376,23 @@ export default function Innovacion() {
                 <button type="button" className="text-xs text-brand-gold hover:underline" onClick={addBomRow}>+ Agregar insumo</button>
               </div>
               <div className="space-y-2">
-                {form.bom.map((row, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <select value={row.supplyId} onChange={(e) => setBomRow(i, 'supplyId', e.target.value)} className="input-field flex-1 py-1 text-xs">
-                      <option value="">— insumo —</option>
-                      {supplies.map((s) => <option key={s.id} value={s.id}>{s.name} ({fmtCOP(s.cost)}/{s.unitOut || s.unit})</option>)}
-                    </select>
-                    <input type="number" min="0" step="0.1" value={row.qty} onChange={(e) => setBomRow(i, 'qty', e.target.value)} placeholder="cant." className="input-field w-24 py-1 text-xs" />
-                    <button type="button" className="text-red-300 hover:text-red-200" onClick={() => delBomRow(i)}>×</button>
-                  </div>
-                ))}
+                {form.bom.map((row, i) => {
+                  // H-104a: subtotal por fila (costo del insumo × cantidad), espejo de la
+                  // columna row-cost de Demo6 (addBomRowMaster).
+                  const s = supplies.find((x) => x.id === row.supplyId);
+                  const sub = s ? (Number(s.cost) || 0) * (Number(row.qty) || 0) : 0;
+                  return (
+                    <div key={i} className="flex items-center gap-2">
+                      <select value={row.supplyId} onChange={(e) => setBomRow(i, 'supplyId', e.target.value)} className="input-field flex-1 py-1 text-xs">
+                        <option value="">— insumo —</option>
+                        {supplies.map((sp) => <option key={sp.id} value={sp.id}>{sp.name} ({fmtCOP(sp.cost)}/{sp.unitOut || sp.unit})</option>)}
+                      </select>
+                      <input type="number" min="0" step="0.1" value={row.qty} onChange={(e) => setBomRow(i, 'qty', e.target.value)} placeholder="cant." className="input-field w-20 py-1 text-xs" />
+                      <span className="w-24 text-right text-xs tabular-nums text-brand-muted" title="Subtotal (costo × cantidad)">{sub > 0 ? fmtCOP(sub) : '—'}</span>
+                      <button type="button" className="text-red-300 hover:text-red-200" onClick={() => delBomRow(i)}>×</button>
+                    </div>
+                  );
+                })}
               </div>
               <div className="mt-3 flex justify-between border-t border-brand-border pt-3">
                 <span className="text-xs text-brand-muted">Costo estimado (suma insumos)</span>
@@ -361,7 +401,7 @@ export default function Innovacion() {
             </div>
 
             <FormGrid cols={3}>
-              <Field label="Costo final *"><Input type="number" value={form.cost} onChange={(e) => setForm((f) => ({ ...f, cost: e.target.value }))} /></Field>
+              <Field label="Costo final *"><Input type="number" value={form.cost} onChange={(e) => setForm((f) => ({ ...f, cost: e.target.value, costTouched: true }))} /></Field>
               <Field label="Precio venta *"><Input type="number" value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} /></Field>
               <Field label="Margen"><div className="input-field text-center font-bold text-brand-gold">{formMargin(form)}%</div></Field>
             </FormGrid>
@@ -374,14 +414,23 @@ export default function Innovacion() {
       <Modal
         open={!!edit}
         onClose={() => setEdit(null)}
+        overline="Master card · Producto"
         title={edit ? edit.name : ''}
         subtitle={edit ? `${edit.sku} · ${edit.verified ? '✓ Activo' : '⏳ Auditoría'}` : ''}
         size="lg"
         footer={
-          <>
-            <button className="btn-outline" onClick={() => setEdit(null)}>Cancelar</button>
-            <button className="btn-gold" onClick={saveEdit}>Guardar ficha</button>
-          </>
+          <div className="flex w-full items-center justify-between">
+            <button
+              className={edit?.verified ? 'btn-outline' : 'btn-gold'}
+              onClick={toggleEditVerified}
+            >
+              {edit?.verified ? '⏳ Enviar a auditoría' : '✓ Marcar verificado'}
+            </button>
+            <div className="flex gap-3">
+              <button className="btn-outline" onClick={() => setEdit(null)}>Cancelar</button>
+              <button className="btn-gold" onClick={saveEdit}>💾 Guardar cambios</button>
+            </div>
+          </div>
         }
       >
         {edit && (
@@ -397,7 +446,7 @@ export default function Innovacion() {
               <Field label="Foto (emoji)"><Input value={edit.photo || '📦'} onChange={(e) => setEdit((f) => ({ ...f, photo: e.target.value }))} /></Field>
               <Field label="Bodega">
                 <Select value={edit.warehouseId} onChange={(e) => setEdit((f) => ({ ...f, warehouseId: e.target.value }))}>
-                  {warehouses.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
+                  {ptWarehouses.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
                 </Select>
               </Field>
               <Field label="Descripción" className="sm:col-span-3"><textarea rows={2} className="input-field" value={edit.description || ''} onChange={(e) => setEdit((f) => ({ ...f, description: e.target.value }))} /></Field>
@@ -423,13 +472,43 @@ export default function Innovacion() {
               </div>
             </div>
 
+            {/* BOM (mismo patrón que el modal Nuevo) */}
+            <div className="panel-2 rounded p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-sm font-semibold gold-title">Consumo de insumos (BOM)</p>
+                <button type="button" className="text-xs text-brand-gold hover:underline" onClick={addEditBomRow}>+ Agregar insumo</button>
+              </div>
+              <div className="space-y-2">
+                {edit.bom.map((row, i) => {
+                  const s = supplies.find((x) => x.id === row.supplyId);
+                  const sub = s ? (Number(s.cost) || 0) * (Number(row.qty) || 0) : 0;
+                  return (
+                    <div key={i} className="flex items-center gap-2">
+                      <select value={row.supplyId} onChange={(e) => setEditBomRow(i, 'supplyId', e.target.value)} className="input-field flex-1 py-1 text-xs">
+                        <option value="">— insumo —</option>
+                        {supplies.map((sp) => <option key={sp.id} value={sp.id}>{sp.name} ({fmtCOP(sp.cost)}/{sp.unitOut || sp.unit})</option>)}
+                      </select>
+                      <input type="number" min="0" step="0.1" value={row.qty} onChange={(e) => setEditBomRow(i, 'qty', e.target.value)} placeholder="cant." className="input-field w-20 py-1 text-xs" />
+                      <span className="w-24 text-right text-xs tabular-nums text-brand-muted" title="Subtotal (costo × cantidad)">{sub > 0 ? fmtCOP(sub) : '—'}</span>
+                      <button type="button" className="text-red-300 hover:text-red-200" onClick={() => delEditBomRow(i)}>×</button>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-3 flex justify-between border-t border-brand-border pt-3">
+                <span className="text-xs text-brand-muted">Costo calculado (suma insumos)</span>
+                <span className="text-lg font-bold text-brand-gold">{fmtCOP(bomCost(edit.bom))}</span>
+              </div>
+            </div>
+
             <FormGrid cols={3}>
-              <Field label="Costo"><Input type="number" value={edit.cost || 0} onChange={(e) => setEdit((f) => ({ ...f, cost: e.target.value }))} /></Field>
-              <Field label="Precio"><Input type="number" value={edit.price || 0} onChange={(e) => setEdit((f) => ({ ...f, price: e.target.value }))} /></Field>
+              <Field label="Costo final *"><Input type="number" value={edit.cost || 0} onChange={(e) => setEdit((f) => ({ ...f, cost: e.target.value, costTouched: true }))} /></Field>
+              <Field label="Precio venta *"><Input type="number" value={edit.price || 0} onChange={(e) => setEdit((f) => ({ ...f, price: e.target.value }))} /></Field>
               <Field label="Margen">
-                <div className="input-field text-center font-bold text-brand-gold">
-                  {Number(edit.price) > 0 ? Math.round((Number(edit.price) - Number(edit.cost)) / Number(edit.price) * 100) : 0}%
-                </div>
+                {(() => {
+                  const m = Number(edit.price) > 0 ? Math.round((Number(edit.price) - Number(edit.cost)) / Number(edit.price) * 100) : 0;
+                  return <div className={`input-field text-center font-bold ${m > 30 ? 'text-emerald-400' : m > 15 ? 'text-amber-400' : 'text-red-400'}`}>{m}%</div>;
+                })()}
               </Field>
             </FormGrid>
           </div>

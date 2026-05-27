@@ -24,8 +24,11 @@ export const WAREHOUSES = [
   { id: 'W-C43', code: 'Castor 43', name: 'Castor 43', address: 'Bogotá · Calle 43', responsable: 'Mario Estrada', color: '#2F5585', tipo: 'terminado' },
   { id: 'W-CTG', code: 'Castor Ctg', name: 'Castor Cartagena', address: 'Cartagena · Centro Histórico', responsable: 'Luisa Ortega', color: '#0891b2', tipo: 'terminado' },
   { id: 'W-VOL', code: 'Volcanes', name: 'Volcanes', address: 'Medellín · Volcanes', responsable: 'Héctor Pulido', color: '#7c3aed', tipo: 'terminado' },
-  { id: 'W-ALM1', code: 'Insumos 1', name: 'Insumos 1', address: 'Bodega materia prima 1', responsable: 'Mario Estrada', color: '#059669', tipo: 'insumos' },
-  { id: 'W-ALM2', code: 'Insumos 2', name: 'Insumos 2', address: 'Bodega materia prima 2', responsable: 'Mario Estrada', color: '#0ea5e9', tipo: 'insumos' },
+  // H-102: las dos bodegas de materia prima. Se muestran con el vocabulario del cliente
+  // ("Almacén #1/#2"); el campo `tipo:'insumos'` (técnico, probado y transversal) NO se
+  // renombra — separa MP de PT en todos los selectores. Ver docs/parity/FASE3/H-102.md.
+  { id: 'W-ALM1', code: 'Almacén #1', name: 'Almacén #1', address: 'Bodega materia prima 1', responsable: 'Mario Estrada', color: '#059669', tipo: 'insumos' },
+  { id: 'W-ALM2', code: 'Almacén #2', name: 'Almacén #2', address: 'Bodega materia prima 2', responsable: 'Mario Estrada', color: '#0ea5e9', tipo: 'insumos' },
 ];
 
 export const PRODUCTS = [

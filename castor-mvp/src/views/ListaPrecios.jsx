@@ -58,6 +58,10 @@ export default function ListaPrecios() {
   };
 
   // H-041: alta rápida de producto al catálogo (modal simple, sin BOM).
+  // H-104: el alta de producto vive ahora SOLO en Innovación (modal completo con BOM).
+  // Este modal y su `emptyProduct` se conservan SIN entry point público (se quitó el
+  // botón "+ Nuevo producto") por si en un sprint futuro el cliente lo vuelve a pedir.
+  // eslint-disable-next-line no-unused-vars
   const emptyProduct = () => ({
     name: '', sku: '', category: '', price: 0, description: '',
     ancho: '', alto: '', profundidad: '', warehouseId: ptBodegas[0]?.id || '', stock: 1, photo: '📦',
@@ -152,7 +156,8 @@ export default function ListaPrecios() {
           <div className="ml-auto flex items-center gap-2">
             {hasFilters && <button onClick={clearAll} className="btn-outline text-xs">Limpiar</button>}
             <button onClick={handleExportPdf} className="btn-outline text-xs">📄 Exportar PDF</button>
-            <button onClick={() => setForm(emptyProduct())} className="btn-gold">+ Nuevo producto</button>
+            {/* H-104: el alta de producto se hace en Innovación (modal con BOM); aquí queda
+                como catálogo de solo lectura para alta. El modal interno se conserva. */}
           </div>
         </div>
       </div>

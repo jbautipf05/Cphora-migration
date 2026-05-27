@@ -2,11 +2,8 @@ import { useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
 import { KpiCard } from '../components/ui';
 import {
-  Toolbar,
   SearchBox,
   SelectFilter,
-  DataTable,
-  EstadoBadge,
   fmtDate,
   ClearFiltersButton,
 } from '../components/widgets';
@@ -18,10 +15,31 @@ import { IconCart, IconCheck, IconBox, IconShield } from '../components/icons';
 // Dos tablas: pendientes + histórico (despachados). Filtros search + ciudad.
 // ─────────────────────────────────────────────────────────────────────────────
 export default function Despacho() {
-  const { dispatchRequests, setState, currentUser } = useApp();
+  const { dispatchRequests, orders, products, setState, currentUser } = useApp();
   const toast = useToast();
   const [q, setQ] = useState('');
   const [city, setCity] = useState('');
+
+  // H-107: una OP solo puede despacharse cuando terminó producción.
+  const DISPATCHABLE_ESTADOS = ['listo', 'op_cerrada'];
+  // Ids de orden de una solicitud (soporta orderIds[] o orderId único).
+  const orderIdsOf = (d) => (d.orderIds?.length ? d.orderIds : d.orderId ? [d.orderId] : []);
+  // Guard: TODAS las OPs del request deben estar en estado despachable.
+  const reqReady = (d) => {
+    const ids = orderIdsOf(d);
+    if (!ids.length) return false;
+    return ids.every((id) => {
+      const o = orders.find((x) => x.id === id);
+      return o && DISPATCHABLE_ESTADOS.includes(o.estado);
+    });
+  };
+  // Producto×qty de la primera OP del request (mejora visual de pendientes).
+  const prodInfo = (d) => {
+    const o = orders.find((x) => x.id === orderIdsOf(d)[0]);
+    if (!o) return null;
+    const p = products.find((x) => x.id === o.productId);
+    return p ? `${p.name} ×${o.qty || 1}` : null;
+  };
 
   const ciudades = useMemo(
     () => [...new Set(dispatchRequests.map((d) => d.ciudad || d.city).filter(Boolean))],
@@ -60,21 +78,33 @@ export default function Despacho() {
     [dispatchRequests, ciudades],
   );
 
+  // H-107 (espejo de despacharSolicitud, Demo6:1638-1651): al despachar, en UN setState
+  // ATÓMICO (regla cascada B2): marca la(s) OP(s) del request como 'despachado' + deliveredAt,
+  // consume la reserva de finishedStock (reservado → despachado, match por orderId) y pasa la
+  // solicitud a histórico. 'despachado' no está en PROD_ESTADOS, así que la OP sale del tablero
+  // de Producción (consistente con H-100). NO toca stock 'disponible' de terceros.
   const despachar = (id) => {
-    setState((s) => ({
-      ...s,
-      dispatchRequests: s.dispatchRequests.map((d) =>
-        d.id === id
-          ? {
-              ...d,
-              estado: 'despachado',
-              dispatchedAt: new Date().toISOString(),
-              dispatchedBy: currentUser?.name || 'Sistema',
-            }
-          : d,
-      ),
-    }));
-    toast('Despacho registrado', 'ok');
+    const today = new Date().toISOString().slice(0, 10);
+    const stamp = new Date().toISOString();
+    const by = currentUser?.name || 'Despacho';
+    setState((s) => {
+      const req = s.dispatchRequests.find((d) => d.id === id);
+      if (!req) return s;
+      const ids = new Set(req.orderIds?.length ? req.orderIds : req.orderId ? [req.orderId] : []);
+      return {
+        ...s,
+        orders: s.orders.map((o) =>
+          ids.has(o.id) ? { ...o, estado: 'despachado', deliveredAt: today } : o,
+        ),
+        finishedStock: s.finishedStock.map((f) =>
+          ids.has(f.orderId) && f.status === 'reservado' ? { ...f, status: 'despachado' } : f,
+        ),
+        dispatchRequests: s.dispatchRequests.map((d) =>
+          d.id === id ? { ...d, estado: 'despachado', dispatchedAt: stamp, dispatchedBy: by } : d,
+        ),
+      };
+    });
+    toast('Despacho realizado · OP marcada como despachada', 'ok');
   };
 
   const hasFilters = !!(q || city);
@@ -150,18 +180,28 @@ export default function Despacho() {
                     <td className="px-4 py-3 text-muted">
                       <span className="text-white">{d.pedidoId || d.orderId}</span>
                       {d.opId && <span className="ml-1 text-[10px]">· {d.opId}</span>}
+                      {prodInfo(d) && <div className="text-[11px] text-muted">{prodInfo(d)}</div>}
                     </td>
                     <td className="px-4 py-3 text-white">{d.clientName}</td>
                     <td className="px-4 py-3 text-muted">{d.ciudad || d.city}</td>
                     <td className="px-4 py-3 text-muted">{d.address}</td>
                     <td className="px-4 py-3 text-muted">{fmtDate(d.requestedAt || d.solicitedAt)}</td>
                     <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => despachar(d.id)}
-                        className="rounded-lg border border-emerald-500/30 px-3 py-1.5 text-xs text-emerald-300 transition hover:bg-emerald-500/10"
-                      >
-                        🚚 Despachar
-                      </button>
+                      {reqReady(d) ? (
+                        <button
+                          onClick={() => despachar(d.id)}
+                          className="rounded-lg border border-emerald-500/30 px-3 py-1.5 text-xs text-emerald-300 transition hover:bg-emerald-500/10"
+                        >
+                          🚚 Despachar
+                        </button>
+                      ) : (
+                        <span
+                          className="text-xs italic text-amber-300/80"
+                          title="La(s) OP(s) de esta solicitud aún no terminaron producción (estado Listo / OP cerrada)."
+                        >
+                          ⏳ Esperando cierre de OPs en producción
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}

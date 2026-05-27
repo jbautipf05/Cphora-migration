@@ -19,7 +19,11 @@ Numeración consistente del sprint (se cierra a `main` con `SPRINT_PRE_DEMO.md`)
 - **H-104b** ✅ Quitar +Nuevo producto de Lista de Precios (alta solo en Innovación; modal
   H-041 conservado sin entry point). *Cerrado originalmente como "H-104" (commit `dff0536`),
   renumerado a H-104b.*
-- H-105 / H-106 / H-107: en curso / pendientes.
+- **H-105** ✅ Producción filtra el selector de área de cada OP por `product.areas` (espejo de
+  `areasOfProduct` de Demo6); las tarjetas no caen en columnas no pertinentes.
+- **H-106** ✅ Auditoría: modales de detalle de Producto Nuevo y de Cierre de OP (el de Pedido
+  ya existía). Doble clic + botón Ver.
+- H-107 (Despacho funcional): pendiente — se decide en el checkpoint según tiempo restante.
 
 ## [2026-05-26] - Fase 2.5.2 (REG-H035-01..12 — modal Nueva Venta)
 - 12 regresiones del modal Nueva Venta (`NuevaVentaModal.jsx`) cerradas. Validaciones por bloque

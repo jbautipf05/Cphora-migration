@@ -25,6 +25,8 @@ export default function Auditoria() {
   const [comment, setComment] = useState('');
   const [edit, setEdit] = useState(null);        // pedido en modal editar
   const [stock, setStock] = useState(null);      // form pedido stock
+  const [detailProd, setDetailProd] = useState(null);     // H-106: producto nuevo en modal detalle
+  const [detailCierre, setDetailCierre] = useState(null); // H-106: cierre de OP en modal detalle
 
   const prod = (id) => products.find((p) => p.id === id);
   const cust = (id) => customers.find((c) => c.id === id);
@@ -266,7 +268,8 @@ export default function Auditoria() {
 
       {/* Productos nuevos por verificar */}
       <section>
-        <h3 className="mb-3 font-semibold gold-title">🟨 Productos nuevos por verificar</h3>
+        <h3 className="mb-1 font-semibold gold-title">🟨 Productos nuevos por verificar</h3>
+        <p className="mb-2 text-xs italic text-brand-muted">Doble clic en la fila (o <b>Ver</b>) para abrir el detalle del producto.</p>
         <div className="panel overflow-hidden">
           <table className="w-full text-sm">
             <thead className="text-xs uppercase text-brand-muted">
@@ -284,7 +287,7 @@ export default function Auditoria() {
               {newProds.length ? newProds.map((p) => {
                 const margen = p.price ? Math.round((p.price - p.cost) / p.price * 100) : 0;
                 return (
-                  <tr key={p.id} className="border-b border-white/5">
+                  <tr key={p.id} className="table-row cursor-pointer border-b border-white/5" onDoubleClick={() => setDetailProd(p)} title="Doble clic para ver el detalle">
                     <td className="px-3 py-3 font-mono text-xs text-brand-gold">{p.sku}</td>
                     <td className="px-3 py-3 text-white">{p.photo || '📦'} {p.name}</td>
                     <td className="px-3 py-3"><span className="badge-gold rounded px-2 py-0.5 text-[11px]">{p.category}</span></td>
@@ -292,6 +295,7 @@ export default function Auditoria() {
                     <td className="px-3 py-3 text-right text-brand-gold-light">{fmtCOP(p.price)}</td>
                     <td className={`px-3 py-3 text-right font-semibold ${margen > 30 ? 'text-emerald-400' : margen > 15 ? 'text-amber-400' : 'text-red-400'}`}>{margen}%</td>
                     <td className="px-3 py-3 text-right">
+                      <button className="btn-outline mr-1 px-2 py-1 text-xs" onClick={() => setDetailProd(p)}>👁 Ver</button>
                       <button className="btn-gold mr-1 px-2 py-1 text-xs" onClick={() => verifyProduct(p.id)}>✓ Aprobar</button>
                       <button className="btn-outline px-2 py-1 text-xs" style={{ borderColor: '#ef4444', color: '#fca5a5' }} onClick={() => rejectProduct(p.id)}>✗ Rechazar</button>
                     </td>
@@ -345,7 +349,7 @@ export default function Auditoria() {
                 else if (opCerrada) estadoChip = <span className="badge-info rounded px-2 py-0.5 text-[11px]">🔒 OP cerrada</span>;
                 else estadoChip = <span className="text-[11px] italic text-brand-muted">Pendiente</span>;
                 return (
-                  <tr key={o.id} className="border-b border-white/5">
+                  <tr key={o.id} className="table-row cursor-pointer border-b border-white/5" onDoubleClick={() => setDetailCierre(o)} title="Doble clic para ver el detalle del cierre">
                     <td className="px-3 py-3 font-mono text-xs font-semibold text-brand-gold">{o.id}</td>
                     <td className="px-3 py-3 text-white">{o.clientName}</td>
                     <td className="px-3 py-3 text-xs text-white">{p ? p.name : '—'} <span className="text-brand-muted">×{qty}</span></td>
@@ -354,7 +358,9 @@ export default function Auditoria() {
                     <td className="px-3 py-3 text-right text-emerald-400">{fmtCOP(0)}</td>
                     <td className="px-3 py-3 text-right font-semibold text-emerald-400">0%</td>
                     <td className="px-3 py-3">{estadoChip}</td>
-                    <td className="px-3 py-3 text-right text-xs text-brand-muted">—</td>
+                    <td className="px-3 py-3 text-right">
+                      <button className="btn-outline px-2 py-1 text-xs" onClick={() => setDetailCierre(o)}>👁 Ver</button>
+                    </td>
                   </tr>
                 );
               }) : (
@@ -566,6 +572,168 @@ export default function Auditoria() {
             <Field label="Asesor" className="sm:col-span-2"><Input value={edit.asesor || ''} onChange={(e) => setEdit((s) => ({ ...s, asesor: e.target.value }))} /></Field>
           </FormGrid>
         )}
+      </Modal>
+
+      {/* ── H-106 · Modal: Detalle de Producto Nuevo ── */}
+      <Modal
+        open={!!detailProd}
+        onClose={() => setDetailProd(null)}
+        title={detailProd ? `Producto ${detailProd.sku || ''} · Detalle para auditoría` : ''}
+        size="lg"
+        footer={detailProd && (
+          <div className="flex w-full justify-end gap-2">
+            <button className="btn-outline py-2 text-sm" style={{ borderColor: '#ef4444', color: '#fca5a5' }} onClick={() => { rejectProduct(detailProd.id); setDetailProd(null); }}>✗ Rechazar</button>
+            <button className="btn-gold py-2 text-sm" onClick={() => { verifyProduct(detailProd.id); setDetailProd(null); }}>✓ Aprobar</button>
+          </div>
+        )}
+      >
+        {detailProd && (() => {
+          const p = detailProd;
+          const margen = p.price ? Math.round((p.price - p.cost) / p.price * 100) : 0;
+          const bomRows = (p.bom || []).map((b) => {
+            const s = supplies.find((x) => x.id === b.supplyId);
+            return { name: s?.name || b.supplyId, qty: b.qty, unit: s?.unitOut || s?.unit || '', sub: s ? (Number(s.cost) || 0) * (Number(b.qty) || 0) : 0 };
+          });
+          const bomTotal = bomRows.reduce((a, r) => a + r.sub, 0);
+          return (
+            <div className="space-y-5">
+              <div className="flex items-start gap-4">
+                <div className="grid h-20 w-20 shrink-0 place-items-center rounded-lg border border-brand-border bg-[#0f1f36] text-4xl">{p.photo || '📦'}</div>
+                <div className="flex-1">
+                  <div className="text-lg font-semibold text-white">{p.name}</div>
+                  <div className="font-mono text-xs text-brand-muted">{p.sku}</div>
+                  <div className="mt-1">
+                    {p.verified
+                      ? <span className="badge-ok rounded px-2 py-0.5 text-[11px]">✓ Verificado</span>
+                      : p.rejectedByAudit
+                        ? <span className="badge-danger rounded px-2 py-0.5 text-[11px]">✗ Rechazado</span>
+                        : <span className="badge-warn rounded px-2 py-0.5 text-[11px]">⏳ Pendiente de verificación</span>}
+                    <span className="badge-gold ml-1 rounded px-2 py-0.5 text-[11px]">{p.category || '—'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {p.description && <p className="text-sm text-brand-muted">{p.description}</p>}
+
+              <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                {[
+                  ['Costo', fmtCOP(p.cost || 0)],
+                  ['Precio', fmtCOP(p.price || 0)],
+                  ['Margen', `${margen}%`],
+                  ['Dimensiones', p.dimensions ? `${p.dimensions.ancho}×${p.dimensions.alto}×${p.dimensions.profundidad} cm` : '—'],
+                ].map(([k, v]) => (
+                  <div key={k} className="rounded-lg border border-brand-border bg-[#0f1f36] p-3">
+                    <div className="text-[11px] uppercase text-brand-muted">{k}</div>
+                    <div className="mt-0.5 text-white">{v}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-gold/80">Áreas de producción</div>
+                <div className="flex flex-wrap gap-1">
+                  {(p.areas || []).length
+                    ? p.areas.map((a) => <span key={a} className="badge-gold rounded px-2 py-0.5 text-[11px]">{a}</span>)
+                    : <span className="text-xs italic text-brand-muted">Sin áreas marcadas</span>}
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-gold/80">Receta (BOM) — materia prima</div>
+                <div className="space-y-1">
+                  {bomRows.length ? bomRows.map((r, i) => (
+                    <div key={i} className="flex items-center justify-between rounded-lg border border-white/5 bg-[#0f1f36] px-3 py-2 text-sm">
+                      <span className="text-white">{r.name}</span>
+                      <span className="text-brand-muted">{r.qty} {r.unit}</span>
+                      <span className="tabular-nums text-brand-gold-light">{fmtCOP(r.sub)}</span>
+                    </div>
+                  )) : <p className="text-xs italic text-brand-muted">Sin insumos en el BOM.</p>}
+                </div>
+                {bomRows.length > 0 && (
+                  <div className="mt-2 flex justify-between border-t border-brand-border pt-2 text-sm">
+                    <span className="text-brand-muted">Costo calculado (suma BOM)</span>
+                    <span className="font-bold text-brand-gold">{fmtCOP(bomTotal)}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
+
+      {/* ── H-106 · Modal: Detalle de Cierre de OP ── */}
+      <Modal
+        open={!!detailCierre}
+        onClose={() => setDetailCierre(null)}
+        title={detailCierre ? `Cierre OP ${detailCierre.id} · Detalle para auditoría` : ''}
+        size="lg"
+        footer={(
+          <div className="flex w-full justify-end">
+            <button className="btn-outline py-2 text-sm" onClick={() => setDetailCierre(null)}>Cerrar</button>
+          </div>
+        )}
+      >
+        {detailCierre && (() => {
+          const o = detailCierre;
+          const p = prod(o.productId);
+          const c = cust(o.customerId);
+          const qty = Number(o.qty) || 1;
+          const bomRows = (p?.bom || []).map((b) => {
+            const s = supplies.find((x) => x.id === b.supplyId);
+            return { name: s?.name || b.supplyId, qty: (Number(b.qty) || 0) * qty, unit: s?.unitOut || s?.unit || '', sub: s ? (Number(s.cost) || 0) * (Number(b.qty) || 0) * qty : 0 };
+          });
+          const costoMaster = bomRows.reduce((a, r) => a + r.sub, 0) || (Number(p?.cost) || 0) * qty;
+          const opCerrada = o.opClosed || o.estado === 'op_cerrada';
+          const productoCreado = !!(finishedStock || []).find((f) => f.orderId === o.id && f.source === 'produccion');
+          return (
+            <div className="space-y-5">
+              <div className="flex flex-wrap items-center gap-2">
+                {o.verified && <span className="badge-ok rounded px-2 py-0.5 text-[11px]">✓ Verificada</span>}
+                <span className="badge-info rounded px-2 py-0.5 text-[11px]">{opCerrada ? '🔒 OP cerrada' : 'OP en proceso'}</span>
+                {productoCreado && <span className="badge-gold rounded px-2 py-0.5 text-[11px]">📦 Producto en CEDI</span>}
+                {o.auditApproved && <span className="badge-ok rounded px-2 py-0.5 text-[11px]">Aprobada para facturar</span>}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+                {[
+                  ['Cliente', o.clientName],
+                  ['Documento', c?.doc || '—'],
+                  ['Producto', `${p ? p.name : '—'} × ${qty}`],
+                  ['Área', o.area || '—'],
+                  ['Total', fmtCOP(o.total || 0)],
+                  ['Costo máster (BOM×qty)', fmtCOP(costoMaster)],
+                  ['Inicio', fmtDate(o.orderDate)],
+                  ['Vence', o.dueDate ? fmtDate(o.dueDate) : '—'],
+                  ['Asesor', o.asesor || '—'],
+                ].map(([k, v]) => (
+                  <div key={k} className="rounded-lg border border-brand-border bg-[#0f1f36] p-3">
+                    <div className="text-[11px] uppercase text-brand-muted">{k}</div>
+                    <div className="mt-0.5 text-white">{v}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-gold/80">Consumo de materiales (BOM × cantidad)</div>
+                <div className="space-y-1">
+                  {bomRows.length ? bomRows.map((r, i) => (
+                    <div key={i} className="flex items-center justify-between rounded-lg border border-white/5 bg-[#0f1f36] px-3 py-2 text-sm">
+                      <span className="text-white">{r.name}</span>
+                      <span className="text-brand-muted">{r.qty} {r.unit}</span>
+                      <span className="tabular-nums text-brand-gold-light">{fmtCOP(r.sub)}</span>
+                    </div>
+                  )) : <p className="text-xs italic text-brand-muted">El producto no tiene BOM definido.</p>}
+                </div>
+                {bomRows.length > 0 && (
+                  <div className="mt-2 flex justify-between border-t border-brand-border pt-2 text-sm">
+                    <span className="text-brand-muted">Costo máster total</span>
+                    <span className="font-bold text-brand-gold">{fmtCOP(costoMaster)}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </Modal>
     </div>
   );

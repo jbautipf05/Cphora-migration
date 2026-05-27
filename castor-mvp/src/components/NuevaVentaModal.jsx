@@ -37,7 +37,7 @@ const emptyForm = () => ({
   innovRefPhoto: '', innovConsentPhoto: '',
 });
 
-export default function NuevaVentaModal({ open, onClose, products = [], customers = [], asesores = [], bankAccounts = [], innovation = false, prefill = null, onSubmit }) {
+export default function NuevaVentaModal({ open, onClose, products = [], customers = [], asesores = [], bankAccounts = [], finishedStock = [], warehouses = [], innovation = false, prefill = null, onSubmit }) {
   const [f, setF] = useState(emptyForm());
   const [searchField, setSearchField] = useState('name');
   const [searchQ, setSearchQ] = useState('');
@@ -97,6 +97,37 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
   }, [customers, searchField, searchQ]);
 
   const priceOf = (id) => products.find((p) => p.id === id)?.price || 0;
+  // REG-H035-04 — disponibilidad de stock por ítem (fiel a onSaleItemProductChange:5828-5833).
+  const stockLocations = (productId) =>
+    finishedStock.filter((fs) => fs.productId === productId && fs.status === 'disponible' && fs.qty > 0);
+  const renderStockInfo = (it) => {
+    if (it.tipo !== 'stock' || !it.productId) return null;
+    const locs = stockLocations(it.productId);
+    const avail = locs.reduce((a, fs) => a + fs.qty, 0);
+    const qty = Number(it.qty) || 0;
+    const badges = locs.map((fs) => {
+      const w = warehouses.find((x) => x.id === fs.warehouseId);
+      const color = w?.color || '#2A4061';
+      return (
+        <span
+          key={fs.id}
+          className="mr-1 mb-1 inline-block rounded px-2 py-0.5"
+          style={{ background: `${color}33`, color, border: `1px solid ${color}66` }}
+        >
+          {w?.code || w?.name || fs.warehouseId}: {fs.qty}
+        </span>
+      );
+    });
+    return (
+      <div className="mt-2 text-[11px] text-brand-muted">
+        {avail >= qty ? (
+          <><span className="text-emerald-300">✓ Disponible {avail} uds</span> · Ubicaciones: {badges.length ? badges : '—'}</>
+        ) : (
+          <><span className="text-red-400">✗ Stock insuficiente (disp: {avail}, solicitado: {qty})</span> · {badges.length ? badges : '—'}</>
+        )}
+      </div>
+    );
+  };
   const itemTotal = (it) => priceOf(it.productId) * (Number(it.qty) || 0) * (1 - (Number(it.disc) || 0) / 100);
   const innovItemTotal = (it) => (Number(it.qty) || 0) * (Number(it.price) || 0);
   // H-035.3 / H-036.2: liquidación (en innovación, los propuestos son producción estimada).
@@ -431,6 +462,7 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
                     <div className="input-field flex items-center justify-end bg-brand-navy/30 text-xs font-semibold text-brand-gold-light">{fmtCOP(itemTotal(it))}</div>
                   </div>
                 </div>
+                {renderStockInfo(it)}
                 <textarea
                   value={it.comment}
                   onChange={(e) => setItem(i, 'comment', e.target.value)}

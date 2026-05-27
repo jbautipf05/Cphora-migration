@@ -46,6 +46,9 @@ import {
   postWarrantyCost as engPostWarrantyCost,
   postBankAdjustment as engPostBankAdjustment,
   reverseJournalEntry as engReverse,
+  closePeriod as engClosePeriod,
+  reopenPeriod as engReopenPeriod,
+  closeFiscalYear as engCloseFiscalYear,
   applyJournalResult,
 } from '../lib/accountingEngine';
 
@@ -334,6 +337,83 @@ export function AppProvider({ children }) {
               j.id === outcome.reversedOriginalId
                 ? { ...j, status: 'reversed', reversedBy: outcome.journalEntry.id }
                 : j,
+            ),
+          };
+        });
+        return outcome;
+      },
+
+      // ── Cierres de periodo / año fiscal (C2b) ────────────────────────────
+      // El asiento de cierre se postea ANTES de marcar el periodo cerrado (su
+      // fecha cae dentro del periodo); todo en un setState atómico.
+      closeFiscalPeriod: (periodId) => {
+        let outcome;
+        setState((s) => {
+          outcome = engClosePeriod(periodId, s);
+          if (outcome.error || outcome.warning) return s;
+          const next = outcome.journalEntry ? applyJournalResult(s, outcome) : s;
+          return {
+            ...next,
+            fiscalPeriods: next.fiscalPeriods.map((p) =>
+              p.id === periodId
+                ? {
+                    ...p,
+                    estado: 'cerrado',
+                    closedAt: nowISO(),
+                    closingJournalEntryId: outcome.journalEntry?.id || null,
+                  }
+                : p,
+            ),
+          };
+        });
+        return outcome;
+      },
+      reopenFiscalPeriod: (periodId) => {
+        let outcome;
+        setState((s) => {
+          outcome = engReopenPeriod(periodId, s);
+          if (outcome.error) return s;
+          let next = s;
+          if (outcome.reversal?.ok) {
+            const applied = applyJournalResult(s, outcome.reversal);
+            next = {
+              ...applied,
+              journalEntries: applied.journalEntries.map((j) =>
+                j.id === outcome.reversal.reversedOriginalId
+                  ? { ...j, status: 'reversed', reversedBy: outcome.reversal.journalEntry.id }
+                  : j,
+              ),
+            };
+          }
+          return {
+            ...next,
+            fiscalPeriods: next.fiscalPeriods.map((p) =>
+              p.id === periodId
+                ? { ...p, estado: 'abierto', closingJournalEntryId: null, reopenedAt: nowISO() }
+                : p,
+            ),
+          };
+        });
+        return outcome;
+      },
+      closeFiscalYear: (year) => {
+        let outcome;
+        setState((s) => {
+          outcome = engCloseFiscalYear(year, s);
+          if (outcome.error || outcome.warning) return s;
+          let next = { ...s };
+          for (const { je, lines } of outcome.jesToAppend) {
+            next = {
+              ...next,
+              journalEntries: [je, ...next.journalEntries],
+              journalLines: [...next.journalLines, ...lines],
+            };
+          }
+          return {
+            ...next,
+            counters: { ...next.counters, ...outcome.counters },
+            fiscalPeriods: next.fiscalPeriods.map((p) =>
+              outcome.periodPatches[p.id] ? { ...p, ...outcome.periodPatches[p.id] } : p,
             ),
           };
         });

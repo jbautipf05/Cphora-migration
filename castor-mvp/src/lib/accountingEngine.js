@@ -16,6 +16,7 @@
 
 import { PUC_BY_CODE } from '../data/pucCatalog';
 import { nowISO, today } from './format';
+import { movimientosPorCuenta } from './accounting';
 
 // ── utils ────────────────────────────────────────────────────────────────────
 const round = (n) => Math.round((+n || 0) * 100) / 100;
@@ -525,6 +526,219 @@ export function postBankAdjustment(adj, ctx) {
     },
     ctx,
   );
+}
+
+// ── Cierre de periodo / año fiscal (C2b) ──────────────────────────────────────
+// Portado de castor_accounting.js:5650-5865, adaptado a las convenciones React
+// (cuentas con level/nature/classCode; periodos con `estado`; journalEntry.period).
+// Divergencia deliberada: el monolito cancela el saldo ACUMULADO a la fecha de
+// cierre; aquí se cancela el MOVIMIENTO DEL PERIODO (clases 4/5/6/7 de ese mes),
+// porque el seed React marca meses 'cerrado' SIN su asiento de cierre y el
+// acumulado los contaría doble. No se valida rol (no hay RBAC todavía — TD-04).
+const lastDayOfPeriod = (periodId) => {
+  const m = String(periodId).match(/^(\d{4})-(\d{2})$/);
+  if (!m) return today();
+  const y = +m[1];
+  const mo = +m[2];
+  const day = new Date(y, mo, 0).getDate();
+  return `${y}-${String(mo).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+};
+
+const periodAfter = (periodId, fiscalPeriods) => {
+  const m = String(periodId).match(/^(\d{4})-(\d{2})$/);
+  if (!m) return null;
+  let y = +m[1];
+  let mo = +m[2] + 1;
+  if (mo > 12) {
+    mo = 1;
+    y++;
+  }
+  const nextId = `${y}-${String(mo).padStart(2, '0')}`;
+  return (fiscalPeriods || []).find((p) => p.id === nextId) || null;
+};
+
+const periodEstado = (p) => p && (p.estado || p.status);
+
+// ── closePeriod ──────────────────────────────────────────────────────────────
+// Genera un asiento que cancela las cuentas auxiliares de clases 4/5/6/7 con
+// movimiento en el periodo contra 360505 (utilidad/pérdida del ejercicio).
+// Idempotente por source='closing' + sourceId=periodId. Devuelve el JE para que
+// el caller lo aplique y marque el periodo 'cerrado'.
+export function closePeriod(periodId, ctx) {
+  const { pucAccounts, journalEntries = [], journalLines = [], fiscalPeriods = [] } = ctx || {};
+  const period = fiscalPeriods.find((p) => p.id === periodId);
+  if (!period) return { error: 'period_not_found', message: `Periodo ${periodId} no existe` };
+  if (periodEstado(period) === 'cerrado')
+    return { error: 'period_not_open', message: `Periodo ${periodId} ya está cerrado` };
+
+  const dup = journalEntries.find(
+    (j) => j.source === 'closing' && j.sourceId === periodId && j.status === 'posted',
+  );
+  if (dup) return { warning: 'already_closed', journalId: dup.id };
+
+  const mov = movimientosPorCuenta(journalLines, journalEntries, periodId);
+  const lines = [];
+  let totIngresos = 0;
+  let totEgresos = 0;
+  for (const [code, m] of Object.entries(mov)) {
+    const acc = findAccount(code, pucAccounts);
+    if (!acc || acc.level < 6 || !/^[4567]$/.test(String(acc.classCode))) continue;
+    const saldo = round(acc.nature === 'debito' ? m.debe - m.haber : m.haber - m.debe);
+    if (Math.abs(saldo) < 0.5) continue;
+    if (acc.nature === 'debito') {
+      // Gasto/costo (saldo normal deudor): se cancela acreditando.
+      lines.push({
+        accountCode: code,
+        debit: saldo < 0 ? -saldo : 0,
+        credit: saldo > 0 ? saldo : 0,
+        description: `Cierre ${periodId} · ${acc.name}`,
+      });
+      totEgresos += saldo;
+    } else {
+      // Ingreso (saldo normal acreedor): se cancela debitando.
+      lines.push({
+        accountCode: code,
+        debit: saldo > 0 ? saldo : 0,
+        credit: saldo < 0 ? -saldo : 0,
+        description: `Cierre ${periodId} · ${acc.name}`,
+      });
+      totIngresos += saldo;
+    }
+  }
+
+  if (lines.length === 0) return { ok: true, empty: true, journalEntry: null, lines: [], utilidad: 0 };
+
+  const utilidad = round(totIngresos - totEgresos);
+  if (Math.abs(utilidad) >= 0.5) {
+    if (utilidad > 0)
+      lines.push({ accountCode: '360505', debit: 0, credit: utilidad, description: `Utilidad del ejercicio · ${periodId}` });
+    else
+      lines.push({ accountCode: '360505', debit: -utilidad, credit: 0, description: `Pérdida del ejercicio · ${periodId}` });
+  }
+
+  const res = postJournalEntry(
+    {
+      date: lastDayOfPeriod(periodId),
+      source: 'closing',
+      sourceId: periodId,
+      concept: `Cierre periodo ${periodId}`,
+      lines,
+    },
+    ctx,
+  );
+  if (!res.ok) return res;
+  return { ...res, utilidad };
+}
+
+// ── reopenPeriod ─────────────────────────────────────────────────────────────
+// Reabre un periodo cerrado y reversa su asiento de cierre (si sigue presente —
+// puede no estarlo por el flag de no-persistencia de asientos). Guard: no se
+// puede reabrir si el periodo siguiente está cerrado (debe reabrirse primero).
+export function reopenPeriod(periodId, ctx) {
+  const { journalEntries = [], fiscalPeriods = [] } = ctx || {};
+  const period = fiscalPeriods.find((p) => p.id === periodId);
+  if (!period) return { error: 'period_not_found', message: `Periodo ${periodId} no existe` };
+  if (periodEstado(period) !== 'cerrado')
+    return { error: 'period_not_closed', message: `Periodo ${periodId} no está cerrado` };
+
+  const next = periodAfter(periodId, fiscalPeriods);
+  if (next && periodEstado(next) === 'cerrado')
+    return { error: 'next_period_closed', message: `Reabra primero ${next.id} antes de ${periodId}` };
+
+  let reversal = null;
+  if (period.closingJournalEntryId) {
+    const je = journalEntries.find((j) => j.id === period.closingJournalEntryId);
+    if (je && je.status === 'posted') {
+      const rev = reverseJournalEntry(period.closingJournalEntryId, `Reapertura periodo ${periodId}`, ctx);
+      if (rev.error) return rev;
+      reversal = rev;
+    }
+  }
+  return { ok: true, reversal };
+}
+
+// ── closeFiscalYear ──────────────────────────────────────────────────────────
+// Cierra los meses abiertos del año (threading del estado de trabajo) y traslada
+// el saldo de 360505 → 370505 (utilidades acumuladas). Idempotente por
+// source='fiscal_year_close' + sourceId=year. Devuelve un plan para que el caller
+// lo aplique de forma atómica: { jesToAppend, periodPatches, counters }.
+export function closeFiscalYear(year, ctx) {
+  const yyyy = +year;
+  if (!yyyy) return { error: 'invalid_year', message: 'Año inválido' };
+  const { fiscalPeriods = [], journalEntries = [] } = ctx || {};
+  const periods = fiscalPeriods.filter((p) => +String(p.id).slice(0, 4) === yyyy);
+  if (periods.length === 0) return { error: 'no_periods_for_year', message: `No hay periodos de ${yyyy}` };
+
+  const existing = journalEntries.find(
+    (j) => j.source === 'fiscal_year_close' && j.sourceId === String(yyyy) && j.status === 'posted',
+  );
+  if (existing) return { warning: 'already_closed_year', journalId: existing.id };
+
+  let work = { ...ctx };
+  const jesToAppend = [];
+  const periodPatches = {};
+  for (const p of periods) {
+    if (periodEstado(p) === 'cerrado') continue;
+    const r = closePeriod(p.id, work);
+    if (r.error) return { error: 'period_close_failed', periodId: p.id, detail: r };
+    if (r.ok && r.journalEntry) {
+      jesToAppend.push({ je: r.journalEntry, lines: r.lines });
+      work = {
+        ...work,
+        journalEntries: [r.journalEntry, ...(work.journalEntries || [])],
+        journalLines: [...(work.journalLines || []), ...r.lines],
+        counters: { ...work.counters, ...r.counters },
+      };
+    }
+    periodPatches[p.id] = {
+      estado: 'cerrado',
+      closedAt: nowISO(),
+      closingJournalEntryId: r.journalEntry?.id || null,
+    };
+  }
+
+  // Saldo 360505 acumulado (naturaleza crédito): positivo = utilidad.
+  const mov = movimientosPorCuenta(work.journalLines || [], work.journalEntries || [], 'all');
+  const m360 = mov['360505'] || { debe: 0, haber: 0 };
+  const saldo360505 = round(m360.haber - m360.debe);
+
+  let counters = work.counters;
+  if (Math.abs(saldo360505) >= 0.5) {
+    const lines =
+      saldo360505 > 0
+        ? [
+            { accountCode: '360505', debit: saldo360505, credit: 0, description: `Cierre fiscal ${yyyy} · traslado utilidad` },
+            { accountCode: '370505', debit: 0, credit: saldo360505, description: `Utilidades acumuladas ${yyyy}` },
+          ]
+        : [
+            { accountCode: '370505', debit: -saldo360505, credit: 0, description: `Pérdida fiscal ${yyyy} · traslado` },
+            { accountCode: '360505', debit: 0, credit: -saldo360505, description: `Cancelación pérdida ${yyyy}` },
+          ];
+    const res = postJournalEntry(
+      {
+        date: `${yyyy}-12-31`,
+        source: 'fiscal_year_close',
+        sourceId: String(yyyy),
+        concept: `Cierre ejercicio fiscal ${yyyy}`,
+        lines,
+        force: true,
+      },
+      work,
+    );
+    if (!res.ok) return res;
+    jesToAppend.push({ je: res.journalEntry, lines: res.lines });
+    counters = res.counters;
+  }
+
+  return {
+    ok: true,
+    year: yyyy,
+    jesToAppend,
+    periodPatches,
+    counters,
+    utilidad: saldo360505,
+    empty: jesToAppend.length === 0,
+  };
 }
 
 // ── Aplicador genérico — actualiza estado del AppContext de forma inmutable ─

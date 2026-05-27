@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
 import { KpiCard } from '../components/ui';
-import { fmtCOP, fmtDate, today } from '../lib/format';
+import { fmtCOP, fmtDate, today, uid } from '../lib/format';
 import { Tabs, DataTable, EstadoBadge } from '../components/widgets';
 import Chart from '../components/Chart';
 import { IconBank, IconCheck, IconShield, IconBook } from '../components/icons';
@@ -10,12 +10,16 @@ import { Field, Input, Select, FormGrid } from '../components/form';
 import { useToast } from '../components/Toast';
 
 const METHODS = ['Transferencia', 'Efectivo', 'Cheque', 'Tarjeta'];
+const BANK_TYPES = ['Corriente', 'Ahorros', 'Empresarial', 'Recaudo', 'Efectivo'];
+
+const emptyBank = () => ({ mode: 'new', id: null, bank: '', type: 'Corriente', number: '****', holder: 'Castor SAS', balance: 0, color: '#C9A961' });
 
 export default function Tesoreria() {
-  const { bankAccounts, payments, outgoingPayments, suppliers, employees, update, add, nextId } = useApp();
+  const { bankAccounts, payments, outgoingPayments, suppliers, employees, pucAccounts, journalLines, update, add, setState, nextId } = useApp();
   const toast = useToast();
   const [tab, setTab] = useState('entrantes');
   const [out, setOut] = useState(null);
+  const [bankForm, setBankForm] = useState(null); // CRUD de cuentas (§7.8)
 
   const bankName = (id) => bankAccounts.find((b) => b.id === id)?.bank || id;
 
@@ -75,6 +79,52 @@ export default function Tesoreria() {
     setOut(null);
   }
 
+  // ── Bank CRUD (§7.8) ────────────────────────────────────────────────────────
+  // Próxima auxiliar PUC de bancos 1110-XX libre (espejo de ensureBankPucAccount).
+  function nextBankPuc() {
+    const used = (pucAccounts || []).filter((a) => /^1110\d\d$/.test(a.code)).map((a) => +a.code.slice(4));
+    const next = (used.length ? Math.max(...used) : 0) + 5;
+    return '1110' + String(next).padStart(2, '0');
+  }
+  const setB = (k, v) => setBankForm((f) => ({ ...f, [k]: v }));
+
+  function saveBank() {
+    if (!bankForm.bank.trim()) return toast('Indica el banco', 'warn');
+    if (bankForm.mode === 'edit') {
+      // Editar no toca saldo ni pucCode (esos derivan de movimientos/contabilidad).
+      update('bankAccounts', bankForm.id, {
+        bank: bankForm.bank.trim(), type: bankForm.type, number: bankForm.number,
+        holder: bankForm.holder, color: bankForm.color,
+      });
+      toast('Cuenta actualizada', 'ok');
+    } else {
+      const pucCode = nextBankPuc();
+      // ensureBankPucAccount: crea la auxiliar 1110-XX si no existe (shape del catálogo).
+      if (!(pucAccounts || []).some((a) => a.code === pucCode)) {
+        add('pucAccounts', { code: pucCode, name: `${bankForm.bank.trim()} ${bankForm.type}`, nature: 'debito', classCode: '1', level: 6, parentCode: '1110', activa: true });
+      }
+      add('bankAccounts', {
+        id: uid('B'), bank: bankForm.bank.trim(), type: bankForm.type, number: bankForm.number || '****',
+        holder: bankForm.holder || 'Castor SAS', balance: Number(bankForm.balance) || 0,
+        color: bankForm.color || '#C9A961', pucCode,
+      });
+      toast(`Cuenta creada · PUC ${pucCode}`, 'ok');
+    }
+    setBankForm(null);
+  }
+
+  // Eliminar bloqueado si la cuenta tiene saldo o movimientos/asientos asociados (§7.8).
+  function deleteBank(b) {
+    const hasIn = payments.some((p) => p.bankId === b.id);
+    const hasOut = outgoingPayments.some((p) => p.bankId === b.id);
+    const hasJE = (journalLines || []).some((l) => l.accountCode === b.pucCode);
+    if (b.balance !== 0 || hasIn || hasOut || hasJE) {
+      return toast('No se puede eliminar: la cuenta tiene saldo o movimientos asociados', 'warn');
+    }
+    setState((s) => ({ ...s, bankAccounts: s.bankAccounts.filter((x) => x.id !== b.id) }));
+    toast(`Cuenta ${b.bank} eliminada`, 'ok');
+  }
+
   const inCols = [
     { key: 'id', label: 'ID', render: (r) => <span className="font-mono text-xs text-brand-gold">{r.id}</span> },
     { key: 'orderId', label: 'Pedido', render: (r) => <span className="text-brand-muted">{r.orderId}</span> },
@@ -121,6 +171,10 @@ export default function Tesoreria() {
         <KpiCard label="Neto del período" value={fmtCOP(kpis.neto)} hint="Utilidad caja" accent="#3b82f6" icon={<IconBook width={18} height={18} />} />
       </div>
 
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold text-brand-gold">Cuentas bancarias</h3>
+        <button className="btn-gold" onClick={() => setBankForm(emptyBank())}>+ Nueva cuenta</button>
+      </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {bankAccounts.map((b) => (
           <div key={b.id} className="panel relative overflow-hidden p-4">
@@ -129,6 +183,10 @@ export default function Tesoreria() {
             <p className="text-xs text-brand-muted">{b.type} · {b.number}</p>
             <p className="mt-3 text-xl font-bold tabular-nums text-white">{fmtCOP(b.balance)}</p>
             <p className="mt-1 text-[11px] text-brand-muted">{b.holder || ''} · PUC {b.pucCode}</p>
+            <div className="mt-3 flex gap-3 border-t border-white/5 pt-2">
+              <button className="text-[11px] text-brand-gold hover:underline" onClick={() => setBankForm({ mode: 'edit', ...b })}>✎ Editar</button>
+              <button className="text-[11px] text-red-300 hover:underline" onClick={() => deleteBank(b)}>🗑 Eliminar</button>
+            </div>
           </div>
         ))}
       </div>
@@ -202,6 +260,40 @@ export default function Tesoreria() {
             </Field>
             <Field label="Fecha"><Input type="date" value={out.date} onChange={(e) => setO('date', e.target.value)} /></Field>
             <Field label="Referencia" className="sm:col-span-2"><Input value={out.reference} onChange={(e) => setO('reference', e.target.value)} /></Field>
+          </FormGrid>
+        )}
+      </Modal>
+
+      {/* CRUD de cuenta bancaria (§7.8) */}
+      <Modal
+        open={!!bankForm}
+        onClose={() => setBankForm(null)}
+        title={bankForm?.mode === 'edit' ? 'Editar cuenta bancaria' : 'Nueva cuenta bancaria'}
+        size="sm"
+        footer={
+          <>
+            <button className="btn-outline" onClick={() => setBankForm(null)}>Cancelar</button>
+            <button className="btn-gold" onClick={saveBank}>{bankForm?.mode === 'edit' ? 'Guardar' : 'Crear'}</button>
+          </>
+        }
+      >
+        {bankForm && (
+          <FormGrid cols={1}>
+            <Field label="Banco *"><Input value={bankForm.bank} onChange={(e) => setB('bank', e.target.value)} /></Field>
+            <Field label="Tipo">
+              <Select value={bankForm.type} onChange={(e) => setB('type', e.target.value)}>
+                {BANK_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              </Select>
+            </Field>
+            <Field label="Nº cuenta (4 últimos)"><Input value={bankForm.number} onChange={(e) => setB('number', e.target.value)} /></Field>
+            <Field label="Titular"><Input value={bankForm.holder} onChange={(e) => setB('holder', e.target.value)} /></Field>
+            {bankForm.mode === 'new' && (
+              <Field label="Saldo inicial (COP)"><Input type="number" min="0" value={bankForm.balance} onChange={(e) => setB('balance', e.target.value)} /></Field>
+            )}
+            <Field label="Color (hex)"><Input value={bankForm.color} onChange={(e) => setB('color', e.target.value)} placeholder="#C9A961" /></Field>
+            {bankForm.mode === 'new' && (
+              <p className="text-[11px] text-brand-muted">Se creará automáticamente la auxiliar PUC <b className="text-brand-gold-light">{nextBankPuc()}</b> (1110-XX).</p>
+            )}
           </FormGrid>
         )}
       </Modal>

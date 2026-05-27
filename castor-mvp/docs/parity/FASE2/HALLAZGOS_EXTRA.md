@@ -236,12 +236,15 @@ cada mutación en un `setState` atómico (cascada B2):
    Efecto: `order.auditApproved/By/At` + crea `invoiceRequest` para Contabilidad.
 
 **DECISIONES SIN INPUT DEL CLIENTE / divergencias con Demo6 (documentadas):**
-- **`invoiceRequest.estado = 'pendiente_auditoria'`** (no `'aprobada_auditoria'` como Demo6).
-  Razón: React **solo consume** `invoiceRequests` con `estado==='pendiente_auditoria'`
-  (sección "Solicitudes de facturación pendientes", `Auditoria.jsx:44`); nada consume
-  `'aprobada_auditoria'` todavía. Usar el estado de Demo6 dejaría el IREQ **huérfano**. Con
-  `pendiente_auditoria` el IREQ aparece y es accionable en esa sección (botón "✓ Cerrar OP y
-  aprobar" → `aprobada_auditoria`). **Backend-readiness OK.**
+- **`invoiceRequest.estado = 'aprobada_auditoria'`** (fiel a `auditApproveOp` de Demo6:7734).
+  Coherencia: NO contradice `o.auditApproved:true` — la orden está aprobada **y** su IREQ está
+  aprobada. Es una **cola limpia hacia adelante** (estado terminal bien definido) que consumirá el
+  módulo de **Facturación/Contabilidad** cuando se construya (roadmap #5); **no es un cabo suelto
+  contradictorio**, es un estado que espera a un consumidor futuro conocido. El **feedback de UI**
+  lo da el chip de la fila (`✓ Aprobada` / `✓ Listo contabilidad`), no hace falta que aparezca en
+  "Solicitudes de facturación pendientes". Esa sección (`reqFactura`, filtra `pendiente_auditoria`)
+  es para el **flujo inverso** —solicitudes que inicia Contabilidad y auditoría aún no aprobó—, hoy
+  sin productor, y está bien que quede así.
 - **`hasCustomer = !!(o.pedidoId || o.customerId)`** para `reservado`/`disponible` (igual que
   Demo6). El spec mencionaba solo `pedidoId`, pero las órdenes React no traen `pedidoId` (usan
   `id` + `customerId`); usar solo `pedidoId` marcaría pedidos de cliente como `disponible` →

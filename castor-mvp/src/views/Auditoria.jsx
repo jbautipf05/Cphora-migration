@@ -232,11 +232,15 @@ export default function Auditoria() {
     setState((s) => ({
       ...s,
       orders: (s.orders || []).map((x) => (x.id === o.id ? { ...x, ...patch } : x)),
-      // Estado 'pendiente_auditoria' = el que React YA consume en "Solicitudes de facturación
-      // pendientes" (reqFactura). Diverge de Demo6 ('aprobada_auditoria') porque React aún no
-      // tiene consumo downstream en Contabilidad; así el IREQ NO queda huérfano. Ver EX-F3-02.
+      // Estado 'aprobada_auditoria' (fiel a auditApproveOp de Demo6:7734). NO contradice
+      // o.auditApproved:true — la orden está aprobada Y su IREQ está aprobada (coherente). Es una
+      // cola limpia hacia adelante: estado terminal bien definido que consumirá el módulo de
+      // Facturación/Contabilidad cuando se construya (roadmap #5). La sección "Solicitudes de
+      // facturación pendientes" (reqFactura, filtra 'pendiente_auditoria') es para el flujo
+      // INVERSO (solicitudes que inicia Contabilidad y auditoría aún no aprobó) — hoy sin
+      // productor, y está bien así. El feedback de esta acción lo da el chip de la fila (✓ Aprobada).
       invoiceRequests: [
-        { id: ireqId, orderId: o.id, pedidoId: o.pedidoId || null, customerId: o.customerId || null, clientName: o.clientName, docType: o.docType || 'factura', amount: o.total, estado: 'pendiente_auditoria', requestedAt: at, requestedBy: 'Auditoría' },
+        { id: ireqId, orderId: o.id, pedidoId: o.pedidoId || null, customerId: o.customerId || null, clientName: o.clientName, docType: o.docType || 'factura', amount: o.total, estado: 'aprobada_auditoria', requestedAt: at, requestedBy: 'Auditoría' },
         ...(s.invoiceRequests || []),
       ],
     }));

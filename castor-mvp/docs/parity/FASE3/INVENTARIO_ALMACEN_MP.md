@@ -13,8 +13,11 @@ Estado de paridad del módulo Almacén MP vs Demo6, y hallazgos AMP-xx.
 | Tab **Órdenes de Compra**: listado + filtros + detalle (SlidePanel) | ✅ | solo lectura hasta AMP-01 |
 | Tab **OC: alta (+ Nueva orden de compra)** | ✅ **AMP-01** | — |
 | Tab **Movimientos**: listado de `stockMoves` | ✅ | solo lectura |
-| Tab **Entradas: recepción de OC → stock + costo + avance OC + ledger** | ✅ **AMP-02** | este hallazgo |
-| **Salidas** de insumo a producción (consumo / `supplyIssues`) | ❌ **AMP-03** | pendiente; habilitaría "Costo real" en Auditoría cierre |
+| Tab **Entradas: recepción de OC → stock + costo + avance OC + ledger** | ✅ **AMP-02** | — |
+| Tab **Salidas: consumo a producción (BOM auto) / devolución → ajusta stock** | ✅ **AMP-03** | este hallazgo |
+
+> **Almacén MP core COMPLETO:** OC (AMP-01) → Entradas (AMP-02) → Salidas (AMP-03). Ambos slices
+> muertos (`supplyReceipts`, `supplyIssues`) resucitados.
 
 ---
 
@@ -100,9 +103,40 @@ entrada", avanza la OC y **resucita `supplyReceipts`** (antes estado muerto / si
 +qty; costo "última entrada"; received/status por ítem; OC abierta→parcial→cerrada; closePartial;
 `supplyReceipts` creado y visible) + `eslint` 0 errores + `vite build` OK.
 
+## AMP-03 — Salida de insumos a producción + devoluciones · ✅ RESUELTO
+
+**Ubicación:** `src/views/AlmacenMP.jsx` (+ `AppContext.jsx`: counter `iss`). Espejo de Demo6
+`openSupplyIssueForm` (2514) / `rebuildIssueBOM` (2586) / `saveSupplyIssue` (2641).
+
+Cierra el core de Almacén MP y **resucita `supplyIssues`** (antes estado muerto).
+
+**Implementado:**
+- **Counter `iss:0`** en `counters`; ids `nextId('SAL','iss',3)` → **SAL-001**, SAL-002, …
+- Botón **"+ Registrar salida"** + modal **"📤 Salida/Devolución de insumos"**: tipo
+  (salida/devolución), fecha (`today()`), bodega origen (`tipo:'insumos'`), **buscador + checkboxes
+  de OPs** (verificadas, no stock, no terminales — espejo de `renderIssueOpList:2569`). Al marcar
+  OPs, **auto-agrega los insumos del BOM** (`Σ bom.qty × order.qty` por insumo, filas marcadas
+  "BOM"); permite también **ítems manuales**. Por ítem: insumo → unidad (readonly) + costo (última
+  entrada) + cantidad + subtotal en vivo; total.
+- **`saveIssue`** en **UN `setState` atómico**: crea `supplyIssues[{ id, type, date, warehouseId,
+  orderIds, items:[{supplyId, qty, unit}], registeredBy }]`; ajusta `supply.stock += (devolución ?
+  +qty : −qty)`.
+- **Tab "Salidas"** que lista `supplyIssues` (SAL, tipo, fecha, OPs, insumos×qty, valor, por) →
+  **no es write-only**.
+- **Validación (gate):** ≥1 ítem `qty>0`; si `type==='salida'`, **stock suficiente por ítem**
+  (`supply.stock ≥ qty`) o toast `error` y aborta (la devolución NO valida stock).
+
+**Diferido (documentado, NO hecho):**
+- **Hooks contables** `postRawMaterialConsumption` / `postRawMaterialReturn` (Demo6 2661-2662):
+  Contabilidad fuera de alcance (forward-reference).
+
+**Validación:** test node `saveIssue` **9/9** (BOM auto 1 OP + multi-OP; gate; guard de stock en
+salida; salida descuenta; devolución suma; SAL-001/SAL-002 sin colisión; devolución sin guard) +
+`eslint` 0 errores + `vite build` OK.
+
 ## Pendientes (roadmap Almacén MP)
-- **AMP-03 — Salida de insumo a producción:** consumo de MP por OP (`supplyIssues`), que
-  habilitaría las columnas "Costo real"/"Desv." de la tabla de cierre en Auditoría (hoy en 0,
-  ver EX-F3-02). Demo6: `openSupplyIssueForm`/`saveSupplyIssue` (2512+).
-- **AMP-02 flex telas** (diferido arriba): ampliar la OC cuando se recibe más metros de tela que
-  el saldo.
+- **AMP-02 flex telas** (diferido): ampliar la OC cuando se recibe más metros de tela que el saldo.
+- **Costo real en Auditoría:** ahora que `supplyIssues` existe (AMP-03), las columnas "Costo
+  real"/"Desv." del cierre de OP (EX-F3-02, hoy en 0) podrían calcularse desde los consumos reales
+  (`supplyIssues` por `orderId`). Follow-up.
+- **Hooks contables** de Almacén MP (compra/consumo/devolución de MP) cuando se aborde Contabilidad.

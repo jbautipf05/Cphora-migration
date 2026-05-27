@@ -37,6 +37,9 @@ export default function AlmacenMP() {
     stockMoves,
     warehouses,
     supplyReceipts,
+    supplyIssues,
+    orders,
+    products,
     add,
     nextId,
     setState,
@@ -57,6 +60,7 @@ export default function AlmacenMP() {
   const [supForm, setSupForm] = useState(null);
   const [ocForm, setOcForm] = useState(null); // AMP-01: alta de orden de compra
   const [recForm, setRecForm] = useState(null); // AMP-02: recepción de insumos (entrada)
+  const [issForm, setIssForm] = useState(null); // AMP-03: salida/devolución de insumos
 
   const insumoBodegas = warehouses.filter((w) => w.tipo === 'insumos');
   const supName = (id) => suppliers.find((s) => s.id === id)?.name || id;
@@ -282,6 +286,79 @@ export default function AlmacenMP() {
     setRecForm(null);
   }
 
+  // ── AMP-03: salida/devolución de insumos (espejo de openSupplyIssueForm/rebuildIssueBOM/saveSupplyIssue) ──
+  // OPs candidatas para consumo: verificadas, no stock, no terminales (espejo de renderIssueOpList:2569).
+  const issOPs = orders.filter(
+    (o) => o.verified && o.tipo !== 'stock' && !['entregado', 'cancelado', 'op_cerrada', 'despachado'].includes(o.estado),
+  );
+  // Recalcula los ítems automáticos del BOM (Σ bom.qty × order.qty por insumo) y conserva los manuales.
+  const rebuildIssItems = (orderIds, manualItems) => {
+    const agg = {};
+    orderIds.forEach((id) => {
+      const o = orders.find((x) => x.id === id);
+      const p = o && products.find((x) => x.id === o.productId);
+      (p?.bom || []).forEach((b) => {
+        agg[b.supplyId] = (agg[b.supplyId] || 0) + (Number(b.qty) || 0) * (Number(o.qty) || 1);
+      });
+    });
+    const autoItems = Object.entries(agg).map(([supplyId, qty]) => {
+      const s = supplies.find((x) => x.id === supplyId);
+      return { supplyId, qty, unit: s?.unitOut || s?.unit || '', auto: true };
+    });
+    return [...autoItems, ...manualItems];
+  };
+  const openIssue = () =>
+    setIssForm({ type: 'salida', date: today(), warehouseId: insumoBodegas[0]?.id || '', orderIds: [], search: '', items: [] });
+  const toggleIssOP = (id) =>
+    setIssForm((f) => {
+      const orderIds = f.orderIds.includes(id) ? f.orderIds.filter((x) => x !== id) : [...f.orderIds, id];
+      return { ...f, orderIds, items: rebuildIssItems(orderIds, f.items.filter((it) => !it.auto)) };
+    });
+  const setIssItem = (i, k, v) =>
+    setIssForm((f) => ({
+      ...f,
+      items: f.items.map((r, idx) => {
+        if (idx !== i) return r;
+        if (k === 'supplyId') {
+          const s = supplies.find((x) => x.id === v);
+          return { ...r, supplyId: v, unit: s?.unitOut || s?.unit || '' };
+        }
+        return { ...r, [k]: v };
+      }),
+    }));
+  const addIssItem = () => setIssForm((f) => ({ ...f, items: [...f.items, { supplyId: '', qty: '', unit: '', auto: false }] }));
+  const delIssItem = (i) => setIssForm((f) => ({ ...f, items: f.items.filter((_, idx) => idx !== i) }));
+  const supplyCost = (id) => Number(supplies.find((s) => s.id === id)?.cost) || 0;
+  const issTotal = issForm
+    ? issForm.items.reduce((a, it) => a + (Number(it.qty) || 0) * supplyCost(it.supplyId), 0)
+    : 0;
+
+  function saveIssue() {
+    const items = issForm.items
+      .filter((it) => it.supplyId && Number(it.qty) > 0)
+      .map((it) => ({ supplyId: it.supplyId, qty: Number(it.qty), unit: it.unit || '' }));
+    if (!items.length) return toast('Agrega al menos un ítem con cantidad > 0', 'warn');
+    if (issForm.type === 'salida') {
+      for (const it of items) {
+        const ins = supplies.find((s) => s.id === it.supplyId);
+        if (!ins || (ins.stock || 0) < it.qty) return toast(`Stock insuficiente: ${ins?.name || it.supplyId}`, 'error');
+      }
+    }
+    const id = nextId('SAL', 'iss', 3); // SAL-001
+    const { type, warehouseId, orderIds } = issForm;
+    const date = issForm.date || today();
+    const by = currentUser?.name || 'Almacén';
+    setState((s) => {
+      const delta = {};
+      items.forEach((it) => { delta[it.supplyId] = (delta[it.supplyId] || 0) + (type === 'devolucion' ? it.qty : -it.qty); });
+      const supplies2 = s.supplies.map((sup) => (delta[sup.id] != null ? { ...sup, stock: (sup.stock || 0) + delta[sup.id] } : sup));
+      const issue = { id, type, date, warehouseId, orderIds, items, registeredBy: by };
+      return { ...s, supplies: supplies2, supplyIssues: [issue, ...(s.supplyIssues || [])] };
+    });
+    toast(`${type === 'devolucion' ? 'Devolución' : 'Salida'} ${id} registrada`, 'ok');
+    setIssForm(null);
+  }
+
   const hasInsFilters = !!(insSearch || insCat || bodega);
   const hasOCFilters = !!(ocSearch || ocEstado || ocSupplier);
   const hasProvFilters = !!(provSearch || provCat);
@@ -467,6 +544,7 @@ export default function AlmacenMP() {
           { id: 'proveedores', label: '👥 Proveedores' },
           { id: 'oc', label: '📄 Órdenes de Compra' },
           { id: 'entradas', label: '📥 Entradas' },
+          { id: 'salidas', label: '📤 Salidas' },
           { id: 'movimientos', label: '🔄 Movimientos' },
         ]}
         active={tab}
@@ -668,6 +746,60 @@ export default function AlmacenMP() {
                 })}
                 {(supplyReceipts || []).length === 0 && (
                   <tr><td colSpan={9} className="px-4 py-8 text-center text-muted">Sin entradas registradas.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* TAB: SALIDAS (AMP-03 · consumo a producción / devoluciones) */}
+      {tab === 'salidas' && (
+        <>
+          <div className="panel p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted">
+                Salidas de insumo a producción (descuentan stock) y devoluciones (suman). El BOM se carga
+                automático desde las OPs seleccionadas; la cantidad es editable.
+              </span>
+              <span className="ml-auto text-sm text-muted">{(supplyIssues || []).length} salidas</span>
+              <button className="btn-gold" onClick={openIssue}>+ Registrar salida</button>
+            </div>
+          </div>
+          <div className="panel overflow-hidden">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-white/10 text-left text-[11px] uppercase tracking-wide text-muted">
+                  <th className="px-3 py-2">Salida</th>
+                  <th className="px-3 py-2">Fecha</th>
+                  <th className="px-3 py-2">Tipo</th>
+                  <th className="px-3 py-2">OPs</th>
+                  <th className="px-3 py-2">Insumos</th>
+                  <th className="px-3 py-2 text-right">Valor</th>
+                  <th className="px-3 py-2">Por</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(supplyIssues || []).map((x) => {
+                  const total = (x.items || []).reduce((a, it) => a + (Number(it.qty) || 0) * supplyCost(it.supplyId), 0);
+                  return (
+                    <tr key={x.id} className="border-b border-white/5 hover:bg-white/5">
+                      <td className="px-3 py-2 font-mono text-xs text-gold-accent">{x.id}</td>
+                      <td className="px-3 py-2 text-muted">{fmtDate(x.date)}</td>
+                      <td className="px-3 py-2">
+                        <Chip variant={x.type === 'devolucion' ? 'gold' : 'ok'}>{x.type || 'salida'}</Chip>
+                      </td>
+                      <td className="px-3 py-2 font-mono text-xs text-gold-accent">{(x.orderIds || []).join(', ') || '—'}</td>
+                      <td className="px-3 py-2 text-xs text-white">
+                        {(x.items || []).map((it) => `${supplyName(it.supplyId)} ×${it.qty} ${it.unit || ''}`).join(', ')}
+                      </td>
+                      <td className="px-3 py-2 text-right text-gold-accent">{fmtCOP(total)}</td>
+                      <td className="px-3 py-2 text-muted">{x.registeredBy || '—'}</td>
+                    </tr>
+                  );
+                })}
+                {(supplyIssues || []).length === 0 && (
+                  <tr><td colSpan={7} className="px-4 py-8 text-center text-muted">Sin salidas registradas.</td></tr>
                 )}
               </tbody>
             </table>
@@ -910,6 +1042,113 @@ export default function AlmacenMP() {
                   Cerrar OC (parcial)
                 </label>
                 <span className="text-lg font-bold text-gold-accent">{fmtCOP(recTotal)}</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* AMP-03: Modal Salida / Devolución de insumos */}
+      <Modal
+        open={!!issForm}
+        onClose={() => setIssForm(null)}
+        title={issForm?.type === 'devolucion' ? '📤 Devolución de insumos' : '📤 Salida de insumos'}
+        size="lg"
+        footer={
+          <>
+            <button className="btn-outline" onClick={() => setIssForm(null)}>Cancelar</button>
+            <button className="btn-gold" onClick={saveIssue}>Registrar</button>
+          </>
+        }
+      >
+        {issForm && (
+          <div className="space-y-4">
+            <FormGrid cols={3}>
+              <Field label="Tipo *">
+                <Select value={issForm.type} onChange={(e) => setIssForm((f) => ({ ...f, type: e.target.value }))}>
+                  <option value="salida">Salida a producción (−)</option>
+                  <option value="devolucion">Devolución al almacén (+)</option>
+                </Select>
+              </Field>
+              <Field label="Fecha *"><Input type="date" value={issForm.date} onChange={(e) => setIssForm((f) => ({ ...f, date: e.target.value }))} /></Field>
+              <Field label="Bodega origen">
+                <Select value={issForm.warehouseId} onChange={(e) => setIssForm((f) => ({ ...f, warehouseId: e.target.value }))}>
+                  {insumoBodegas.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
+                </Select>
+              </Field>
+            </FormGrid>
+
+            {/* Selección de OPs → BOM automático */}
+            <div className="panel-2 rounded p-4">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold gold-title">OPs en producción (carga el BOM)</p>
+                <input
+                  value={issForm.search}
+                  onChange={(e) => setIssForm((f) => ({ ...f, search: e.target.value }))}
+                  placeholder="Buscar OP / cliente / producto / área…"
+                  className="input-field w-64 py-1 text-xs"
+                />
+              </div>
+              <div className="max-h-44 space-y-1 overflow-y-auto">
+                {issOPs
+                  .filter((o) => {
+                    const q = issForm.search.toLowerCase();
+                    if (!q) return true;
+                    const pname = products.find((p) => p.id === o.productId)?.name || '';
+                    return `${o.id} ${o.clientName || ''} ${pname} ${o.area || ''}`.toLowerCase().includes(q);
+                  })
+                  .map((o) => {
+                    const p = products.find((x) => x.id === o.productId);
+                    return (
+                      <label key={o.id} className="flex cursor-pointer items-center gap-2 rounded p-1.5 text-xs hover:bg-white/5">
+                        <input type="checkbox" className="accent-gold-accent" checked={issForm.orderIds.includes(o.id)} onChange={() => toggleIssOP(o.id)} />
+                        <span className="font-mono text-gold-accent">{o.id}</span>
+                        <span className="text-white">{p?.name || '—'}</span>
+                        <span className="text-muted">· {o.clientName || ''} ×{o.qty || 1} · {o.area || '—'}</span>
+                      </label>
+                    );
+                  })}
+                {issOPs.length === 0 && <p className="p-2 text-xs italic text-muted">Sin OPs activas.</p>}
+              </div>
+            </div>
+
+            {/* Ítems (BOM auto + manual) */}
+            <div className="panel-2 rounded p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-sm font-semibold gold-title">Insumos (BOM auto + editable)</p>
+                <button type="button" className="text-xs text-gold-accent hover:underline" onClick={addIssItem}>+ Ítem manual</button>
+              </div>
+              {issForm.items.length === 0 ? (
+                <p className="text-xs italic text-muted">Marca OPs para cargar el BOM, o agrega ítems manuales.</p>
+              ) : (
+                <div className="space-y-2">
+                  {issForm.items.map((it, i) => {
+                    const cost = supplyCost(it.supplyId);
+                    const sub = (Number(it.qty) || 0) * cost;
+                    const ins = supplies.find((s) => s.id === it.supplyId);
+                    return (
+                      <div key={i} className="flex flex-wrap items-center gap-2">
+                        <select value={it.supplyId} onChange={(e) => setIssItem(i, 'supplyId', e.target.value)} className="input-field flex-1 py-1 text-xs" style={{ minWidth: 150 }} disabled={it.auto}>
+                          <option value="">— insumo —</option>
+                          {supplies.map((s) => <option key={s.id} value={s.id}>{s.name} · stock {s.stock}</option>)}
+                        </select>
+                        <input type="number" min="0" step="0.01" value={it.qty} onChange={(e) => setIssItem(i, 'qty', e.target.value)} placeholder="cant." className="input-field w-20 py-1 text-xs" />
+                        <input value={it.unit} readOnly className="input-field w-16 py-1 text-xs opacity-70" title="Unidad" />
+                        <span className="w-24 text-right text-xs tabular-nums text-muted" title="Costo última entrada">{fmtCOP(cost)}</span>
+                        <span className="w-24 text-right text-xs tabular-nums text-white">{sub > 0 ? fmtCOP(sub) : '—'}</span>
+                        {it.auto && <span className="text-[10px] text-muted">BOM</span>}
+                        {issForm.type === 'salida' && ins && (ins.stock || 0) < (Number(it.qty) || 0) && (
+                          <span className="text-[10px] text-red-400" title="Stock insuficiente">⚠</span>
+                        )}
+                        <button type="button" className="text-red-300 hover:text-red-200" onClick={() => delIssItem(i)}>×</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <div className="mt-3 flex justify-between border-t border-white/10 pt-3">
+                <span className="text-xs text-muted">Valor total ({issForm.type})</span>
+                <span className="text-lg font-bold text-gold-accent">{fmtCOP(issTotal)}</span>
               </div>
             </div>
           </div>

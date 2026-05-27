@@ -364,8 +364,10 @@ export function postSupplierPayment(outgoing, ctx) {
   const bankPuc = outgoing.bankPucCode || resolveBankPuc(outgoing.bankAccountId, ctx);
   if (!bankPuc) return { error: 'missing_bank', message: 'Cuenta bancaria no resuelta' };
 
-  // Si está ligado a OC descarga CxP, si no carga gasto general.
-  const debitAccount = outgoing.purchaseOrderId ? '220505' : '510550'; // Gasto otros (fallback)
+  // Si está ligado a OC descarga CxP; si no, gasto diverso (fallback). 539595 existe en
+  // el catálogo React (510550 no). El mapeo fino por tipo de pago queda para "Mapeos
+  // operación→cuenta" en Contabilidad.
+  const debitAccount = outgoing.purchaseOrderId ? '220505' : '539595';
   const thirdParty = outgoing.beneficiarioId || outgoing.beneficiario || null;
 
   return postJournalEntry(
@@ -488,6 +490,38 @@ export function postWarrantyCost(warranty, costEntry, ctx) {
           description: fromAlmacen ? 'Consumo de almacén' : 'Caja menor',
         },
       ],
+    },
+    ctx,
+  );
+}
+
+// ── postBankAdjustment ────────────────────────────────────────────────────────
+// Conciliación / ajuste manual de saldo bancario (espejo de adjustBank, Demo6:3765).
+//   adj: { id, bankId|bankPucCode, delta (+/-), concept, date? }
+// delta > 0 → DB 1110-XX / CR 425095 (ingreso por ajuste).
+// delta < 0 → DB 539595 / CR 1110-XX (gasto por ajuste).
+// El banco va como tercero en la línea de la cuenta 1110-XX. Idempotente por adj.id.
+export function postBankAdjustment(adj, ctx) {
+  if (!adj) return { error: 'no_adj', message: 'Falta el ajuste' };
+  const delta = +adj.delta || 0;
+  if (!delta) return { error: 'zero_delta', message: 'Ajuste en cero' };
+  const bankPuc = adj.bankPucCode || resolveBankPuc(adj.bankId, ctx);
+  if (!bankPuc) return { error: 'missing_bank', message: 'Cuenta bancaria no resuelta' };
+
+  const amount = round(Math.abs(delta));
+  const concept = adj.concept || 'Ajuste / conciliación bancaria';
+  const bankLine = (debit, credit) => ({ accountCode: bankPuc, debit, credit, thirdParty: adj.bankId || null, description: concept });
+  const lines = delta > 0
+    ? [bankLine(amount, 0), { accountCode: '425095', debit: 0, credit: amount, description: 'Ingreso por ajuste' }]
+    : [{ accountCode: '539595', debit: amount, credit: 0, description: 'Gasto por ajuste' }, bankLine(0, amount)];
+
+  return postJournalEntry(
+    {
+      date: adj.date || today(),
+      source: 'bank_adjustment',
+      sourceId: adj.id,
+      concept: `Conciliación · ${concept}`,
+      lines,
     },
     ctx,
   );

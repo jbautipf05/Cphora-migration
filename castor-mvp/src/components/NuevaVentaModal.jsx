@@ -606,7 +606,7 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
                       <span className="text-amber-300">Producción</span>
                     </label>
                   </div>
-                  <button type="button" onClick={() => removeItem(i)} className="text-lg text-red-400" title="Quitar item">×</button>
+                  <button type="button" onClick={() => removeItem(i)} className="text-lg leading-none text-red-400 transition hover:text-red-300" title="Quitar item">×</button>
                 </div>
                 <div className="grid grid-cols-12 gap-2">
                   <div className="col-span-12 sm:col-span-4">

@@ -33,7 +33,7 @@ import {
   DISPATCH_REQUESTS,
 } from '../data/erpSeed';
 import { loadState, saveState, resetState } from '../lib/persistence';
-import { migrateCustomerFk, migrateCustomerChannel, migrateWarehouseLabels } from '../lib/migrations';
+import { migrateCustomerFk, migrateCustomerChannel, migrateWarehouseLabels, migrateWarrantyFields } from '../lib/migrations';
 import { nowISO, uid } from '../lib/format';
 import {
   postJournalEntry as engPostJE,
@@ -113,7 +113,7 @@ function hydrate() {
   //  · customerId (FK) en pedidos/cotizaciones (ADR-011 / B2)
   //  · channel en clientes derivado del lead vinculado (EX-F2-04)
   //  · relabel de bodegas MP a "Almacén #1/#2" (H-102)
-  return migrateWarehouseLabels(migrateCustomerChannel(migrateCustomerFk(merged)));
+  return migrateWarrantyFields(migrateWarehouseLabels(migrateCustomerChannel(migrateCustomerFk(merged))));
 }
 
 const AppContext = createContext(null);

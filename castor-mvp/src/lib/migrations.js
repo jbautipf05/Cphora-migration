@@ -104,3 +104,33 @@ export function migrateWarehouseLabels(state) {
     _migrations: { ...(state._migrations || {}), warehouseLabels: WAREHOUSE_LABELS_VERSION },
   };
 }
+
+const WARRANTY_FIELDS_VERSION = 1;
+
+// EX-GAR (Fase 3): el modelo de garantías se enriqueció a paridad con Demo6
+// (cronología de 4 fechas, comunicaciones, fotos, y OP de garantía con costos
+// manuales que disparan postWarrantyCost). El seed ya trae los campos nuevos,
+// pero un localStorage previo conserva el shape viejo; esta migración rellena los
+// faltantes sin pisar datos existentes. Idempotente: state._migrations.warrantyFields.
+export function migrateWarrantyFields(state) {
+  if (!state) return state;
+  if ((state._migrations?.warrantyFields || 0) >= WARRANTY_FIELDS_VERSION) return state;
+
+  const orders = state.orders || [];
+  const backfill = (w) => {
+    const ord = w.orderId ? orders.find((o) => o.id === w.orderId) : null;
+    return {
+      // Defaults primero; los valores existentes del registro ganan (no se pisan).
+      diagnosticoAt: '', solucionAt: '', cierreAt: '',
+      comunicaciones: [], fotos: [], generatedOpId: null, opCostos: [],
+      productId: ord?.productId || '', qty: 1, asesor: w.comercial || w.asesor || '',
+      ...w,
+    };
+  };
+
+  return {
+    ...state,
+    warranties: (state.warranties || []).map(backfill),
+    _migrations: { ...(state._migrations || {}), warrantyFields: WARRANTY_FIELDS_VERSION },
+  };
+}

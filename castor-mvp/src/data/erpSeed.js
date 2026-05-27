@@ -123,7 +123,7 @@ export const OUTGOING_PAYMENTS = [
 ];
 
 export const WARRANTIES = [
-  { id: 'GAR-051', orderId: 'PED-1248', clientName: 'Jose Ramírez', comercial: 'Thalia Cifuentes', motivo: 'Costura suelta en apoyabrazos', causal: 'Costura', reportedAt: '2026-04-12', estado: 'en_proceso', asignado: 'Taller Interno', resolucion: '' },
+  { id: 'GAR-051', orderId: 'PED-1248', clientName: 'Jose Ramírez', comercial: 'Thalia Cifuentes', asesor: 'Thalia Cifuentes', productId: 'p1', qty: 1, motivo: 'Costura suelta en apoyabrazos', causal: 'Costura', reportedAt: '2026-04-12', diagnosticoAt: '', solucionAt: '', cierreAt: '', estado: 'en_proceso', asignado: 'Taller Interno', resolucion: '', comunicaciones: [], fotos: [], generatedOpId: null, opCostos: [] },
 ];
 
 export const POST_SALES = [

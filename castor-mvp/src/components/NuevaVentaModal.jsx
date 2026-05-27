@@ -64,11 +64,20 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
     setF((p) => ({ ...p, [k]: v }));
     setErrors((e) => (e[k] ? { ...e, [k]: undefined } : e));
   };
-  const setItem = (i, k, v) =>
+  // REG-H035-07: cualquier cambio en ítems limpia el error general de ítems.
+  const clearItemsErr = () => setErrors((e) => (e.items ? { ...e, items: undefined } : e));
+  const setItem = (i, k, v) => {
     setF((p) => ({ ...p, items: p.items.map((it, idx) => (idx === i ? { ...it, [k]: v } : it)) }));
-  const addItem = () =>
+    clearItemsErr();
+  };
+  const addItem = () => {
     setF((p) => ({ ...p, items: [...p.items, { productId: '', qty: 1, disc: 0, tipo: 'produccion', comment: '' }] }));
-  const removeItem = (i) => setF((p) => ({ ...p, items: p.items.filter((_, idx) => idx !== i) }));
+    clearItemsErr();
+  };
+  const removeItem = (i) => {
+    setF((p) => ({ ...p, items: p.items.filter((_, idx) => idx !== i) }));
+    clearItemsErr();
+  };
   // H-036.2: helpers de productos propuestos
   const setInnovItem = (i, k, v) =>
     setF((p) => ({ ...p, innovItems: p.innovItems.map((it, idx) => (idx === i ? { ...it, [k]: v } : it)) }));
@@ -188,14 +197,26 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
     return errs;
   }
 
+  // REG-H035-07 (parte NO condicional) — Ítems de venta. Demo6 (saveSale:6090-6102)
+  // descarta filas con !producto || qty<=0 || precio<=0 y exige ≥1 ítem válido
+  // ('Agrega al menos un item válido'). Se replica como un único gate (sin inline por
+  // fila, igual que Demo6). La validación condicional de acabados (color/tela/tejido)
+  // es del Bloque A, fuera de este hallazgo. No aplica a innovación (innovItems aparte).
+  function validateItems(v) {
+    if (innovation) return {};
+    const hasValid = v.items.some((it) => it.productId && (Number(it.qty) || 0) > 0 && priceOf(it.productId) > 0);
+    return hasValid ? {} : { items: 'Agrega al menos un ítem válido (producto, cantidad > 0 y precio > 0)' };
+  }
+
   function handleSubmit() {
-    const errs = { ...validateClient(f), ...validateControl(f), ...validatePayment(f) };
+    const errs = { ...validateClient(f), ...validateControl(f), ...validatePayment(f), ...validateItems(f) };
     if (Object.keys(errs).length) {
       setErrors(errs);
       return toast('Revisa los campos marcados', 'warn');
     }
     setErrors({});
-    if (innovation ? !f.innovItems.some((it) => it.name.trim()) : !f.items.some((it) => it.productId)) return;
+    // Innovación: guarda mínima preexistente (validación completa de innovItems fuera del alcance de REG-07).
+    if (innovation && !f.innovItems.some((it) => it.name.trim())) return;
     onSubmit?.({
       ...f,
       innovation,
@@ -421,6 +442,7 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
             ))}
             {f.items.length === 0 && <p className="text-xs italic text-brand-muted">Sin items. Usa “+ Agregar item”.</p>}
           </div>
+          {errLine('items')}
           </div>
         )}
 

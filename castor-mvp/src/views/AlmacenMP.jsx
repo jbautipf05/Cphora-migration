@@ -1,10 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
-import { KpiCard, Badge, Chip } from '../components/ui';
-import { fmtCOP, fmtDate } from '../lib/format';
+import { KpiCard, Chip } from '../components/ui';
+import { fmtCOP, fmtDate, today, addDays } from '../lib/format';
 import {
   Tabs,
-  Toolbar,
   SearchBox,
   DataTable,
   EstadoBadge,
@@ -39,6 +38,7 @@ export default function AlmacenMP() {
     warehouses,
     add,
     nextId,
+    currentUser,
   } = useApp();
   const toast = useToast();
   const [tab, setTab] = useState('insumos');
@@ -53,6 +53,7 @@ export default function AlmacenMP() {
   const [selOC, setSelOC] = useState(null);
   const [supplyForm, setSupplyForm] = useState(null);
   const [supForm, setSupForm] = useState(null);
+  const [ocForm, setOcForm] = useState(null); // AMP-01: alta de orden de compra
 
   const insumoBodegas = warehouses.filter((w) => w.tipo === 'insumos');
   const supName = (id) => suppliers.find((s) => s.id === id)?.name || id;
@@ -147,6 +148,56 @@ export default function AlmacenMP() {
     add('suppliers', { id, ...supForm, pais: 'Colombia' });
     toast(`Proveedor ${id} creado`, 'ok');
     setSupForm(null);
+  }
+
+  // ── AMP-01: alta de Orden de Compra (espejo de openPurchaseOrderForm/savePurchaseOrder de Demo6) ──
+  const openOC = () =>
+    setOcForm({
+      supplierId: suppliers[0]?.id || '',
+      date: today(),
+      expectedDate: addDays(today(), 15),
+      warehouseId: insumoBodegas[0]?.id || '',
+      notes: '',
+      items: [{ supplyId: '', qty: 1, unit: '', cost: 0 }],
+    });
+  const setOcItem = (i, k, v) =>
+    setOcForm((f) => ({ ...f, items: f.items.map((r, idx) => (idx === i ? { ...r, [k]: v } : r)) }));
+  // Al elegir insumo: auto-rellena unidad (readonly) y costo unitario (editable).
+  const setOcSupply = (i, supplyId) =>
+    setOcForm((f) => {
+      const s = supplies.find((x) => x.id === supplyId);
+      return {
+        ...f,
+        items: f.items.map((r, idx) =>
+          idx === i ? { ...r, supplyId, unit: s?.unit || '', cost: Number(s?.cost) || 0 } : r,
+        ),
+      };
+    });
+  const addOcItem = () => setOcForm((f) => ({ ...f, items: [...f.items, { supplyId: '', qty: 1, unit: '', cost: 0 }] }));
+  const delOcItem = (i) => setOcForm((f) => ({ ...f, items: f.items.filter((_, idx) => idx !== i) }));
+  const ocTotal = ocForm
+    ? ocForm.items.reduce((a, it) => a + (Number(it.qty) || 0) * (Number(it.cost) || 0), 0)
+    : 0;
+
+  function saveOC() {
+    if (!ocForm.supplierId) return toast('Selecciona el proveedor', 'warn');
+    if (!ocForm.warehouseId) return toast('Selecciona la bodega destino', 'warn');
+    const validItems = ocForm.items.filter((it) => it.supplyId && Number(it.qty) > 0);
+    if (!validItems.length) return toast('Agrega al menos un ítem con insumo y cantidad', 'warn');
+    const id = nextId('OC', 'oc', 0); // continúa después de OC-3003 del seed → OC-3004
+    const sup = suppliers.find((s) => s.id === ocForm.supplierId);
+    const items = validItems.map((it) => {
+      const s = supplies.find((x) => x.id === it.supplyId);
+      return { supplyId: it.supplyId, qty: Number(it.qty), unit: it.unit || s?.unit || '', cost: Number(it.cost) || 0, received: 0, status: 'pendiente' };
+    });
+    const total = items.reduce((a, it) => a + it.qty * it.cost, 0);
+    add('purchaseOrders', {
+      id, supplierId: ocForm.supplierId, supplier: sup?.name || '', date: ocForm.date, expectedDate: ocForm.expectedDate,
+      warehouseId: ocForm.warehouseId, estado: 'abierta', total, createdBy: currentUser?.name || 'Almacén',
+      notes: ocForm.notes, items,
+    });
+    toast(`Orden de compra ${id} creada`, 'ok');
+    setOcForm(null);
   }
 
   const hasInsFilters = !!(insSearch || insCat || bodega);
@@ -474,6 +525,7 @@ export default function AlmacenMP() {
                 onClear={() => { setOcSearch(''); setOcEstado(''); setOcSupplier(''); }}
               />
               <span className="ml-auto text-sm text-muted">{fOC.length} OC</span>
+              <button className="btn-gold" onClick={openOC}>+ Nueva orden de compra</button>
             </div>
           </div>
           <DataTable columns={ocCols} rows={fOC} getKey={(r) => r.id} onRowClick={setSelOC} />
@@ -586,6 +638,71 @@ export default function AlmacenMP() {
             <Field label="Ciudad"><Input value={supForm.city} onChange={(e) => setSupForm((f) => ({ ...f, city: e.target.value }))} /></Field>
             <Field label="Dirección" className="sm:col-span-2"><Input value={supForm.address} onChange={(e) => setSupForm((f) => ({ ...f, address: e.target.value }))} /></Field>
           </FormGrid>
+        )}
+      </Modal>
+
+      {/* AMP-01: Modal Nueva Orden de Compra */}
+      <Modal
+        open={!!ocForm}
+        onClose={() => setOcForm(null)}
+        title="📝 Nueva Orden de Compra"
+        size="lg"
+        footer={
+          <>
+            <button className="btn-outline" onClick={() => setOcForm(null)}>Cancelar</button>
+            <button className="btn-gold" onClick={saveOC}>Crear OC</button>
+          </>
+        }
+      >
+        {ocForm && (
+          <div className="space-y-4">
+            <FormGrid cols={2}>
+              <Field label="Proveedor *">
+                <Select value={ocForm.supplierId} onChange={(e) => setOcForm((f) => ({ ...f, supplierId: e.target.value }))}>
+                  <option value="">— Elegir —</option>
+                  {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </Select>
+              </Field>
+              <Field label="Bodega destino *">
+                <Select value={ocForm.warehouseId} onChange={(e) => setOcForm((f) => ({ ...f, warehouseId: e.target.value }))}>
+                  <option value="">— Elegir —</option>
+                  {insumoBodegas.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
+                </Select>
+              </Field>
+              <Field label="Fecha emisión *"><Input type="date" value={ocForm.date} onChange={(e) => setOcForm((f) => ({ ...f, date: e.target.value }))} /></Field>
+              <Field label="Fecha esperada *"><Input type="date" value={ocForm.expectedDate} onChange={(e) => setOcForm((f) => ({ ...f, expectedDate: e.target.value }))} /></Field>
+              <Field label="Notas" className="sm:col-span-2"><Input value={ocForm.notes} onChange={(e) => setOcForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Opcional" /></Field>
+            </FormGrid>
+
+            <div className="panel-2 rounded p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-sm font-semibold gold-title">Ítems de la orden</p>
+                <button type="button" className="text-xs text-gold-accent hover:underline" onClick={addOcItem}>+ Agregar ítem</button>
+              </div>
+              <div className="space-y-2">
+                {ocForm.items.map((it, i) => {
+                  const sub = (Number(it.qty) || 0) * (Number(it.cost) || 0);
+                  return (
+                    <div key={i} className="flex flex-wrap items-center gap-2">
+                      <select value={it.supplyId} onChange={(e) => setOcSupply(i, e.target.value)} className="input-field flex-1 py-1 text-xs" style={{ minWidth: 160 }}>
+                        <option value="">— insumo —</option>
+                        {supplies.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.category})</option>)}
+                      </select>
+                      <input value={it.unit} readOnly placeholder="unidad" className="input-field w-20 py-1 text-xs opacity-70" title="Unidad del insumo" />
+                      <input type="number" min="0" step="1" value={it.qty} onChange={(e) => setOcItem(i, 'qty', e.target.value)} placeholder="cant." className="input-field w-20 py-1 text-xs" />
+                      <input type="number" min="0" value={it.cost} onChange={(e) => setOcItem(i, 'cost', e.target.value)} placeholder="costo" className="input-field w-28 py-1 text-xs" title="Costo unitario" />
+                      <span className="w-28 text-right text-xs tabular-nums text-muted" title="Total de línea (cant × costo)">{sub > 0 ? fmtCOP(sub) : '—'}</span>
+                      <button type="button" className="text-red-300 hover:text-red-200" onClick={() => delOcItem(i)}>×</button>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-3 flex justify-between border-t border-white/10 pt-3">
+                <span className="text-xs text-muted">Total de la orden</span>
+                <span className="text-lg font-bold text-gold-accent">{fmtCOP(ocTotal)}</span>
+              </div>
+            </div>
+          </div>
         )}
       </Modal>
     </div>

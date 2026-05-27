@@ -90,7 +90,7 @@ function buildInitialState() {
     marketingAssets: MARKETING_ASSETS,
     dispatchRequests: DISPATCH_REQUESTS,
     notifications: [],
-    counters: { lead: 105, cot: 2002, ped: 1253, op: 5004, gar: 51, pag: 504, out: 32, emp: 7, inn: 2, mkt: 12, sup: 5, insumo: 8, oc: 3003, prod: 8, dsp: 2, fac: 2, rem: 14, cli: 4 },
+    counters: { lead: 105, cot: 2002, ped: 1253, op: 5004, gar: 51, pag: 504, out: 32, emp: 7, inn: 2, mkt: 12, sup: 5, insumo: 8, oc: 3003, prod: 8, dsp: 2, fac: 2, rem: 14, cli: 4, rcp: 0 },
     currentUser: { id: 'u1', name: 'Alexander Vivas', role: 'gerencia' },
   };
 }

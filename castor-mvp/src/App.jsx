@@ -8,7 +8,10 @@ import LibroMayor from './views/LibroMayor';
 import BalancePrueba from './views/BalancePrueba';
 import BalanceGeneral from './views/BalanceGeneral';
 import EstadoResultados from './views/EstadoResultados';
+import Cartera from './views/Cartera';
+import CxP from './views/CxP';
 import AuxIVA from './views/AuxIVA';
+import AuxRetenciones from './views/AuxRetenciones';
 import PlanPUC from './views/PlanPUC';
 import AsientosManuales from './views/AsientosManuales';
 import CentrosCosto from './views/CentrosCosto';
@@ -62,7 +65,10 @@ const VIEWS = {
   'balance-prueba': () => <BalancePrueba />,
   'balance-general': () => <BalanceGeneral />,
   'estado-resultados': () => <EstadoResultados />,
+  cartera: () => <Cartera />,
+  cxp: () => <CxP />,
   'aux-iva': () => <AuxIVA />,
+  'aux-retenciones': () => <AuxRetenciones />,
   'plan-puc': () => <PlanPUC />,
   'asientos-manuales': () => <AsientosManuales />,
   'centros-costo': () => <CentrosCosto />,

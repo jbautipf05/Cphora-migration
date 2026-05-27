@@ -28,6 +28,6 @@ export function Select({ children, ...props }) {
 
 // Grid de campos (2 columnas por defecto).
 export function FormGrid({ cols = 2, children, className = '' }) {
-  const map = { 1: 'grid-cols-1', 2: 'sm:grid-cols-2', 3: 'sm:grid-cols-3', 4: 'sm:grid-cols-2 lg:grid-cols-4' };
+  const map = { 1: 'grid-cols-1', 2: 'sm:grid-cols-2', 3: 'sm:grid-cols-3', 4: 'sm:grid-cols-2 lg:grid-cols-4', 5: 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5' };
   return <div className={`grid grid-cols-1 gap-4 ${map[cols] || map[2]} ${className}`}>{children}</div>;
 }

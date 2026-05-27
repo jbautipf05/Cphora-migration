@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 
 // Modal centrado reutilizable (espejo de openModal/.modal del demo).
 // Úsalo para todos los formularios "crear/editar".
-export default function Modal({ open, onClose, title, subtitle, children, footer, size = 'md' }) {
+export default function Modal({ open, onClose, title, subtitle, overline, children, footer, size = 'md' }) {
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose?.();
     if (open) window.addEventListener('keydown', onKey);
@@ -20,7 +20,8 @@ export default function Modal({ open, onClose, title, subtitle, children, footer
       >
         <header className="flex items-start justify-between gap-4 border-b border-brand-border px-6 py-4">
           <div>
-            <h3 className="text-lg font-semibold gold-title">{title}</h3>
+            {overline && <div className="text-xs text-brand-muted">{overline}</div>}
+            <h3 className={`${overline ? 'text-xl' : 'text-lg'} font-semibold gold-title`}>{title}</h3>
             {subtitle && <p className="mt-0.5 text-xs text-brand-muted">{subtitle}</p>}
           </div>
           <button

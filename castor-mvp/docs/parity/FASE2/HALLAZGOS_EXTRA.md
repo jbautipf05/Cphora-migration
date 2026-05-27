@@ -184,17 +184,35 @@ KPIs de inventario en vivo. Validado: test de algoritmo node 17/17 + lint + buil
 
 ---
 
-## EX-F3-01 — Editor de BOM en el modal de EDICIÓN de producto (Innovación) [DETECTADO EN H-104a]
+## EX-F3-01 — Editor de BOM en el modal de EDICIÓN de producto (Innovación) · ✅ RESUELTO (ampliado: paridad completa del modal de edición)
 
 **Ubicación:** `src/views/Innovacion.jsx` — modal "Editar ficha (master card)".
 
-- El modal de **Nuevo producto** tiene tabla BOM + costo automático (H-104a). El modal de
-  **edición** solo permite editar costo/precio/margen y áreas, **no el BOM**. Demo6
-  (`openProductMasterEdit`) sí tiene editor de BOM en la edición.
-- **Severidad:** baja (el alta —lo que pidió el cliente— ya calcula desde el BOM; editar el BOM
-  de un producto existente es caso secundario).
-- **Plan:** portar la misma tabla BOM (+ `syncCost`) al modal de edición. Trabajo pequeño,
-  aislado a Innovación.
+- El modal de **Nuevo producto** tenía tabla BOM + costo automático (H-104a); el modal de
+  **edición** no tenía editor de BOM. Resuelto con paridad completa vs `openProductMasterEdit`
+  de Demo6 (8388-8507), reusando el patrón del modal Nuevo.
+
+**Entregado (9 puntos + header):**
+1. Editor BOM en edición (dropdown insumo + qty + subtotal por fila + "+ Agregar" + "×").
+   `openEdit` inicializa `edit.bom` desde `p.bom`; `saveEdit` persiste `bom` filtrando filas sin
+   insumo o `qty≤0` (antes **no** guardaba `bom`).
+2. Costo auto-rellenado desde el BOM con flag `costTouched` (override manual respetado; campo no
+   deshabilitado).
+3. Línea "Costo calculado (suma insumos)" gris + total en dorado bajo la tabla.
+4. Margen con color dinámico: verde >30 / ámbar >15 / rojo ≤15.
+5. Botón verificado en el footer (izq): "✓ Marcar verificado" / "⏳ Enviar a auditoría"
+   (`toggleEditVerified`, espejo de `toggleProductVerified`).
+6. Asteriscos en labels obligatorios (Nombre *, Costo final *, Precio venta *).
+7. Footer relabel: "Costo"→"Costo final *", "Precio"→"Precio venta *".
+8. Botón principal: "Guardar ficha" → "💾 Guardar cambios".
+9. Medidas en 1 fila de 5 columnas (se agregó `cols=5` a `FormGrid`, antes caía a 2).
+- **Header (adicional pedido por el usuario):** overline "Master card · Producto" + título más
+  grande, vía prop opcional `overline` en `components/Modal.jsx` (aditivo).
+
+**Decisión técnica:** en `openEdit` el costo arranca con el `p.cost` guardado y `costTouched:false`;
+se re-sincroniza al total del BOM **al editar el BOM** (no al mero abrir), igual que el modal
+Nuevo. Diverge levemente de Demo6 (que recalcula al abrir) para **no pisar** un costo guardado
+sin que el usuario toque nada. Documentado.
 
 ---
 

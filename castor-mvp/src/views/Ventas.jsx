@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
 import { KpiCard, Chip, TIPO_VENTA } from '../components/ui';
-import { fmtCOP, fmtDate, today, addDays, daysUntil } from '../lib/format';
+import { fmtCOP, fmtDate, today, addDays, daysUntil, uid } from '../lib/format';
 import { resolveCustomerId } from '../lib/migrations';
 import { Toolbar, SearchBox, SelectFilter, DataTable, EstadoBadge, ProgressBar, SlidePanel, ClearFiltersButton } from '../components/widgets';
 import { IconCart, IconBank, IconCheck } from '../components/icons';
@@ -177,6 +177,19 @@ export default function Ventas() {
       ? data.innovItems?.some((it) => it.name?.trim())
       : data.items?.some((it) => it.productId);
     if (!hasContent) return toast('Agrega al menos un producto', 'warn');
+    // EX-F2-07 (fiel a saveSale:6103-6106): validar disponibilidad de stock ANTES de mutar nada.
+    // Si un ítem de stock pide más de lo disponible, abortar la venta (evita reservas inconsistentes).
+    if (!data.innovation) {
+      for (const it of (data.items || []).filter((x) => x.tipo === 'stock' && x.productId)) {
+        const avail = finishedStock
+          .filter((fs) => fs.productId === it.productId && fs.status === 'disponible')
+          .reduce((a, fs) => a + fs.qty, 0);
+        if (avail < (Number(it.qty) || 0)) {
+          const p = products.find((x) => x.id === it.productId);
+          return toast(`Stock insuficiente para ${p?.name || it.productId} (disp: ${avail}, solicitado: ${Number(it.qty) || 0})`, 'error');
+        }
+      }
+    }
     const orderDate = today();
 
     // Resolución de cliente (B2/ADR-011): usa el customerId del prefill o resuelve por nombre;
@@ -260,6 +273,39 @@ export default function Ventas() {
         items, // H-035.2: ítems de la venta (multi-ítem)
       });
       toast(`Venta ${id} registrada`, 'ok');
+
+      // EX-F2-07 (fiel a saveSale:6126-6145): para cada ítem de STOCK, reservar finishedStock
+      // (FIFO entre bodegas disponibles → status 'reservado' + orderId/pedidoId), bajar el stock
+      // del producto maestro y registrar un stockMove 'salida_venta'. Todo en UN setState ATÓMICO
+      // (regla cascada B2): finishedStock + products + stockMoves desde el mismo `s`, sin lecturas
+      // intermedias. Divergencia documentada con Demo6: al consumir un registro entero se conserva
+      // su qty con status 'reservado' (Demo6 lo deja en qty:0); React tiene KPIs de inventario
+      // calculados en vivo donde un reservado qty:0 perdería unidades.
+      const stockItems = items.filter((it) => it.tipo === 'stock');
+      if (stockItems.length) {
+        setState((s) => {
+          let finishedStock = s.finishedStock;
+          let products = s.products;
+          const moves = [];
+          stockItems.forEach((it) => {
+            const qtyNeeded = Number(it.qty) || 0;
+            let remaining = qtyNeeded;
+            finishedStock = finishedStock.flatMap((fs) => {
+              if (remaining <= 0 || fs.productId !== it.productId || fs.status !== 'disponible' || fs.qty <= 0) return [fs];
+              const take = Math.min(fs.qty, remaining);
+              remaining -= take;
+              if (take === fs.qty) return [{ ...fs, status: 'reservado', orderId: id, pedidoId: id }];
+              return [
+                { ...fs, qty: fs.qty - take },
+                { id: uid('FS'), productId: fs.productId, warehouseId: fs.warehouseId, qty: take, status: 'reservado', orderId: id, pedidoId: id, readyDate: orderDate, notes: `Reservado pedido ${id}` },
+              ];
+            });
+            products = products.map((p) => (p.id === it.productId ? { ...p, stock: Math.max(0, (p.stock || 0) - qtyNeeded) } : p));
+            moves.push({ id: uid('SM'), orderId: id, pedidoId: id, productId: it.productId, qty: qtyNeeded, type: 'salida_venta', date: orderDate, reason: `Venta pedido ${id}`, by: data.asesor });
+          });
+          return { ...s, finishedStock, products, stockMoves: [...moves, ...(s.stockMoves || [])] };
+        });
+      }
     }
 
     // H-035.3: registrar el pago (abono) + asiento de cobro (aplica a venta estándar e innovación).

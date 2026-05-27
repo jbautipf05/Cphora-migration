@@ -139,6 +139,15 @@ Validado E2E (5 tests) en `docs/parity/FASE3/VALIDACION_EX_F2_05.md`.
 - **Plan:** evaluar al portar los módulos de inventario/despacho en Fase 3. Verificar si la reserva debe
   ocurrir en la venta (como Demo6) o en otro punto del flujo de despacho del modelo React.
 
+**✅ RESUELTO (2026-05-26, pre-trabajo Fase 3, rama `claude/parity-fase-3-visual`).** `submitSale` ahora,
+para venta estándar: (1) valida suficiencia de stock antes de mutar (guard, fiel a `saveSale:6103-6106`);
+(2) en un `setState` atómico reserva `finishedStock` (FIFO entre bodegas → `reservado` + `orderId`/`pedidoId`,
+con split en consumo parcial), baja `products[].stock` y registra `stockMoves` `'salida_venta'` (fiel a
+`saveSale:6126-6145`). Innovación/producción no afectan inventario. Divergencia documentada: el registro
+consumido entero conserva su `qty` con `status:'reservado'` (Demo6 lo deja en `qty:0`) porque React calcula
+KPIs de inventario en vivo. Validado: test de algoritmo node 17/17 + lint + build. Detalle:
+`docs/parity/FASE3/EX-F2-07.md`.
+
 ---
 
 ## EX-F2-08 — Acabados del ítem no se persisten en `order.acabados` [DETECTADO EN FASE 2.5.2 REG-01/02/07-cond]

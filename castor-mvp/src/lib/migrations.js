@@ -76,3 +76,31 @@ export function migrateCustomerChannel(state) {
     _migrations: { ...(state._migrations || {}), customerChannel: CUSTOMER_CHANNEL_VERSION },
   };
 }
+
+const WAREHOUSE_LABELS_VERSION = 1;
+
+// H-102: relabela las dos bodegas de materia prima al vocabulario del cliente
+// ("Almacén #1/#2"). El seed ya trae los nuevos rótulos, pero hydrate() hace
+// {...base, ...saved}, así que un localStorage previo conserva los antiguos
+// ("Insumos 1/2"). Esta migración los actualiza también en estado persistido,
+// sin tocar el campo técnico `tipo` ni ninguna otra bodega. Idempotente.
+const WAREHOUSE_RELABEL = {
+  'W-ALM1': 'Almacén #1',
+  'W-ALM2': 'Almacén #2',
+};
+export function migrateWarehouseLabels(state) {
+  if (!state) return state;
+  if ((state._migrations?.warehouseLabels || 0) >= WAREHOUSE_LABELS_VERSION) return state;
+
+  return {
+    ...state,
+    warehouses: (state.warehouses || []).map((w) => {
+      const label = WAREHOUSE_RELABEL[w.id];
+      // Solo relabela si sigue con el rótulo antiguo (no pisa un nombre que el
+      // usuario hubiera personalizado a algo distinto de "Insumos N").
+      if (!label || !/^Insumos\b/.test(w.code || '')) return w;
+      return { ...w, code: label, name: label };
+    }),
+    _migrations: { ...(state._migrations || {}), warehouseLabels: WAREHOUSE_LABELS_VERSION },
+  };
+}

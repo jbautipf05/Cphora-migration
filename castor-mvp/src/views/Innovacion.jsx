@@ -29,6 +29,10 @@ export default function Innovacion() {
   const [form, setForm] = useState(null);   // nuevo producto
   const [edit, setEdit] = useState(null);    // master card
 
+  // H-102: un producto (terminado) solo puede vivir en una bodega de Producto Terminado;
+  // las bodegas de insumos (MP) no deben aparecer en su selector de bodega.
+  const ptWarehouses = useMemo(() => warehouses.filter((w) => w.tipo === 'terminado'), [warehouses]);
+
   const allCats = useMemo(
     () => [...new Set(products.map((p) => p.category).filter(Boolean))].sort(),
     [products],
@@ -77,7 +81,7 @@ export default function Innovacion() {
 
   // ── Nuevo producto ──
   const openNew = () => setForm({
-    name: '', sku: '', category: '', photo: '📦', warehouseId: warehouses[0]?.id || '',
+    name: '', sku: '', category: '', photo: '📦', warehouseId: ptWarehouses[0]?.id || '',
     description: '', ancho: '', alto: '', profundidad: '', min: 0,
     areas: [], bom: [{ supplyId: '', qty: '' }], cost: 0, price: 0,
   });
@@ -310,7 +314,7 @@ export default function Innovacion() {
               <Field label="Foto (emoji)"><Input value={form.photo} onChange={(e) => setForm((f) => ({ ...f, photo: e.target.value }))} /></Field>
               <Field label="Bodega inicial">
                 <Select value={form.warehouseId} onChange={(e) => setForm((f) => ({ ...f, warehouseId: e.target.value }))}>
-                  {warehouses.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
+                  {ptWarehouses.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
                 </Select>
               </Field>
               <Field label="Descripción" className="sm:col-span-3"><textarea rows={2} className="input-field" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} /></Field>
@@ -397,7 +401,7 @@ export default function Innovacion() {
               <Field label="Foto (emoji)"><Input value={edit.photo || '📦'} onChange={(e) => setEdit((f) => ({ ...f, photo: e.target.value }))} /></Field>
               <Field label="Bodega">
                 <Select value={edit.warehouseId} onChange={(e) => setEdit((f) => ({ ...f, warehouseId: e.target.value }))}>
-                  {warehouses.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
+                  {ptWarehouses.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
                 </Select>
               </Field>
               <Field label="Descripción" className="sm:col-span-3"><textarea rows={2} className="input-field" value={edit.description || ''} onChange={(e) => setEdit((f) => ({ ...f, description: e.target.value }))} /></Field>

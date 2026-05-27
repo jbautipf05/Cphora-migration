@@ -2,6 +2,22 @@
 
 Estado de paridad del módulo Almacén MP vs Demo6, y hallazgos AMP-xx.
 
+## Polish (rama `almacen-polish`, 6 commits)
+
+- **C1** (⚠): validación de ítem incompleto (OC/Salida) + el **backdrop del Modal ya no cierra**
+  (compartido; Escape se mantiene). AMP-02 excluido del check (qty=0 = recepción parcial).
+- **C2** (⚠): modal Nuevo Insumo con bloques Entrada/Salida → `convFactor`. **Costeo BOM
+  intacto** (cost×qty; conv/unitOut solo display).
+- **C3-5**: detalle/tarjetas de proveedor; campos Nuevo Proveedor (Actividad Económica*, País*,
+  NIT/RUT, Correo); foto de entrada como botón "Adjuntar" + detalle de entrada.
+- **C6**: OC qty default 0, placeholder de notas, bodega destino en línea completa; asteriscos;
+  botones de alta "Crear".
+- **⛔ PENDIENTE DE DECISIÓN — relabel bodegas a "Insumos 1/2":** el plan del C6 lo pedía, pero
+  **contradice H-102** (el cliente pidió "Almacén #1/#2", ya en `main`) y **`migrateWarehouseLabels`
+  lo anularía** (fuerza "Almacén #1/#2" sobre cualquier code que empiece con "Insumos"). No
+  ejecutado; requiere confirmación de si se revierte H-102 (implicaría también revertir esa
+  migración). Ver reporte.
+
 ## Auditoría del módulo (estado actual)
 
 | Capacidad | Estado | Nota |

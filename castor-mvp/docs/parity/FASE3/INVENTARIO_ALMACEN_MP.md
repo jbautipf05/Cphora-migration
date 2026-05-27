@@ -11,9 +11,9 @@ Estado de paridad del módulo Almacén MP vs Demo6, y hallazgos AMP-xx.
 | Tab **Insumos**: listado + filtros + **alta (+ Insumo)** | ✅ | `saveSupply` |
 | Tab **Proveedores**: listado + filtros + **alta (+ Proveedor)** | ✅ | `saveSupplier` |
 | Tab **Órdenes de Compra**: listado + filtros + detalle (SlidePanel) | ✅ | solo lectura hasta AMP-01 |
-| Tab **OC: alta (+ Nueva orden de compra)** | ✅ **AMP-01** | este hallazgo |
+| Tab **OC: alta (+ Nueva orden de compra)** | ✅ **AMP-01** | — |
 | Tab **Movimientos**: listado de `stockMoves` | ✅ | solo lectura |
-| **Entradas** de insumo (recepción de OC → stock + stockMove) | ❌ **AMP-02** | pendiente |
+| Tab **Entradas: recepción de OC → stock + costo + avance OC + ledger** | ✅ **AMP-02** | este hallazgo |
 | **Salidas** de insumo a producción (consumo / `supplyIssues`) | ❌ **AMP-03** | pendiente; habilitaría "Costo real" en Auditoría cierre |
 
 ---
@@ -61,10 +61,48 @@ sin colisión, filtrado de ítem inválido, shape exacto de OC e ítem, total = 
 
 ---
 
+## AMP-02 — Entrada de insumos (recepción contra OC) · ✅ RESUELTO
+
+**Ubicación:** `src/views/AlmacenMP.jsx` (+ `AppContext.jsx`: counter `rcp`). Espejo de Demo6
+`openSupplyReceiptForm` (2236) / `saveSupplyReceipt` (2430) / `renderAlmacenEntradas` (2191).
+
+Cierra el flujo de compra: recibir mercancía → sube stock de insumo, actualiza costo "última
+entrada", avanza la OC y **resucita `supplyReceipts`** (antes estado muerto / sin productor).
+
+**Implementado:**
+- **Counter `rcp:0`** en `buildInitialState().counters` (AppContext:93); ids vía
+  `nextId('REC','rcp',3)` → **REC-001**, REC-002, …
+- Botón **"+ Registrar entrada"** + modal **"📥 Entrada de insumos"**: seleccionar OC (estado ≠
+  cerrada/cancelada) → carga sus ítems con **saldo** (`qty - received`) y precarga la cantidad a
+  recibir con el saldo (editable). Campos: Remisión, Fecha (`today()`), Bodega destino (de la OC o
+  select de bodegas `tipo:'insumos'`), **Foto de remisión (obligatoria)**, checkbox "Cerrar OC
+  (parcial)". Por ítem: insumo+unidad readonly, **costo unit. editable** (default el de la OC),
+  cantidad recibida, total de línea; **total** en vivo.
+- **`saveReceipt`** en **UN `setState` atómico** (cascada B2): crea `supplyReceipts[{ id,
+  purchaseOrderId, supplierId, date, remision, warehouseId, photo:{filename}, items:[{supplyId,
+  qty, cost, unit}], registeredBy }]`; por ítem `supply.stock += qty` y si `cost>0 && ≠ actual`
+  → `supply.cost = cost` + `lastCostUpdate`/`lastCostFromReceipt`; en la OC `item.received += qty`
+  y `status = received≥qty?'completo':received>0?'parcial':'pendiente'`; **estado OC**: todo
+  completo → `cerrada`; checkbox → `cerrada`; si no → `parcial`.
+- **Tab "Entradas"** que lista `supplyReceipts` (REC, fecha, OC, proveedor, insumos×qty, total,
+  remisión, foto, por) → **no es write-only**.
+- **Validación (gate):** OC obligatoria + foto obligatoria + ≥1 ítem `qty>0` (ítems `qty≤0` se
+  descartan); toast `warn`.
+
+**Diferido (documentado, NO hecho):**
+- **NO se crea `stockMove`** para insumos — Demo6 tampoco lo hace; el ledger de entrada es
+  `supplyReceipts`.
+- **NO `postSupplyPurchase`** (hook contable) — fuera de alcance.
+- **NO el flex de telas +10m** (Demo6 2471-2482): si lo recibido supera el saldo, simplemente
+  `received += qty` (status `completo`), sin ampliar la OC. Follow-up mediano.
+
+**Validación:** test node `saveReceipt` **14/14** (3 gates; REC-001/REC-002 sin colisión; stock
++qty; costo "última entrada"; received/status por ítem; OC abierta→parcial→cerrada; closePartial;
+`supplyReceipts` creado y visible) + `eslint` 0 errores + `vite build` OK.
+
 ## Pendientes (roadmap Almacén MP)
-- **AMP-02 — Entrada de insumo:** recepción (total/parcial) de ítems de una OC → suma a
-  `supply.stock`, actualiza `item.received`/`status`, mueve la OC a `parcial`/`cerrada`, registra
-  `stockMove type:'entrada'`. (Demo6: `receiveOC`/recepción.)
 - **AMP-03 — Salida de insumo a producción:** consumo de MP por OP (`supplyIssues`), que
   habilitaría las columnas "Costo real"/"Desv." de la tabla de cierre en Auditoría (hoy en 0,
-  ver EX-F3-02).
+  ver EX-F3-02). Demo6: `openSupplyIssueForm`/`saveSupplyIssue` (2512+).
+- **AMP-02 flex telas** (diferido arriba): ampliar la OC cuando se recibe más metros de tela que
+  el saldo.

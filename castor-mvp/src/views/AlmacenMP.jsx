@@ -36,8 +36,10 @@ export default function AlmacenMP() {
     purchaseOrders,
     stockMoves,
     warehouses,
+    supplyReceipts,
     add,
     nextId,
+    setState,
     currentUser,
   } = useApp();
   const toast = useToast();
@@ -54,6 +56,7 @@ export default function AlmacenMP() {
   const [supplyForm, setSupplyForm] = useState(null);
   const [supForm, setSupForm] = useState(null);
   const [ocForm, setOcForm] = useState(null); // AMP-01: alta de orden de compra
+  const [recForm, setRecForm] = useState(null); // AMP-02: recepción de insumos (entrada)
 
   const insumoBodegas = warehouses.filter((w) => w.tipo === 'insumos');
   const supName = (id) => suppliers.find((s) => s.id === id)?.name || id;
@@ -198,6 +201,85 @@ export default function AlmacenMP() {
     });
     toast(`Orden de compra ${id} creada`, 'ok');
     setOcForm(null);
+  }
+
+  // ── AMP-02: recepción de insumos contra OC (espejo de openSupplyReceiptForm/saveSupplyReceipt) ──
+  const openOCs = purchaseOrders.filter((o) => !['cerrada', 'cancelada'].includes(o.estado));
+  const openReceipt = () =>
+    setRecForm({ purchaseOrderId: '', supplierId: '', remision: '', date: today(), warehouseId: insumoBodegas[0]?.id || '', photo: '', closePartial: false, items: [] });
+  // Al elegir OC: carga sus ítems con saldo (qty - received); precarga la cantidad a recibir con el saldo.
+  const onSelectOC = (ocId) => {
+    const oc = purchaseOrders.find((o) => o.id === ocId);
+    if (!oc) return setRecForm((f) => ({ ...f, purchaseOrderId: '', items: [] }));
+    const items = (oc.items || []).map((it) => {
+      const s = supplies.find((x) => x.id === it.supplyId);
+      const saldo = (Number(it.qty) || 0) - (Number(it.received) || 0);
+      return { supplyId: it.supplyId, unit: it.unit || s?.unit || '', cost: Number(it.cost) || 0, qty: saldo > 0 ? saldo : 0, saldo };
+    });
+    setRecForm((f) => ({ ...f, purchaseOrderId: ocId, supplierId: oc.supplierId, warehouseId: oc.warehouseId || f.warehouseId, items }));
+  };
+  const setRecItem = (i, k, v) =>
+    setRecForm((f) => ({ ...f, items: f.items.map((r, idx) => (idx === i ? { ...r, [k]: v } : r)) }));
+  const recTotal = recForm
+    ? recForm.items.reduce((a, it) => a + (Number(it.qty) || 0) * (Number(it.cost) || 0), 0)
+    : 0;
+
+  function saveReceipt() {
+    if (!recForm.purchaseOrderId) return toast('Selecciona la Orden de Compra', 'warn');
+    if (!recForm.photo?.trim()) return toast('Adjunta la foto de la remisión', 'warn');
+    const recItems = recForm.items
+      .filter((it) => Number(it.qty) > 0)
+      .map((it) => ({ supplyId: it.supplyId, qty: Number(it.qty), cost: Number(it.cost) || 0, unit: it.unit || '' }));
+    if (!recItems.length) return toast('Agrega al menos un ítem con cantidad > 0', 'warn');
+    const id = nextId('REC', 'rcp', 3); // REC-001
+    const date = recForm.date || today();
+    const by = currentUser?.name || 'Almacén';
+    const closePartial = recForm.closePartial;
+    const ocId = recForm.purchaseOrderId;
+    const warehouseId = recForm.warehouseId;
+    const remision = recForm.remision;
+    const photo = recForm.photo;
+    setState((s) => {
+      const oc = (s.purchaseOrders || []).find((o) => o.id === ocId);
+      if (!oc) return s;
+      const qtyBySupply = {};
+      const costBySupply = {};
+      recItems.forEach((it) => {
+        qtyBySupply[it.supplyId] = (qtyBySupply[it.supplyId] || 0) + it.qty;
+        if (it.cost > 0) costBySupply[it.supplyId] = it.cost;
+      });
+      // Insumos: sube stock + actualiza costo "última entrada" si difiere.
+      const supplies2 = s.supplies.map((sup) => {
+        const addQty = qtyBySupply[sup.id];
+        if (!addQty) return sup;
+        const next = { ...sup, stock: (sup.stock || 0) + addQty };
+        const newCost = costBySupply[sup.id];
+        if (newCost != null && newCost !== sup.cost) {
+          next.cost = newCost; next.lastCostUpdate = date; next.lastCostFromReceipt = id;
+        } else if (newCost != null) {
+          next.lastCostUpdate = date;
+        }
+        return next;
+      });
+      // OC: avanza received/status por ítem y recalcula estado.
+      const newItems = (oc.items || []).map((x) => {
+        const addQty = qtyBySupply[x.supplyId];
+        if (!addQty) return x;
+        const received = (x.received || 0) + addQty;
+        const status = received >= x.qty ? 'completo' : received > 0 ? 'parcial' : 'pendiente';
+        return { ...x, received, status };
+      });
+      const allComplete = newItems.every((x) => (x.received || 0) >= x.qty);
+      const estado = allComplete ? 'cerrada' : closePartial ? 'cerrada' : 'parcial';
+      const purchaseOrders2 = s.purchaseOrders.map((o) => (o.id === oc.id ? { ...o, items: newItems, estado } : o));
+      const receipt = {
+        id, purchaseOrderId: oc.id, supplierId: oc.supplierId, date, remision,
+        warehouseId, photo: { filename: photo }, items: recItems, registeredBy: by,
+      };
+      return { ...s, supplies: supplies2, purchaseOrders: purchaseOrders2, supplyReceipts: [receipt, ...(s.supplyReceipts || [])] };
+    });
+    toast(`Entrada ${id} registrada`, 'ok');
+    setRecForm(null);
   }
 
   const hasInsFilters = !!(insSearch || insCat || bodega);
@@ -384,6 +466,7 @@ export default function AlmacenMP() {
           { id: 'insumos', label: '📦 Insumos' },
           { id: 'proveedores', label: '👥 Proveedores' },
           { id: 'oc', label: '📄 Órdenes de Compra' },
+          { id: 'entradas', label: '📥 Entradas' },
           { id: 'movimientos', label: '🔄 Movimientos' },
         ]}
         active={tab}
@@ -529,6 +612,66 @@ export default function AlmacenMP() {
             </div>
           </div>
           <DataTable columns={ocCols} rows={fOC} getKey={(r) => r.id} onRowClick={setSelOC} />
+        </>
+      )}
+
+      {/* TAB: ENTRADAS (AMP-02 · recepciones de insumo contra OC) */}
+      {tab === 'entradas' && (
+        <>
+          <div className="panel p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted">
+                Recepciones de insumo asociadas a una OC. Las entregas parciales mantienen la OC abierta.
+                <b className="text-amber-300"> La foto de remisión es obligatoria.</b>
+              </span>
+              <span className="ml-auto text-sm text-muted">{(supplyReceipts || []).length} entradas</span>
+              <button className="btn-gold" onClick={openReceipt}>+ Registrar entrada</button>
+            </div>
+          </div>
+          <div className="panel overflow-hidden">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-white/10 text-left text-[11px] uppercase tracking-wide text-muted">
+                  <th className="px-3 py-2">Entrada</th>
+                  <th className="px-3 py-2">Fecha</th>
+                  <th className="px-3 py-2">OC</th>
+                  <th className="px-3 py-2">Proveedor</th>
+                  <th className="px-3 py-2">Insumos</th>
+                  <th className="px-3 py-2 text-right">Total</th>
+                  <th className="px-3 py-2">Remisión</th>
+                  <th className="px-3 py-2">Foto</th>
+                  <th className="px-3 py-2">Por</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(supplyReceipts || []).map((r) => {
+                  const total = (r.items || []).reduce((a, it) => a + (Number(it.qty) || 0) * (Number(it.cost) || 0), 0);
+                  return (
+                    <tr key={r.id} className="border-b border-white/5 hover:bg-white/5">
+                      <td className="px-3 py-2 font-mono text-xs text-gold-accent">{r.id}</td>
+                      <td className="px-3 py-2 text-muted">{fmtDate(r.date)}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-gold-accent">{r.purchaseOrderId || '—'}</td>
+                      <td className="px-3 py-2 text-white">{supName(r.supplierId)}</td>
+                      <td className="px-3 py-2 text-xs text-white">
+                        {(r.items || []).map((it) => `${supplyName(it.supplyId)} ×${it.qty} ${it.unit || ''}`).join(', ')}
+                      </td>
+                      <td className="px-3 py-2 text-right text-gold-accent">{fmtCOP(total)}</td>
+                      <td className="px-3 py-2 text-muted">{r.remision || '—'}</td>
+                      <td className="px-3 py-2 text-xs">
+                        {r.photo?.filename
+                          ? <span className="text-emerald-300">📸 {r.photo.filename}</span>
+                          : <span className="text-red-400">✗ sin foto</span>}
+                      </td>
+                      <td className="px-3 py-2 text-muted">{r.registeredBy || '—'}</td>
+                    </tr>
+                  );
+                })}
+                {(supplyReceipts || []).length === 0 && (
+                  <tr><td colSpan={9} className="px-4 py-8 text-center text-muted">Sin entradas registradas.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
 
@@ -700,6 +843,73 @@ export default function AlmacenMP() {
               <div className="mt-3 flex justify-between border-t border-white/10 pt-3">
                 <span className="text-xs text-muted">Total de la orden</span>
                 <span className="text-lg font-bold text-gold-accent">{fmtCOP(ocTotal)}</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* AMP-02: Modal Entrada de insumos (recepción contra OC) */}
+      <Modal
+        open={!!recForm}
+        onClose={() => setRecForm(null)}
+        title="📥 Entrada de insumos"
+        size="lg"
+        footer={
+          <>
+            <button className="btn-outline" onClick={() => setRecForm(null)}>Cancelar</button>
+            <button className="btn-gold" onClick={saveReceipt}>Registrar entrada</button>
+          </>
+        }
+      >
+        {recForm && (
+          <div className="space-y-4">
+            <FormGrid cols={2}>
+              <Field label="Orden de Compra *" className="sm:col-span-2">
+                <Select value={recForm.purchaseOrderId} onChange={(e) => onSelectOC(e.target.value)}>
+                  <option value="">— Elegir OC abierta/parcial —</option>
+                  {openOCs.map((o) => (
+                    <option key={o.id} value={o.id}>{o.id} · {o.supplier} · {o.estado}</option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="N° remisión"><Input value={recForm.remision} onChange={(e) => setRecForm((f) => ({ ...f, remision: e.target.value }))} placeholder="REM-12345" /></Field>
+              <Field label="Fecha"><Input type="date" value={recForm.date} onChange={(e) => setRecForm((f) => ({ ...f, date: e.target.value }))} /></Field>
+              <Field label="Bodega destino">
+                <Select value={recForm.warehouseId} onChange={(e) => setRecForm((f) => ({ ...f, warehouseId: e.target.value }))}>
+                  {insumoBodegas.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
+                </Select>
+              </Field>
+              <Field label="Foto de remisión *"><Input value={recForm.photo} onChange={(e) => setRecForm((f) => ({ ...f, photo: e.target.value }))} placeholder="remision_REM-12345.jpg" /></Field>
+            </FormGrid>
+
+            <div className="panel-2 rounded p-4">
+              <p className="mb-3 text-sm font-semibold gold-title">Ítems a recibir</p>
+              {recForm.items.length === 0 ? (
+                <p className="text-xs italic text-muted">Selecciona una OC para cargar sus ítems pendientes.</p>
+              ) : (
+                <div className="space-y-2">
+                  {recForm.items.map((it, i) => {
+                    const sub = (Number(it.qty) || 0) * (Number(it.cost) || 0);
+                    return (
+                      <div key={i} className="flex flex-wrap items-center gap-2">
+                        <span className="flex-1 text-xs text-white" style={{ minWidth: 140 }}>{supplyName(it.supplyId)}</span>
+                        <span className="w-16 text-right text-[11px] text-muted" title="Saldo pendiente">saldo {it.saldo}</span>
+                        <input value={it.unit} readOnly className="input-field w-16 py-1 text-xs opacity-70" title="Unidad" />
+                        <input type="number" min="0" value={it.qty} onChange={(e) => setRecItem(i, 'qty', e.target.value)} placeholder="recibir" className="input-field w-20 py-1 text-xs" title="Cantidad recibida" />
+                        <input type="number" min="0" value={it.cost} onChange={(e) => setRecItem(i, 'cost', e.target.value)} placeholder="costo" className="input-field w-28 py-1 text-xs" title="Costo unitario" />
+                        <span className="w-28 text-right text-xs tabular-nums text-muted">{sub > 0 ? fmtCOP(sub) : '—'}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3">
+                <label className="flex items-center gap-2 text-xs text-white">
+                  <input type="checkbox" className="accent-gold-accent" checked={recForm.closePartial} onChange={(e) => setRecForm((f) => ({ ...f, closePartial: e.target.checked }))} />
+                  Cerrar OC (parcial)
+                </label>
+                <span className="text-lg font-bold text-gold-accent">{fmtCOP(recTotal)}</span>
               </div>
             </div>
           </div>

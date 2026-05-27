@@ -57,6 +57,18 @@ export default function Produccion() {
   const pName = (id) => products.find((p) => p.id === id)?.name || id;
   const cName = (o) => customers.find((c) => c.id === o.customerId)?.name || o.clientName;
 
+  // H-105: áreas por las que pasa el producto de la OP. Espejo de Demo6 (areasOfProduct =
+  // prod?.areas || PROD_AREAS, :6382): el selector de área de cada OP solo ofrece las áreas
+  // marcadas en su producto, así no se puede mover la OP a un área irrelevante (y por tanto
+  // su tarjeta nunca aparece en columnas no pertinentes del Kanban). Si el producto no tiene
+  // áreas definidas, se cae a PROD_AREAS. Se incluye el área actual aunque no esté en la
+  // lista del producto, para no ocultar/forzar el valor vigente (evita "perder" el área).
+  const areasOf = (o) => {
+    const p = products.find((x) => x.id === o.productId);
+    const list = p?.areas?.length ? p.areas : PROD_AREAS;
+    return o.area && !list.includes(o.area) ? [o.area, ...list] : list;
+  };
+
   const hasFilters = !!(search || areaFilter || productoFilter || asesorFilter);
   const clearAll = () => { setSearch(''); setAreaFilter(''); setProductoFilter(''); setAsesorFilter(''); };
 
@@ -310,7 +322,7 @@ export default function Produccion() {
                         className="rounded-lg border border-white/10 bg-brand-bg/60 px-2 py-1 text-xs text-white outline-none focus:border-gold-accent/60"
                       >
                         <option value="">—</option>
-                        {PROD_AREAS.map((a) => (
+                        {areasOf(o).map((a) => (
                           <option key={a} value={a}>
                             {a}
                           </option>
@@ -392,7 +404,7 @@ export default function Produccion() {
                 className="input-field"
               >
                 <option value="">— sin asignar —</option>
-                {PROD_AREAS.map((a) => (
+                {areasOf(selOP).map((a) => (
                   <option key={a} value={a}>{a}</option>
                 ))}
               </select>

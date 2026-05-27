@@ -19,14 +19,15 @@ const VIAS = [
   { v: 'nota', label: '📝 Nota' },
 ];
 const VIA_ICON = { llamada: '📞', whatsapp: '💬', correo: '✉', visita: '🏠', nota: '📝' };
+const ASESORES = ['Alexander Vivas', 'Thalia Cifuentes'];
 
 const empty = () => ({
-  orderId: '', clientName: '', comercial: '', motivo: '', causal: 'Costura',
-  asignado: 'Taller Interno', estado: 'abierta',
+  asesor: '', invoiceId: '', clientName: '', orderId: '', customerId: '',
+  productId: '', qty: 1, causal: '', motivo: '', asignado: 'Taller Interno',
 });
 
 export default function Garantias() {
-  const { warranties, orders, products, customers, update, add, nextId, currentUser, postWarrantyCost, pendingForm, setPendingForm } = useApp();
+  const { warranties, orders, products, customers, invoices, employees, update, add, nextId, currentUser, postWarrantyCost, pendingForm, setPendingForm } = useApp();
   const toast = useToast();
   const [selId, setSelId] = useState(null);
   const [form, setForm] = useState(null);
@@ -136,22 +137,56 @@ export default function Garantias() {
   }
 
   const setF = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  // Documentos (factura/remisión) ordenados por fecha desc para el selector del modal.
+  const docList = useMemo(
+    () => [...invoices].sort((a, b) => (b.emitDate || '').localeCompare(a.emitDate || '')),
+    [invoices],
+  );
+  const talleres = useMemo(
+    () => ['Taller Interno', ...employees.filter((e) => e.area === 'Producción').map((e) => e.name)],
+    [employees],
+  );
+  // Productos que el cliente seleccionado ha comprado (espejo de onGarInvoiceChange,
+  // Demo6:6850): solo se permiten reclamos sobre productos efectivamente comprados.
+  const clientProducts = useMemo(() => {
+    if (!form) return [];
+    const ids = orders
+      .filter((o) => (form.customerId ? o.customerId === form.customerId : o.clientName === form.clientName))
+      .map((o) => o.productId)
+      .filter(Boolean);
+    return [...new Set(ids)].map((id) => products.find((p) => p.id === id)).filter(Boolean);
+  }, [form, orders, products]);
+
+  // Al elegir documento: autollena cliente/pedido/customerId desde la factura+pedido.
+  const onInvoice = (invoiceId) => {
+    const inv = invoices.find((x) => x.id === invoiceId);
+    const ord = inv ? orders.find((o) => o.id === inv.orderId) : null;
+    setForm((f) => ({
+      ...f, invoiceId,
+      clientName: inv?.clientName || '',
+      orderId: inv?.orderId || '',
+      customerId: ord?.customerId || '',
+      productId: '',
+    }));
+  };
+
   function save() {
-    if (!form.orderId) return toast('Selecciona el pedido', 'warn');
-    if (!form.motivo.trim()) return toast('Indica el motivo', 'warn');
+    if (!form.asesor) return toast('Selecciona el asesor', 'warn');
+    if (!form.invoiceId && !form.clientName) return toast('Selecciona el documento', 'warn');
+    if (!form.productId) return toast('Selecciona el producto', 'warn');
+    if (!form.causal) return toast('Selecciona la causal', 'warn');
     const id = nextId('GAR', 'gar', 3);
     add('warranties', {
-      id, ...form, comercial: form.comercial || form.asesor || '',
-      reportedAt: today(), diagnosticoAt: '', solucionAt: '', cierreAt: '',
+      id, orderId: form.orderId, clientName: form.clientName, customerId: form.customerId || null,
+      comercial: form.asesor, asesor: form.asesor, productId: form.productId, qty: Number(form.qty) || 1,
+      causal: form.causal, motivo: form.motivo, asignado: form.asignado || 'Taller Interno',
+      estado: 'abierta', reportedAt: today(), diagnosticoAt: '', solucionAt: '', cierreAt: '',
       resolucion: '', comunicaciones: [], fotos: [], generatedOpId: null, opCostos: [],
     });
     toast(`Garantía ${id} registrada`, 'ok');
     setForm(null);
   }
-  const onOrder = (orderId) => {
-    const o = orders.find((x) => x.id === orderId);
-    setForm((f) => ({ ...f, orderId, clientName: o?.clientName || '', comercial: o?.asesor || '', productId: o?.productId || '' }));
-  };
 
   const columns = [
     { key: 'id', label: 'ID', render: (r) => <span className="font-mono text-xs text-brand-gold">{r.id}</span> },
@@ -353,32 +388,55 @@ export default function Garantias() {
       <Modal
         open={!!form}
         onClose={() => setForm(null)}
-        title="Nueva garantía"
+        title="Nuevo caso de garantía"
+        size="lg"
         footer={
           <>
             <button className="btn-outline" onClick={() => setForm(null)}>Cancelar</button>
-            <button className="btn-gold" onClick={save}>Guardar</button>
+            <button className="btn-gold" onClick={save}>Abrir caso</button>
           </>
         }
       >
         {form && (
-          <FormGrid cols={2}>
-            <Field label="Pedido" className="sm:col-span-2">
-              <Select value={form.orderId} onChange={(e) => onOrder(e.target.value)}>
-                <option value="">Selecciona pedido…</option>
-                {orders.map((o) => <option key={o.id} value={o.id}>{o.id} — {o.clientName}</option>)}
-              </Select>
-            </Field>
-            <Field label="Cliente"><Input value={form.clientName} onChange={(e) => setF('clientName', e.target.value)} /></Field>
-            <Field label="Comercial"><Input value={form.comercial} onChange={(e) => setF('comercial', e.target.value)} /></Field>
-            <Field label="Causal">
-              <Select value={form.causal} onChange={(e) => setF('causal', e.target.value)}>
-                {CAUSALES.map((c) => <option key={c} value={c}>{c}</option>)}
-              </Select>
-            </Field>
-            <Field label="Asignado a"><Input value={form.asignado} onChange={(e) => setF('asignado', e.target.value)} /></Field>
-            <Field label="Motivo" className="sm:col-span-2"><Textarea rows={3} value={form.motivo} onChange={(e) => setF('motivo', e.target.value)} /></Field>
-          </FormGrid>
+          <div className="space-y-3">
+            <p className="text-xs text-brand-muted">📋 Los nuevos casos los reporta el asesor responsable de la venta.</p>
+            <FormGrid cols={2}>
+              <Field label="Asesor *">
+                <Select value={form.asesor} onChange={(e) => setF('asesor', e.target.value)}>
+                  <option value="">— Elegir —</option>
+                  {ASESORES.map((a) => <option key={a} value={a}>{a}</option>)}
+                </Select>
+              </Field>
+              <Field label="Factura / Remisión *">
+                <Select value={form.invoiceId} onChange={(e) => onInvoice(e.target.value)}>
+                  <option value="">— Elegir documento —</option>
+                  {docList.map((i) => <option key={i.id} value={i.id}>{i.id} · {i.type} · {i.clientName} · {fmtCOP(i.amount || 0)}</option>)}
+                </Select>
+              </Field>
+              <Field label="Cliente *"><Input value={form.clientName} readOnly className="cursor-not-allowed bg-brand-navy/40" /></Field>
+              <Field label="Pedido/OP"><Input value={form.orderId} readOnly className="cursor-not-allowed bg-brand-navy/40" /></Field>
+              <Field label="Producto *">
+                <Select value={form.productId} onChange={(e) => setF('productId', e.target.value)} disabled={!form.invoiceId}>
+                  <option value="">{!form.invoiceId ? '— Primero elige un documento —' : clientProducts.length ? '— elegir —' : '— Cliente sin productos comprados —'}</option>
+                  {clientProducts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </Select>
+                <p className="mt-1 text-[10px] italic text-brand-muted">Solo aparecen productos que este cliente ha comprado en Castor.</p>
+              </Field>
+              <Field label="Cantidad *"><Input type="number" min="1" value={form.qty} onChange={(e) => setF('qty', Number(e.target.value))} /></Field>
+              <Field label="Causal *" className="sm:col-span-2">
+                <Select value={form.causal} onChange={(e) => setF('causal', e.target.value)}>
+                  <option value="">— elegir causal —</option>
+                  {CAUSALES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </Select>
+              </Field>
+              <Field label="Detalle / motivo" className="sm:col-span-2"><Textarea rows={2} value={form.motivo} onChange={(e) => setF('motivo', e.target.value)} placeholder="Observaciones adicionales del cliente…" /></Field>
+              <Field label="Asignar a taller" className="sm:col-span-2">
+                <Select value={form.asignado} onChange={(e) => setF('asignado', e.target.value)}>
+                  {talleres.map((t) => <option key={t} value={t}>{t}</option>)}
+                </Select>
+              </Field>
+            </FormGrid>
+          </div>
         )}
       </Modal>
 

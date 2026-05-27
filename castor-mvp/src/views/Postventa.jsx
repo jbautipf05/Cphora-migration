@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
 import { KpiCard, Chip } from '../components/ui';
-import { fmtDate, today, daysBetween } from '../lib/format';
+import { fmtDate, today, daysBetween, addDays } from '../lib/format';
 import { useToast } from '../components/Toast';
 import Modal from '../components/Modal';
 import { Field, Input, Select, Textarea, FormGrid } from '../components/form';
@@ -13,8 +13,16 @@ import { IconShield, IconPhone, IconCheck, IconUsers } from '../components/icons
 //   · Tabla "Pendientes (vencidos)" · "Próximos (programados)"
 //   · Historial de contactos directos (registrar contacto manual)
 // ─────────────────────────────────────────────────────────────────────────────
+// Hitos de seguimiento posventa autogenerados al entregar/despachar un pedido
+// (espejo de ensureFollowupSchedule, Demo6:6490). offset en días desde la entrega.
+const MILESTONES = [
+  { code: '7d', offset: 7, label: 'Seguimiento 1 semana' },
+  { code: '6m', offset: 180, label: 'Seguimiento 6 meses' },
+  { code: '12m', offset: 365, label: 'Seguimiento 12 meses' },
+];
+
 export default function Postventa() {
-  const { postSales, setState, currentUser, nextId, add, pendingForm, setPendingForm } = useApp();
+  const { postSales, orders, setState, currentUser, nextId, add, pendingForm, setPendingForm } = useApp();
   const toast = useToast();
   const [contactForm, setContactForm] = useState(null);
   const [completeForm, setCompleteForm] = useState(null); // { id, nps, notes }
@@ -28,6 +36,34 @@ export default function Postventa() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingForm]);
+
+  // Genera de forma diferida los seguimientos 7d/6m/12m de cada pedido entregado/despachado
+  // que aún no los tenga (espejo de ensureFollowupSchedule, Demo6:6490). Idempotente:
+  // se indexa por orderId+hito y solo se agregan los faltantes (no re-crea ni duplica).
+  useEffect(() => {
+    setState((s) => {
+      const existing = new Set((s.postSales || []).map((p) => `${p.orderId}|${p.hito}`));
+      const additions = [];
+      (s.orders || [])
+        .filter((o) => o.estado === 'entregado' || o.estado === 'despachado')
+        .forEach((o) => {
+          const base = o.deliveredAt || o.dueDate || o.orderDate || today();
+          MILESTONES.forEach((m) => {
+            const key = `${o.id}|${m.code}`;
+            if (existing.has(key)) return;
+            existing.add(key);
+            additions.push({
+              id: `PS-${o.id}-${m.code}`, orderId: o.id, customerId: o.customerId || null,
+              clientName: o.clientName, asesor: o.asesor || '', hito: m.code, type: 'programado',
+              date: null, fechaObjetivo: addDays(base, m.offset), estado: 'programado', notes: '', nps: null,
+            });
+          });
+        });
+      if (!additions.length) return s;
+      return { ...s, postSales: [...additions, ...(s.postSales || [])] };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orders]);
 
   // Separar por estado contra hoy.
   const vencidos = useMemo(

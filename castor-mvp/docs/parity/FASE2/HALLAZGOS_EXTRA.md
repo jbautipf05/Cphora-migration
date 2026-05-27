@@ -216,16 +216,48 @@ sin que el usuario toque nada. Documentado.
 
 ---
 
-## EX-F3-02 — Acciones de cierre de OP en Auditoría (cerrar / crear producto CEDI / aprobar) [DETECTADO EN H-106]
+## EX-F3-02 — Acciones de cierre de OP en Auditoría (cerrar / crear producto CEDI / aprobar) · ✅ RESUELTO
 
 **Ubicación:** `src/views/Auditoria.jsx` — tabla "Cierre de OPs" + modal detalle de cierre.
 
-- H-106 agregó el modal de **detalle** del cierre (informativo). Demo6 además tiene el flujo de
-  **acciones**: `cerrarOP`/`solicitarCierreOP` (:6418-6438), `crearProductoInventario` (:6440-6470)
-  que crea `finishedStock` en CEDI, y la aprobación para facturar. React no porta esas acciones.
-- **Severidad:** media (necesario para el ciclo completo producción→inventario→facturación).
-- **Plan:** portar las 3 acciones con sus guards (área "Listo", OP cerrada habilita ingreso).
-  **Prerrequisito de EX-F3-03.**
+H-106 dejó el modal de detalle (read-only). Ahora se portaron las **3 acciones progresivas**
+(espejo de Demo6: `cerrarOP` 6418, `auditoriaCrearProductoCEDI` 7608, `auditApproveOp` 7722),
+cada mutación en un `setState` atómico (cascada B2):
+
+1. **🔒 Cerrar OP** (botón en el modal "Ver"). Guard: `area==='Listo'` y no cerrada. Efecto:
+   `opClosed:true, estado:'op_cerrada', closedAt, closedBy`.
+2. **📥 Crear producto en CEDI** (botón fila, visible si `opCerrada && !productoCreado`). Guard:
+   OP cerrada + no duplicar. Efecto: inserta `finishedStock` `{source:'produccion',
+   warehouseId:CEDI, qty, status: hasCustomer?'reservado':'disponible', classification,
+   receptionStatus:'pendiente_recepcion', orderId, pedidoId, customerId, clientName}` + un
+   `stockMove {type:'entrada_produccion'}` + marca `order.cediRequestedAt/cediClassification`.
+   Resuelve `productId` directo o desde el primer ítem de la cotización.
+3. **🧾 Aprobado para facturar** (botón fila, visible si `productoCreado && !auditApproved`).
+   Efecto: `order.auditApproved/By/At` + crea `invoiceRequest` para Contabilidad.
+
+**DECISIONES SIN INPUT DEL CLIENTE / divergencias con Demo6 (documentadas):**
+- **`invoiceRequest.estado = 'pendiente_auditoria'`** (no `'aprobada_auditoria'` como Demo6).
+  Razón: React **solo consume** `invoiceRequests` con `estado==='pendiente_auditoria'`
+  (sección "Solicitudes de facturación pendientes", `Auditoria.jsx:44`); nada consume
+  `'aprobada_auditoria'` todavía. Usar el estado de Demo6 dejaría el IREQ **huérfano**. Con
+  `pendiente_auditoria` el IREQ aparece y es accionable en esa sección (botón "✓ Cerrar OP y
+  aprobar" → `aprobada_auditoria`). **Backend-readiness OK.**
+- **`hasCustomer = !!(o.pedidoId || o.customerId)`** para `reservado`/`disponible` (igual que
+  Demo6). El spec mencionaba solo `pedidoId`, pero las órdenes React no traen `pedidoId` (usan
+  `id` + `customerId`); usar solo `pedidoId` marcaría pedidos de cliente como `disponible` →
+  incorrecto.
+- **`stockMove.type = 'entrada_produccion'`** (no el `_pendiente` de Demo6) y **NO se suma a
+  `product.stock`**: la verificación de recepción (pending→recibido + suma a stock maestro) es el
+  flujo **EX-F3-03** (`verifyCEDIReception`), aún diferido. El `finishedStock` ya queda visible en
+  Inventario Terminado.
+- **Ids:** `finishedStock`/`stockMove` con `uid('FS')`/`uid('SM')` (consistente con EX-F2-07 y
+  `uid('FS')` de Demo6); `invoiceRequest` con `nextId('IREQ','ireq')` (id legible, como Demo6).
+
+**Gaps documentados (NO inventados):**
+- Columnas **"Costo real" / "Desv."** de la tabla de cierre siguen en `0` / `0%`: dependen de
+  `supplyIssues` (consumo real de producción), **no poblado** en React (sin módulo de salidas a
+  producción). Demo6 lo calcula desde `supplyIssues` (7568-7570). Gap declarado; sin inventar.
+- **EX-F3-03** (recepción CEDI) sigue pendiente; ahora **desbloqueado** por este EX-F3-02.
 
 ---
 

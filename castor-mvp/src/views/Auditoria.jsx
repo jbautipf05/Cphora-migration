@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
 import { KpiCard } from '../components/ui';
 import { EstadoBadge } from '../components/widgets';
-import { fmtCOP, fmtDate, today, addDays, nowISO } from '../lib/format';
+import { fmtCOP, fmtDate, today, addDays, nowISO, uid } from '../lib/format';
 import { IconShield, IconBox, IconDoc } from '../components/icons';
 import Modal from '../components/Modal';
 import { Field, Input, Select, FormGrid } from '../components/form';
@@ -16,8 +16,8 @@ import { useToast } from '../components/Toast';
 export default function Auditoria() {
   const {
     orders, products, customers, payments, bankAccounts,
-    employees, invoiceRequests, supplies, finishedStock,
-    update, add, nextId, currentUser, pushNotification,
+    employees, invoiceRequests, supplies, finishedStock, warehouses, quotes,
+    update, add, nextId, setState, currentUser, pushNotification,
   } = useApp();
   const toast = useToast();
 
@@ -150,6 +150,99 @@ export default function Auditoria() {
     });
     toast(`Pedido ${edit.id} actualizado`, 'ok');
     setEdit(null);
+  };
+
+  // ── EX-F3-02: acciones reales de cierre de OP (cerrar → crear producto CEDI → aprobar facturar) ──
+  // Espejo de Demo6: cerrarOP (6418), auditoriaCrearProductoCEDI (7608), auditApproveOp (7722).
+  // Resuelve el productId de la OP: directo, o desde el primer ítem de la cotización.
+  const resolveProductId = (o) => {
+    if (o.productId) return o.productId;
+    if (o.quoteId) {
+      const qu = (quotes || []).find((q) => q.id === o.quoteId);
+      if (qu?.items?.[0]?.productId) return qu.items[0].productId;
+    }
+    return '';
+  };
+  // Bodega CEDI (central de producto terminado).
+  const cediWarehouse = () =>
+    warehouses.find((w) => w.id === 'W-CEDI')
+    || warehouses.find((w) => w.tipo === 'terminado' && /CEDI/i.test(`${w.code} ${w.name}`))
+    || warehouses.find((w) => w.tipo === 'terminado');
+  // Refresca el snapshot del modal de detalle si está abierto sobre esta OP.
+  const refreshDetailCierre = (id, patch) => setDetailCierre((d) => (d && d.id === id ? { ...d, ...patch } : d));
+
+  // 1) Cerrar OP (desde el modal "Ver"). Guard: área "Listo" y no cerrada aún.
+  const cerrarOP = (o) => {
+    if (o.area !== 'Listo') return toast('La OP debe estar en área "Listo" para cerrarla', 'warn');
+    if (o.opClosed || o.estado === 'op_cerrada') return;
+    const patch = { opClosed: true, estado: 'op_cerrada', closedAt: nowISO(), closedBy: currentUser?.name || 'Auditoría' };
+    update('orders', o.id, patch); // setState atómico (1 slice)
+    refreshDetailCierre(o.id, patch);
+    toast(`OP ${o.id} cerrada · habilitado ingreso a inventario`, 'ok');
+  };
+
+  // 2) Crear producto en CEDI (fila). Guard: OP cerrada + sin ingreso previo. setState atómico.
+  const crearProductoCEDI = (o) => {
+    if (!(o.opClosed || o.estado === 'op_cerrada' || o.estado === 'listo' || o.estado === 'facturado'))
+      return toast('Primero cierra la OP desde el modal "Ver"', 'warn');
+    const productId = resolveProductId(o);
+    if (!productId) return toast('La OP no tiene producto asociado', 'warn');
+    if ((finishedStock || []).find((f) => f.orderId === o.id && f.source === 'produccion'))
+      return toast('Ya existe el producto en CEDI para esta OP', 'info');
+    const cedi = cediWarehouse();
+    if (!cedi) return toast('No hay bodega CEDI configurada', 'error');
+    const hasCustomer = !!(o.pedidoId || o.customerId);
+    const classification = hasCustomer ? 'clientes' : 'stock_castor';
+    const fsId = uid('FS');
+    const smId = uid('SM');
+    const date = today();
+    const by = currentUser?.name || 'Auditoría';
+    setState((s) => ({
+      ...s,
+      finishedStock: [
+        {
+          id: fsId, productId, warehouseId: cedi.id, qty: o.qty || 1,
+          status: hasCustomer ? 'reservado' : 'disponible',
+          orderId: o.id, pedidoId: o.pedidoId || null, customerId: o.customerId || null,
+          clientName: o.clientName || '', source: 'produccion', classification,
+          receptionStatus: 'pendiente_recepcion', requestedAt: date, requestedBy: by,
+          readyDate: null, notes: `Producción OP ${o.id} · pendiente verificación de recepción en ${cedi.name}`,
+        },
+        ...(s.finishedStock || []),
+      ],
+      stockMoves: [
+        { id: smId, orderId: o.id, pedidoId: o.pedidoId || null, productId, qty: o.qty || 1, type: 'entrada_produccion', date, warehouseId: cedi.id, reason: `Producción OP ${o.id}`, by },
+        ...(s.stockMoves || []),
+      ],
+      orders: (s.orders || []).map((x) => (x.id === o.id ? { ...x, cediRequestedAt: date, cediClassification: classification } : x)),
+    }));
+    pushNotification({ type: 'warning', text: `📦 Verificar recepción en ${cedi.name}: ${prod(productId)?.name || 'Producto'} (OP ${o.id})`, link: 'inventario', key: `recep_${o.id}` });
+    refreshDetailCierre(o.id, { cediRequestedAt: date, cediClassification: classification });
+    toast(`📨 Producto enviado a ${cedi.name} (pendiente de recepción)`, 'ok');
+  };
+
+  // 3) Aprobar para facturar (fila). Guard: producto creado + no aprobada. setState atómico.
+  const aprobarFacturar = (o) => {
+    if (o.auditApproved) return;
+    if (!(finishedStock || []).find((f) => f.orderId === o.id && f.source === 'produccion'))
+      return toast('Primero crea el producto en CEDI', 'warn');
+    const ireqId = nextId('IREQ', 'ireq'); // fuera del setState (bump de counter propio)
+    const at = nowISO();
+    const patch = { auditApproved: true, auditApprovedBy: currentUser?.name || 'Auditoría', auditApprovedAt: at };
+    setState((s) => ({
+      ...s,
+      orders: (s.orders || []).map((x) => (x.id === o.id ? { ...x, ...patch } : x)),
+      // Estado 'pendiente_auditoria' = el que React YA consume en "Solicitudes de facturación
+      // pendientes" (reqFactura). Diverge de Demo6 ('aprobada_auditoria') porque React aún no
+      // tiene consumo downstream en Contabilidad; así el IREQ NO queda huérfano. Ver EX-F3-02.
+      invoiceRequests: [
+        { id: ireqId, orderId: o.id, pedidoId: o.pedidoId || null, customerId: o.customerId || null, clientName: o.clientName, docType: o.docType || 'factura', amount: o.total, estado: 'pendiente_auditoria', requestedAt: at, requestedBy: 'Auditoría' },
+        ...(s.invoiceRequests || []),
+      ],
+    }));
+    pushNotification({ type: 'info', text: `OP ${o.id} aprobada — solicitud de ${o.docType || 'factura'} enviada a Contabilidad`, link: 'auditoria', key: `auditApr_${o.id}` });
+    refreshDetailCierre(o.id, patch);
+    toast(`OP ${o.id} aprobada · solicitud de facturación generada`, 'ok');
   };
 
   // ── Datos derivados del pedido en detalle ──
@@ -359,7 +452,17 @@ export default function Auditoria() {
                     <td className="px-3 py-3 text-right font-semibold text-emerald-400">0%</td>
                     <td className="px-3 py-3">{estadoChip}</td>
                     <td className="px-3 py-3 text-right">
-                      <button className="btn-outline px-2 py-1 text-xs" onClick={() => setDetailCierre(o)}>👁 Ver</button>
+                      <div className="flex flex-col items-end gap-1">
+                        <button className="btn-outline px-2 py-1 text-xs" onClick={() => setDetailCierre(o)}>👁 Ver</button>
+                        {opCerrada && !productoCreado && (
+                          <button className="btn-outline px-2 py-1 text-xs" style={{ borderColor: '#10b981', color: '#6ee7b7' }} onClick={() => crearProductoCEDI(o)}>📥 Crear producto en CEDI</button>
+                        )}
+                        {productoCreado && <span className="text-[10px] text-emerald-300">✓ Producto en CEDI</span>}
+                        {productoCreado && !aprobado && (
+                          <button className="btn-gold px-2 py-1 text-xs" onClick={() => aprobarFacturar(o)}>🧾 Aprobado para facturar</button>
+                        )}
+                        {aprobado && <span className="text-[10px] text-blue-300">✓ Listo contabilidad</span>}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -667,8 +770,13 @@ export default function Auditoria() {
         onClose={() => setDetailCierre(null)}
         title={detailCierre ? `Cierre OP ${detailCierre.id} · Detalle para auditoría` : ''}
         size="lg"
-        footer={(
-          <div className="flex w-full justify-end">
+        footer={detailCierre && (
+          <div className="flex w-full items-center justify-between">
+            <div>
+              {detailCierre.area === 'Listo' && !(detailCierre.opClosed || detailCierre.estado === 'op_cerrada') && (
+                <button className="btn-gold py-2 text-sm" onClick={() => cerrarOP(detailCierre)}>🔒 Cerrar OP</button>
+              )}
+            </div>
             <button className="btn-outline py-2 text-sm" onClick={() => setDetailCierre(null)}>Cerrar</button>
           </div>
         )}

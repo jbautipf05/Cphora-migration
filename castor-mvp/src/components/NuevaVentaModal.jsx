@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Modal from './Modal';
 import { Field, Input, Select } from './form';
+import { useToast } from './Toast';
 import { fmtCOP } from '../lib/format';
 
 // H-035 — Modal "Nueva venta" (réplica de openSaleForm de Demo6:5530).
@@ -18,6 +19,8 @@ const SEARCH_FIELDS = [
   { key: 'email', label: 'Correo' },
   { key: 'doc', label: 'Documento' },
 ];
+// REG-H035-06 — formato de correo (mismo regex que H-004 en Leads.jsx).
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const emptyForm = () => ({
   customerId: '',
@@ -38,6 +41,8 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
   const [f, setF] = useState(emptyForm());
   const [searchField, setSearchField] = useState('name');
   const [searchQ, setSearchQ] = useState('');
+  const [errors, setErrors] = useState({}); // REG-H035-06: errores inline del Bloque Cliente (patrón H-004)
+  const toast = useToast();
 
   // EX-F2-03: al abrir, sembrar el form con la precarga (cotización→venta) o
   // dejarlo vacío. La precarga llega ya en el shape del form (cliente + items),
@@ -49,11 +54,16 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
       setF(prefill ? { ...emptyForm(), ...prefill } : emptyForm());
       setSearchField('name');
       setSearchQ('');
+      setErrors({});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  // REG-H035-06: al editar un campo, limpia su error inline (espejo de Leads.jsx:151-154).
+  const set = (k, v) => {
+    setF((p) => ({ ...p, [k]: v }));
+    setErrors((e) => (e[k] ? { ...e, [k]: undefined } : e));
+  };
   const setItem = (i, k, v) =>
     setF((p) => ({ ...p, items: p.items.map((it, idx) => (idx === i ? { ...it, [k]: v } : it)) }));
   const addItem = () =>
@@ -65,6 +75,8 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
   const addInnovItem = () =>
     setF((p) => ({ ...p, innovItems: [...p.innovItems, { name: '', desc: '', qty: 1, price: 0, areas: '', comment: '' }] }));
   const removeInnovItem = (i) => setF((p) => ({ ...p, innovItems: p.innovItems.filter((_, idx) => idx !== i) }));
+  // REG-H035-06: render del error inline de un campo (mismo estilo que Leads.jsx H-004).
+  const errLine = (k) => errors[k] && <span className="mt-1 block text-xs text-red-400">{errors[k]}</span>;
 
   // Buscador inteligente: filtra clientes por el campo elegido.
   const results = useMemo(() => {
@@ -98,6 +110,12 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
       custEmail: c.email || '', custCity: c.city || '', custAddress: c.address || '',
       deliveryAddress: p.deliveryAddress || c.address || '',
     }));
+    // REG-H035-06: seleccionar cliente rellena los campos núcleo → limpia sus errores.
+    setErrors((e) => ({
+      ...e,
+      custName: undefined, custDoc: undefined, custPhone: undefined,
+      custEmail: undefined, custCity: undefined, custAddress: undefined, deliveryAddress: undefined,
+    }));
     setSearchQ('');
   }
 
@@ -105,6 +123,7 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
     setF(emptyForm());
     setSearchField('name');
     setSearchQ('');
+    setErrors({});
   }
 
   function handleClose() {
@@ -112,8 +131,41 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
     onClose?.();
   }
 
+  // REG-H035-06 — validación del Bloque Cliente. Demo6 (openSaleForm:5567-5600)
+  // exige los 11 campos con `required` nativo + type=email (validación on-submit,
+  // sin formato de teléfono). Aquí se replica el set obligatorio con el patrón
+  // inline de H-004 (Leads.jsx): on-submit, mensaje rojo bajo el campo, se limpia
+  // al editar. El refuerzo de formato tel (sin letras, ≥7 dígitos) + email regex es
+  // el mismo enhancement documentado de H-004 (Demo6 sólo usa required nativo).
+  function validateClient(v) {
+    const errs = {};
+    if (!v.custName.trim()) errs.custName = 'El nombre es obligatorio';
+    if (!v.custDoc.trim()) errs.custDoc = 'El documento es obligatorio';
+    const phone = (v.custPhone || '').trim();
+    const numDigits = (phone.match(/\d/g) || []).length;
+    if (!phone) errs.custPhone = 'El celular es obligatorio';
+    else if (/[a-zA-Z]/.test(phone)) errs.custPhone = 'El celular no puede contener letras';
+    else if (numDigits < 7) errs.custPhone = 'El celular debe tener al menos 7 dígitos';
+    const email = (v.custEmail || '').trim();
+    if (!email) errs.custEmail = 'El correo es obligatorio';
+    else if (!EMAIL_RE.test(email)) errs.custEmail = 'Correo con formato inválido';
+    if (!v.custCity.trim()) errs.custCity = 'La ciudad es obligatoria';
+    if (!v.custAddress.trim()) errs.custAddress = 'La dirección es obligatoria';
+    if (!v.deliveryAddress.trim()) errs.deliveryAddress = 'La dirección de entrega es obligatoria';
+    if (!v.medio) errs.medio = 'Selecciona un medio';
+    if (!v.pdv) errs.pdv = 'Selecciona un PDV';
+    if (!v.cierreVenta) errs.cierreVenta = 'Selecciona el cierre de venta';
+    if (!v.abonoBancos) errs.abonoBancos = 'Selecciona el abono a bancos';
+    return errs;
+  }
+
   function handleSubmit() {
-    if (!f.custName.trim()) return;
+    const errs = validateClient(f);
+    if (Object.keys(errs).length) {
+      setErrors(errs);
+      return toast('Revisa los campos del cliente marcados', 'warn');
+    }
+    setErrors({});
     if (innovation ? !f.innovItems.some((it) => it.name.trim()) : !f.items.some((it) => it.productId)) return;
     onSubmit?.({
       ...f,
@@ -192,12 +244,12 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field label="Nombre *"><Input value={f.custName} onChange={(e) => set('custName', e.target.value)} /></Field>
-            <Field label="Documento *"><Input value={f.custDoc} onChange={(e) => set('custDoc', e.target.value)} placeholder="CC / NIT" /></Field>
-            <Field label="Celular *"><Input value={f.custPhone} onChange={(e) => set('custPhone', e.target.value)} /></Field>
-            <Field label="Correo *"><Input type="email" value={f.custEmail} onChange={(e) => set('custEmail', e.target.value)} /></Field>
-            <Field label="Ciudad *"><Input value={f.custCity} onChange={(e) => set('custCity', e.target.value)} /></Field>
-            <Field label="Dirección *"><Input value={f.custAddress} onChange={(e) => set('custAddress', e.target.value)} /></Field>
+            <Field label="Nombre *"><Input value={f.custName} onChange={(e) => set('custName', e.target.value)} />{errLine('custName')}</Field>
+            <Field label="Documento *"><Input value={f.custDoc} onChange={(e) => set('custDoc', e.target.value)} placeholder="CC / NIT" />{errLine('custDoc')}</Field>
+            <Field label="Celular *"><Input value={f.custPhone} onChange={(e) => set('custPhone', e.target.value)} />{errLine('custPhone')}</Field>
+            <Field label="Correo *"><Input type="email" value={f.custEmail} onChange={(e) => set('custEmail', e.target.value)} />{errLine('custEmail')}</Field>
+            <Field label="Ciudad *"><Input value={f.custCity} onChange={(e) => set('custCity', e.target.value)} />{errLine('custCity')}</Field>
+            <Field label="Dirección *"><Input value={f.custAddress} onChange={(e) => set('custAddress', e.target.value)} />{errLine('custAddress')}</Field>
             <Field
               className="sm:col-span-2"
               label={
@@ -214,30 +266,35 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
               }
             >
               <Input value={f.deliveryAddress} onChange={(e) => set('deliveryAddress', e.target.value)} />
+              {errLine('deliveryAddress')}
             </Field>
             <Field label="MEDIO *">
               <Select value={f.medio} onChange={(e) => set('medio', e.target.value)}>
                 <option value="">— Elegir —</option>
                 {MEDIOS.map((m) => <option key={m} value={m}>{m}</option>)}
               </Select>
+              {errLine('medio')}
             </Field>
             <Field label="PDV *">
               <Select value={f.pdv} onChange={(e) => set('pdv', e.target.value)}>
                 <option value="">— Elegir —</option>
                 {PDVS.map((m) => <option key={m} value={m}>{m}</option>)}
               </Select>
+              {errLine('pdv')}
             </Field>
             <Field label="CIERRE DE VENTA *">
               <Select value={f.cierreVenta} onChange={(e) => set('cierreVenta', e.target.value)}>
                 <option value="">— Elegir —</option>
                 {CIERRES.map((m) => <option key={m} value={m}>{m}</option>)}
               </Select>
+              {errLine('cierreVenta')}
             </Field>
             <Field label="ABONO A BANCOS *">
               <Select value={f.abonoBancos} onChange={(e) => set('abonoBancos', e.target.value)}>
                 <option value="">— Elegir —</option>
                 {ABONOS.map((m) => <option key={m} value={m}>{m}</option>)}
               </Select>
+              {errLine('abonoBancos')}
             </Field>
           </div>
         </div>

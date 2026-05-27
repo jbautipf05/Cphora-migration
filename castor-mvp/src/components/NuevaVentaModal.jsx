@@ -578,13 +578,17 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
                 </div>
                 {renderStockInfo(it)}
                 {renderAcabados(it, i)}
-                <textarea
-                  value={it.comment}
-                  onChange={(e) => setItem(i, 'comment', e.target.value)}
-                  rows={1}
-                  placeholder="Ej: preferencias, detalles especiales, alto del respaldo, etc."
-                  className="input-field mt-2 text-xs"
-                />
+                {/* REG-H035-05: label de comentario por ítem a paridad con Demo6 (addSaleItemRow:5750). */}
+                <div className="mt-2">
+                  <span className="label text-[10px]">Comentario (opcional, específico de este producto)</span>
+                  <textarea
+                    value={it.comment}
+                    onChange={(e) => setItem(i, 'comment', e.target.value)}
+                    rows={1}
+                    placeholder="Ej: preferencias, detalles especiales, alto del respaldo, etc."
+                    className="input-field text-xs"
+                  />
+                </div>
               </div>
             ))}
             {f.items.length === 0 && <p className="text-xs italic text-brand-muted">Sin items. Usa “+ Agregar item”.</p>}

@@ -83,17 +83,20 @@ export default function Innovacion() {
   const openNew = () => setForm({
     name: '', sku: '', category: '', photo: '📦', warehouseId: ptWarehouses[0]?.id || '',
     description: '', ancho: '', alto: '', profundidad: '', min: 0,
-    areas: [], bom: [{ supplyId: '', qty: '' }], cost: 0, price: 0,
+    areas: [], bom: [{ supplyId: '', qty: '' }], cost: 0, price: 0, costTouched: false,
   });
   const toggleArea = (a) => setForm((f) => ({
     ...f, areas: f.areas.includes(a) ? f.areas.filter((x) => x !== a) : [...f.areas, a],
   }));
-  const setBomRow = (i, k, v) => setForm((f) => {
-    const bom = f.bom.map((r, idx) => (idx === i ? { ...r, [k]: v } : r));
-    return { ...f, bom };
-  });
-  const addBomRow = () => setForm((f) => ({ ...f, bom: [...f.bom, { supplyId: '', qty: '' }] }));
-  const delBomRow = (i) => setForm((f) => ({ ...f, bom: f.bom.filter((_, idx) => idx !== i) }));
+  // H-104a: mientras el usuario no edite manualmente "Costo final", éste se auto-rellena en
+  // vivo con el total del BOM (espejo de recalcBomCostMaster, Demo6:8488-8489). Al tocar el
+  // campo de costo se marca costTouched y deja de auto-actualizarse.
+  const syncCost = (f) => (f.costTouched ? f : { ...f, cost: bomCost(f.bom) });
+  const setBomRow = (i, k, v) => setForm((f) => syncCost({
+    ...f, bom: f.bom.map((r, idx) => (idx === i ? { ...r, [k]: v } : r)),
+  }));
+  const addBomRow = () => setForm((f) => syncCost({ ...f, bom: [...f.bom, { supplyId: '', qty: '' }] }));
+  const delBomRow = (i) => setForm((f) => syncCost({ ...f, bom: f.bom.filter((_, idx) => idx !== i) }));
 
   // Intent del header "+ Nuevo" → abrir el form de nuevo producto (H-001).
   useEffect(() => {
@@ -347,16 +350,23 @@ export default function Innovacion() {
                 <button type="button" className="text-xs text-brand-gold hover:underline" onClick={addBomRow}>+ Agregar insumo</button>
               </div>
               <div className="space-y-2">
-                {form.bom.map((row, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <select value={row.supplyId} onChange={(e) => setBomRow(i, 'supplyId', e.target.value)} className="input-field flex-1 py-1 text-xs">
-                      <option value="">— insumo —</option>
-                      {supplies.map((s) => <option key={s.id} value={s.id}>{s.name} ({fmtCOP(s.cost)}/{s.unitOut || s.unit})</option>)}
-                    </select>
-                    <input type="number" min="0" step="0.1" value={row.qty} onChange={(e) => setBomRow(i, 'qty', e.target.value)} placeholder="cant." className="input-field w-24 py-1 text-xs" />
-                    <button type="button" className="text-red-300 hover:text-red-200" onClick={() => delBomRow(i)}>×</button>
-                  </div>
-                ))}
+                {form.bom.map((row, i) => {
+                  // H-104a: subtotal por fila (costo del insumo × cantidad), espejo de la
+                  // columna row-cost de Demo6 (addBomRowMaster).
+                  const s = supplies.find((x) => x.id === row.supplyId);
+                  const sub = s ? (Number(s.cost) || 0) * (Number(row.qty) || 0) : 0;
+                  return (
+                    <div key={i} className="flex items-center gap-2">
+                      <select value={row.supplyId} onChange={(e) => setBomRow(i, 'supplyId', e.target.value)} className="input-field flex-1 py-1 text-xs">
+                        <option value="">— insumo —</option>
+                        {supplies.map((sp) => <option key={sp.id} value={sp.id}>{sp.name} ({fmtCOP(sp.cost)}/{sp.unitOut || sp.unit})</option>)}
+                      </select>
+                      <input type="number" min="0" step="0.1" value={row.qty} onChange={(e) => setBomRow(i, 'qty', e.target.value)} placeholder="cant." className="input-field w-20 py-1 text-xs" />
+                      <span className="w-24 text-right text-xs tabular-nums text-brand-muted" title="Subtotal (costo × cantidad)">{sub > 0 ? fmtCOP(sub) : '—'}</span>
+                      <button type="button" className="text-red-300 hover:text-red-200" onClick={() => delBomRow(i)}>×</button>
+                    </div>
+                  );
+                })}
               </div>
               <div className="mt-3 flex justify-between border-t border-brand-border pt-3">
                 <span className="text-xs text-brand-muted">Costo estimado (suma insumos)</span>
@@ -365,7 +375,7 @@ export default function Innovacion() {
             </div>
 
             <FormGrid cols={3}>
-              <Field label="Costo final *"><Input type="number" value={form.cost} onChange={(e) => setForm((f) => ({ ...f, cost: e.target.value }))} /></Field>
+              <Field label="Costo final *"><Input type="number" value={form.cost} onChange={(e) => setForm((f) => ({ ...f, cost: e.target.value, costTouched: true }))} /></Field>
               <Field label="Precio venta *"><Input type="number" value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} /></Field>
               <Field label="Margen"><div className="input-field text-center font-bold text-brand-gold">{formMargin(form)}%</div></Field>
             </FormGrid>

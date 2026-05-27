@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
 import { KpiCard } from '../components/ui';
-import { fmtCOP, fmtDate, today, nowISO } from '../lib/format';
+import { fmtCOP, fmtDate, today, nowISO, addDays } from '../lib/format';
 import { Toolbar, DataTable, SlidePanel } from '../components/widgets';
 import { IconShield, IconCheck, IconDoc } from '../components/icons';
 import Modal from '../components/Modal';
@@ -26,11 +26,12 @@ const empty = () => ({
 });
 
 export default function Garantias() {
-  const { warranties, orders, products, customers, update, add, nextId, currentUser, pendingForm, setPendingForm } = useApp();
+  const { warranties, orders, products, customers, update, add, nextId, currentUser, postWarrantyCost, pendingForm, setPendingForm } = useApp();
   const toast = useToast();
   const [selId, setSelId] = useState(null);
   const [form, setForm] = useState(null);
   const [comm, setComm] = useState({ via: 'llamada', texto: '' });
+  const [costForm, setCostForm] = useState(null); // { warrantyId, concept, amount, source }
 
   const sel = warranties.find((w) => w.id === selId) || null;
 
@@ -89,6 +90,50 @@ export default function Garantias() {
   };
   const removePhoto = (id, idx) =>
     update('warranties', id, (w) => ({ fotos: (w.fotos || []).filter((_, i) => i !== idx) }));
+
+  // Genera una OP de garantía desde el caso (espejo de generarOpDesdeGarantia,
+  // Demo6:6882). Crea un pedido tipo:'garantia' que fluye por Producción.
+  function generarOp(w) {
+    if (w.estado !== 'abierta') return toast('La OP sólo se genera con el caso ABIERTO', 'warn');
+    if (w.generatedOpId) return toast(`Ya existe OP ${w.generatedOpId}`, 'info');
+    const opId = nextId('OP', 'op');
+    const p = products.find((x) => x.id === w.productId);
+    const areas = p?.areas && p.areas.length ? p.areas : ['Ebanistería', 'Listo'];
+    add('orders', {
+      id: opId, pedidoId: null, quoteId: null, customerId: null, clientName: w.clientName,
+      total: 0, paid: 0, tiempo: 15, orderDate: today(), dueDate: addDays(today(), 15),
+      estado: 'produccion', area: areas[0] || 'Ebanistería', asesor: w.comercial || w.asesor || '',
+      tipo: 'garantia', verified: true, docType: 'remisión',
+      productId: w.productId, qty: Number(w.qty) || 1, garantiaId: w.id,
+      costosManual: [], comment: `Garantía ${w.id} · Causal: ${w.causal || '—'} · ${w.motivo || ''}`,
+    });
+    update('warranties', w.id, { generatedOpId: opId });
+    toast(`OP ${opId} creada desde ${w.id} · cargar costos manual`, 'ok');
+  }
+
+  // Agrega un costo manual a la OP de garantía y dispara postWarrantyCost
+  // (espejo de cargarCostoGarantiaOp, Demo6:6904). Actualiza también el total de la OP.
+  function saveCosto() {
+    if (!costForm.concept.trim()) return toast('Indica el concepto', 'warn');
+    const amount = Number(costForm.amount) || 0;
+    if (amount <= 0) return toast('Monto inválido', 'warn');
+    const w = warranties.find((x) => x.id === costForm.warrantyId);
+    if (!w || !w.generatedOpId) return toast('Primero genera la OP', 'warn');
+    const ceId = nextId('WCE', 'wce', 3);
+    const costEntry = {
+      id: ceId, concept: costForm.concept.trim(), description: costForm.concept.trim(),
+      amount, source: costForm.source, at: nowISO(), date: today(), by: currentUser?.name || '—',
+    };
+    update('warranties', w.id, (ww) => ({ opCostos: [...(ww.opCostos || []), costEntry] }));
+    update('orders', w.generatedOpId, (o) => ({
+      costosManual: [...(o.costosManual || []), { concept: costEntry.concept, amount, at: costEntry.at }],
+      total: (o.total || 0) + amount,
+    }));
+    const res = postWarrantyCost(w, costEntry);
+    if (res?.ok) toast(`Costo "${costEntry.concept}" · asiento ${res.journalEntry.id}`, 'ok');
+    else toast(`Costo agregado (aviso contable: ${res?.message || res?.error || '—'})`, 'warn');
+    setCostForm(null);
+  }
 
   const setF = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   function save() {
@@ -251,6 +296,49 @@ export default function Garantias() {
               </div>
             </div>
 
+            {/* OP de garantía (costos manuales) → dispara postWarrantyCost */}
+            <div className="panel-2 rounded-lg p-4" style={{ border: '1px solid #C9A961' }}>
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-sm font-semibold gold-title">🏭 OP de garantía (costos manuales)</p>
+                {!sel.generatedOpId && sel.estado === 'abierta' && (
+                  <button className="btn-gold !py-1 !px-3 text-xs" onClick={() => generarOp(sel)}>⚙ Generar OP</button>
+                )}
+              </div>
+              {sel.generatedOpId ? (
+                <>
+                  <p className="mb-1 text-xs text-white">OP asociada: <span className="font-mono text-brand-gold">{sel.generatedOpId}</span></p>
+                  <p className="mb-2 text-[11px] text-brand-muted">Producto: {selProduct.name || '—'} ×{sel.qty || 1} · Causal: {sel.causal || '—'}</p>
+                  {(sel.opCostos || []).length ? (
+                    <table className="mb-2 w-full text-xs">
+                      <thead className="text-brand-muted">
+                        <tr><th className="py-1 text-left">Concepto</th><th className="text-left">Fuente</th><th className="text-right">Monto</th><th className="text-right">Fecha</th></tr>
+                      </thead>
+                      <tbody>
+                        {sel.opCostos.map((c) => (
+                          <tr key={c.id} className="border-t border-brand-border">
+                            <td className="py-1 text-white">{c.concept}</td>
+                            <td className="text-brand-muted">{c.source === 'almacen' ? 'Almacén' : 'Caja'}</td>
+                            <td className="text-right text-brand-gold-light">{fmtCOP(c.amount)}</td>
+                            <td className="text-right text-brand-muted">{fmtDate((c.at || '').slice(0, 10))}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="mb-2 text-[11px] italic text-brand-muted">Sin costos cargados aún</p>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-white">Total costos: <b className="text-brand-gold-light">{fmtCOP((sel.opCostos || []).reduce((a, c) => a + c.amount, 0))}</b></p>
+                    <button className="btn-outline !py-1 !px-3 text-xs" onClick={() => setCostForm({ warrantyId: sel.id, concept: '', amount: '', source: 'caja' })}>+ Agregar costo</button>
+                  </div>
+                </>
+              ) : sel.estado === 'abierta' ? (
+                <p className="text-[11px] italic text-brand-muted">Al generar OP, los costos se cargarán manualmente.</p>
+              ) : (
+                <p className="text-[11px] italic text-amber-300">La OP sólo se genera cuando el caso está ABIERTO.</p>
+              )}
+            </div>
+
             {/* Acciones */}
             <div className="flex gap-2">
               <button className="btn-outline flex-1" onClick={() => setSelId(null)}>Cerrar</button>
@@ -290,6 +378,34 @@ export default function Garantias() {
             </Field>
             <Field label="Asignado a"><Input value={form.asignado} onChange={(e) => setF('asignado', e.target.value)} /></Field>
             <Field label="Motivo" className="sm:col-span-2"><Textarea rows={3} value={form.motivo} onChange={(e) => setF('motivo', e.target.value)} /></Field>
+          </FormGrid>
+        )}
+      </Modal>
+
+      {/* Modal: agregar costo manual a la OP de garantía */}
+      <Modal
+        open={!!costForm}
+        onClose={() => setCostForm(null)}
+        title="Agregar costo de garantía"
+        size="sm"
+        footer={
+          <>
+            <button className="btn-outline" onClick={() => setCostForm(null)}>Cancelar</button>
+            <button className="btn-gold" onClick={saveCosto}>Agregar</button>
+          </>
+        }
+      >
+        {costForm && (
+          <FormGrid cols={1}>
+            <Field label="Concepto"><Input value={costForm.concept} onChange={(e) => setCostForm((f) => ({ ...f, concept: e.target.value }))} placeholder="Tela, mano de obra, espuma…" /></Field>
+            <Field label="Monto (COP)"><Input type="number" min="0" value={costForm.amount} onChange={(e) => setCostForm((f) => ({ ...f, amount: e.target.value }))} /></Field>
+            <Field label="Fuente del costo">
+              <Select value={costForm.source} onChange={(e) => setCostForm((f) => ({ ...f, source: e.target.value }))}>
+                <option value="caja">Caja menor (CR 110510)</option>
+                <option value="almacen">Almacén / MP (CR 140505)</option>
+              </Select>
+            </Field>
+            <p className="text-[11px] text-brand-muted">Genera asiento DB 519540 / CR {costForm.source === 'almacen' ? '140505' : '110510'}, con el cliente como tercero.</p>
           </FormGrid>
         )}
       </Modal>

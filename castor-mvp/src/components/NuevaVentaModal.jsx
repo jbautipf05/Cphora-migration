@@ -21,13 +21,19 @@ const SEARCH_FIELDS = [
 ];
 // REG-H035-06 — formato de correo (mismo regex que H-004 en Leads.jsx).
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// REG-H035-01 — acabados condicionales por `product.areas` (constantes de Demo6:5521-5523).
+const COLOR_MADERA = ['Natural', 'Natural oscuro', 'Natural oscuro Claro', 'Natural oscuro Rojizo', 'Marmoleado', 'Marmoleado Matte (sin brillos)', 'Blanco perlado', 'Champagne', 'Negro', 'Wash beige', 'Otro'];
+const COLOR_METAL = ['Negro', 'Plateado', 'Dorado', 'Bronce Damasco', 'Martillado negro'];
+const COLOR_TEJIDO = ['Blanco', 'Beige', 'Caramelo', 'Mostaza', 'Amarillo', 'Naranja', 'Rojo', 'Rojo Vino', 'Vino tinto', 'Gris claro', 'Gris Medio', 'Verde militar', 'Azul oscuro', 'Azul metálico', 'Negro', 'Verde aguamarina', 'Azul intenso', 'Verde pastel', 'Coral'];
+// Áreas (de Demo6) que disparan cada acabado condicional, solo en modo Producción.
+const ACAB_AREAS = ['Preparación y pintura', 'Pintura electrostática', 'Tapicería', 'Tejido'];
 
 const emptyForm = () => ({
   customerId: '',
   custName: '', custDoc: '', custPhone: '', custEmail: '', custCity: '', custAddress: '',
   deliveryAddress: '', medio: '', pdv: '', cierreVenta: '', abonoBancos: '',
   asesor: '', tiempo: 30, docType: 'factura', paid: 50,
-  items: [{ productId: '', qty: 1, disc: 0, tipo: 'produccion', comment: '' }],
+  items: [{ productId: '', qty: 1, disc: 0, tipo: 'produccion', comment: '', colorMadera: '', colorMaderaOtro: '', colorMetal: '', telaId: '', colorTejido: '' }],
   // H-036.2: productos propuestos (modo innovación)
   innovItems: [{ name: '', desc: '', qty: 1, price: 0, areas: '', comment: '' }],
   // H-035.3: registro de pago
@@ -37,7 +43,50 @@ const emptyForm = () => ({
   innovRefPhoto: '', innovConsentPhoto: '',
 });
 
-export default function NuevaVentaModal({ open, onClose, products = [], customers = [], asesores = [], bankAccounts = [], finishedStock = [], warehouses = [], innovation = false, prefill = null, onSubmit }) {
+// REG-H035-02 — buscador de telas con autocompletado (espejo de filterTelaSearch/pickTela
+// de Demo6:5893-5908; reusa el patrón ProductPicker de Leads.jsx). Filtra SUPPLIES `Telas`.
+function TelaPicker({ telas, value, onChange }) {
+  const selected = telas.find((t) => t.id === value);
+  const [q, setQ] = useState('');
+  const [open, setOpen] = useState(false);
+  const results = useMemo(() => {
+    const t = q.toLowerCase().trim();
+    return (t ? telas.filter((x) => `${x.name} ${x.id}`.toLowerCase().includes(t)) : telas).slice(0, 15);
+  }, [telas, q]);
+  return (
+    <div className="relative">
+      <input
+        className="input-field text-xs"
+        placeholder="Escribe el nombre de la tela..."
+        value={open ? q : selected?.name || ''}
+        onFocus={() => { setOpen(true); setQ(''); }}
+        onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+        onBlur={() => setTimeout(() => setOpen(false), 180)}
+      />
+      {open && (
+        <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-40 overflow-y-auto scrollbar-thin rounded-lg border border-brand-border bg-brand-panel shadow-2xl">
+          {results.length === 0 ? (
+            <div className="p-2 text-center text-xs italic text-brand-muted">Sin coincidencias</div>
+          ) : (
+            results.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onMouseDown={() => { onChange(t.id); setOpen(false); setQ(''); }}
+                className="flex w-full justify-between gap-2 px-3 py-1.5 text-left text-xs text-brand-muted transition hover:bg-white/5 hover:text-white"
+              >
+                <span className="text-white">{t.name}</span>
+                <span className="text-brand-muted">· {t.id} · {fmtCOP(t.cost)}/{t.unit || 'Mts'}</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function NuevaVentaModal({ open, onClose, products = [], customers = [], asesores = [], bankAccounts = [], finishedStock = [], warehouses = [], supplies = [], innovation = false, prefill = null, onSubmit }) {
   const [f, setF] = useState(emptyForm());
   const [searchField, setSearchField] = useState('name');
   const [searchQ, setSearchQ] = useState('');
@@ -67,11 +116,22 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
   // REG-H035-07: cualquier cambio en ítems limpia el error general de ítems.
   const clearItemsErr = () => setErrors((e) => (e.items ? { ...e, items: undefined } : e));
   const setItem = (i, k, v) => {
-    setF((p) => ({ ...p, items: p.items.map((it, idx) => (idx === i ? { ...it, [k]: v } : it)) }));
+    setF((p) => ({
+      ...p,
+      items: p.items.map((it, idx) => {
+        if (idx !== i) return it;
+        const next = { ...it, [k]: v };
+        // REG-H035-01: al cambiar producto o pasar a Stock, los acabados dejan de aplicar → resetear.
+        if (k === 'productId' || (k === 'tipo' && v === 'stock')) {
+          next.colorMadera = ''; next.colorMaderaOtro = ''; next.colorMetal = ''; next.telaId = ''; next.colorTejido = '';
+        }
+        return next;
+      }),
+    }));
     clearItemsErr();
   };
   const addItem = () => {
-    setF((p) => ({ ...p, items: [...p.items, { productId: '', qty: 1, disc: 0, tipo: 'produccion', comment: '' }] }));
+    setF((p) => ({ ...p, items: [...p.items, { productId: '', qty: 1, disc: 0, tipo: 'produccion', comment: '', colorMadera: '', colorMaderaOtro: '', colorMetal: '', telaId: '', colorTejido: '' }] }));
     clearItemsErr();
   };
   const removeItem = (i) => {
@@ -124,6 +184,60 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
           <><span className="text-emerald-300">✓ Disponible {avail} uds</span> · Ubicaciones: {badges.length ? badges : '—'}</>
         ) : (
           <><span className="text-red-400">✗ Stock insuficiente (disp: {avail}, solicitado: {qty})</span> · {badges.length ? badges : '—'}</>
+        )}
+      </div>
+    );
+  };
+
+  // REG-H035-01/02 — acabados condicionales por `product.areas`, solo en modo Producción
+  // (espejo de renderSaleAcabados:5841-5868). Telas = SUPPLIES categoría Telas/Textiles.
+  const telas = useMemo(() => supplies.filter((s) => s.category === 'Telas' || s.category === 'Textiles'), [supplies]);
+  const renderAcabados = (it, i) => {
+    if (it.tipo === 'stock' || !it.productId) return null;
+    const product = products.find((p) => p.id === it.productId);
+    const areas = product?.areas || [];
+    if (!areas.some((a) => ACAB_AREAS.includes(a))) return null;
+    return (
+      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {areas.includes('Preparación y pintura') && (
+          <div>
+            <span className="label text-[10px]">Color madera *</span>
+            <Select value={it.colorMadera} onChange={(e) => setItem(i, 'colorMadera', e.target.value)} className="text-xs">
+              <option value="">— elegir —</option>
+              {COLOR_MADERA.map((c) => <option key={c} value={c}>{c}</option>)}
+            </Select>
+            {it.colorMadera === 'Otro' && (
+              <Input value={it.colorMaderaOtro} onChange={(e) => setItem(i, 'colorMaderaOtro', e.target.value)} placeholder='Especificar "Otro"' className="mt-1 text-xs" />
+            )}
+            {errLine(`item_${i}_madera`)}
+          </div>
+        )}
+        {areas.includes('Pintura electrostática') && (
+          <div>
+            <span className="label text-[10px]">Color metal *</span>
+            <Select value={it.colorMetal} onChange={(e) => setItem(i, 'colorMetal', e.target.value)} className="text-xs">
+              <option value="">— elegir —</option>
+              {COLOR_METAL.map((c) => <option key={c} value={c}>{c}</option>)}
+            </Select>
+            {errLine(`item_${i}_metal`)}
+          </div>
+        )}
+        {areas.includes('Tapicería') && (
+          <div>
+            <span className="label text-[10px]">Tela tapicería * (buscar por nombre)</span>
+            <TelaPicker telas={telas} value={it.telaId} onChange={(id) => setItem(i, 'telaId', id)} />
+            {errLine(`item_${i}_tela`)}
+          </div>
+        )}
+        {areas.includes('Tejido') && (
+          <div>
+            <span className="label text-[10px]">Color tejido *</span>
+            <Select value={it.colorTejido} onChange={(e) => setItem(i, 'colorTejido', e.target.value)} className="text-xs">
+              <option value="">— elegir —</option>
+              {COLOR_TEJIDO.map((c) => <option key={c} value={c}>{c}</option>)}
+            </Select>
+            {errLine(`item_${i}_tejido`)}
+          </div>
         )}
       </div>
     );
@@ -463,6 +577,7 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
                   </div>
                 </div>
                 {renderStockInfo(it)}
+                {renderAcabados(it, i)}
                 <textarea
                   value={it.comment}
                   onChange={(e) => setItem(i, 'comment', e.target.value)}

@@ -35,6 +35,7 @@ export default function Ventas() {
     setState,
     finishedStock,
     warehouses,
+    supplies,
   } = useApp();
   const toast = useToast();
   const [q, setQ] = useState('');
@@ -557,6 +558,7 @@ export default function Ventas() {
         bankAccounts={bankAccounts}
         finishedStock={finishedStock}
         warehouses={warehouses}
+        supplies={supplies}
         innovation={saleInnovation}
         prefill={salePrefill}
         onSubmit={submitSale}

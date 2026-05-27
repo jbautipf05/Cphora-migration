@@ -113,8 +113,16 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
     setF((p) => ({ ...p, [k]: v }));
     setErrors((e) => (e[k] ? { ...e, [k]: undefined } : e));
   };
-  // REG-H035-07: cualquier cambio en ítems limpia el error general de ítems.
-  const clearItemsErr = () => setErrors((e) => (e.items ? { ...e, items: undefined } : e));
+  // REG-H035-07: limpieza de errores de ítems. clearAllItemErrs se usa al agregar/quitar filas
+  // (los índices se corren); el clear por fila se hace inline en setItem.
+  const clearAllItemErrs = () =>
+    setErrors((e) => {
+      const ks = Object.keys(e).filter((k) => k === 'items' || k.startsWith('item_'));
+      if (!ks.some((k) => e[k])) return e;
+      const next = { ...e };
+      ks.forEach((k) => { next[k] = undefined; });
+      return next;
+    });
   const setItem = (i, k, v) => {
     setF((p) => ({
       ...p,
@@ -128,15 +136,22 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
         return next;
       }),
     }));
-    clearItemsErr();
+    // REG-H035-07: limpia el error general + los acabados de ESTA fila al editarla.
+    setErrors((e) => {
+      const ks = ['items', `item_${i}_madera`, `item_${i}_metal`, `item_${i}_tela`, `item_${i}_tejido`];
+      if (!ks.some((k) => e[k])) return e;
+      const next = { ...e };
+      ks.forEach((k) => { next[k] = undefined; });
+      return next;
+    });
   };
   const addItem = () => {
     setF((p) => ({ ...p, items: [...p.items, { productId: '', qty: 1, disc: 0, tipo: 'produccion', comment: '', colorMadera: '', colorMaderaOtro: '', colorMetal: '', telaId: '', colorTejido: '' }] }));
-    clearItemsErr();
+    clearAllItemErrs();
   };
   const removeItem = (i) => {
     setF((p) => ({ ...p, items: p.items.filter((_, idx) => idx !== i) }));
-    clearItemsErr();
+    clearAllItemErrs();
   };
   // H-036.2: helpers de productos propuestos
   const setInnovItem = (i, k, v) =>
@@ -360,8 +375,25 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
   // es del Bloque A, fuera de este hallazgo. No aplica a innovación (innovItems aparte).
   function validateItems(v) {
     if (innovation) return {};
-    const hasValid = v.items.some((it) => it.productId && (Number(it.qty) || 0) > 0 && priceOf(it.productId) > 0);
-    return hasValid ? {} : { items: 'Agrega al menos un ítem válido (producto, cantidad > 0 y precio > 0)' };
+    const errs = {};
+    let hasValid = false;
+    v.items.forEach((it, i) => {
+      if (it.productId && (Number(it.qty) || 0) > 0 && priceOf(it.productId) > 0) hasValid = true;
+      // REG-H035-07 condicional: acabados obligatorios por `areas`, solo en Producción con producto
+      // (espejo de los `required` de renderSaleAcabados). Demo6 los exige al guardar.
+      if (it.productId && it.tipo === 'produccion') {
+        const areas = products.find((p) => p.id === it.productId)?.areas || [];
+        if (areas.includes('Preparación y pintura')) {
+          if (!it.colorMadera) errs[`item_${i}_madera`] = 'Selecciona el color de madera';
+          else if (it.colorMadera === 'Otro' && !it.colorMaderaOtro.trim()) errs[`item_${i}_madera`] = 'Especifica el color "Otro"';
+        }
+        if (areas.includes('Pintura electrostática') && !it.colorMetal) errs[`item_${i}_metal`] = 'Selecciona el color de metal';
+        if (areas.includes('Tapicería') && !it.telaId) errs[`item_${i}_tela`] = 'Selecciona la tela de tapicería';
+        if (areas.includes('Tejido') && !it.colorTejido) errs[`item_${i}_tejido`] = 'Selecciona el color de tejido';
+      }
+    });
+    if (!hasValid) errs.items = 'Agrega al menos un ítem válido (producto, cantidad > 0 y precio > 0)';
+    return errs;
   }
 
   function handleSubmit() {

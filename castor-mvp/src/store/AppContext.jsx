@@ -43,6 +43,7 @@ import {
   postSupplyPurchase as engPostSupplyPurchase,
   postSupplierPayment as engPostSupplierPayment,
   postPayroll as engPostPayroll,
+  postWarrantyCost as engPostWarrantyCost,
   reverseJournalEntry as engReverse,
   applyJournalResult,
 } from '../lib/accountingEngine';
@@ -297,6 +298,14 @@ export function AppProvider({ children }) {
         let outcome;
         setState((s) => {
           outcome = engPostPayroll(run, s);
+          return applyJournalResult(s, outcome);
+        });
+        return outcome;
+      },
+      postWarrantyCost: (warranty, costEntry) => {
+        let outcome;
+        setState((s) => {
+          outcome = engPostWarrantyCost(warranty, costEntry, s);
           return applyJournalResult(s, outcome);
         });
         return outcome;

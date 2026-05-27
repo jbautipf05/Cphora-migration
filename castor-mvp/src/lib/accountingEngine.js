@@ -455,6 +455,44 @@ export function postPayroll(run, ctx) {
   );
 }
 
+// ── postWarrantyCost ──────────────────────────────────────────────────────────
+// Costo manual de un caso de garantía (espejo de castor_accounting.js:1387).
+//   warranty:  { id, customerId?, clientName }
+//   costEntry: { id, amount, source:'caja'|'almacen', concept?, date? }
+// source==='caja'    → DB 519540 / CR 110510 (caja menor) por amount.
+// source==='almacen' → DB 519540 / CR 140505 (materias primas) por amount.
+// La cuenta de gasto 519540 lleva el cliente como tercero. Idempotente por costEntry.id.
+export function postWarrantyCost(warranty, costEntry, ctx) {
+  if (!warranty || !costEntry)
+    return { error: 'invalid_args', message: 'Faltan datos de garantía o costo' };
+  const amount = round(costEntry.amount);
+  if (amount <= 0) return { error: 'zero_amount', message: 'Monto de costo en cero' };
+
+  const fromAlmacen = costEntry.source === 'almacen';
+  const creditAccount = fromAlmacen ? '140505' : '110510';
+  const thirdParty = warranty.customerId || warranty.clientName || null;
+  const concept = costEntry.concept || costEntry.description || 'Costo de garantía';
+
+  return postJournalEntry(
+    {
+      date: costEntry.date || today(),
+      source: 'warranty_cost',
+      sourceId: costEntry.id,
+      concept: `Garantía ${warranty.id} · ${concept}`,
+      lines: [
+        { accountCode: '519540', debit: amount, credit: 0, thirdParty, description: concept },
+        {
+          accountCode: creditAccount,
+          debit: 0,
+          credit: amount,
+          description: fromAlmacen ? 'Consumo de almacén' : 'Caja menor',
+        },
+      ],
+    },
+    ctx,
+  );
+}
+
 // ── Aplicador genérico — actualiza estado del AppContext de forma inmutable ─
 // Útil cuando el caller solo quiere "aplicar" el resultado al setState reducer.
 export function applyJournalResult(state, res) {

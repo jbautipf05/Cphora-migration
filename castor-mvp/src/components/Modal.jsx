@@ -14,7 +14,9 @@ export default function Modal({ open, onClose, title, subtitle, overline, childr
 
   return (
     <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto p-4 sm:p-8">
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      {/* Backdrop: NO cierra al click (evita borrar datos por un clic accidental fuera).
+          Solo cierran la × del header y los botones Cancelar. */}
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
       <div
         className={`relative z-10 my-auto w-full ${maxW} rounded-2xl border border-brand-border bg-brand-bg-2 shadow-2xl`}
       >

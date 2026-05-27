@@ -189,6 +189,10 @@ export default function AlmacenMP() {
   function saveOC() {
     if (!ocForm.supplierId) return toast('Selecciona el proveedor', 'warn');
     if (!ocForm.warehouseId) return toast('Selecciona la bodega destino', 'warn');
+    // Bloquea filas a medio llenar (insumo sin cantidad, o cantidad sin insumo) en vez de
+    // filtrarlas en silencio.
+    const incompleta = ocForm.items.some((it) => (!!it.supplyId) !== (Number(it.qty) > 0));
+    if (incompleta) return toast('Completá o quitá el ítem incompleto', 'warn');
     const validItems = ocForm.items.filter((it) => it.supplyId && Number(it.qty) > 0);
     if (!validItems.length) return toast('Agrega al menos un ítem con insumo y cantidad', 'warn');
     const id = nextId('OC', 'oc', 0); // continúa después de OC-3003 del seed → OC-3004
@@ -334,6 +338,9 @@ export default function AlmacenMP() {
     : 0;
 
   function saveIssue() {
+    // Bloquea filas a medio llenar (insumo sin cantidad, o cantidad sin insumo).
+    const incompleta = issForm.items.some((it) => (!!it.supplyId) !== (Number(it.qty) > 0));
+    if (incompleta) return toast('Completá o quitá el ítem incompleto', 'warn');
     const items = issForm.items
       .filter((it) => it.supplyId && Number(it.qty) > 0)
       .map((it) => ({ supplyId: it.supplyId, qty: Number(it.qty), unit: it.unit || '' }));

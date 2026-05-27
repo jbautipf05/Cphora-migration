@@ -23,6 +23,7 @@ import {
 } from '../components/icons';
 
 const SUPPLY_CATS = ['Madera', 'Telas', 'Hierro', 'Espuma', 'Pintura', 'Insumos'];
+const ALMACEN_UNITS = ['Unidad', 'Mts', 'Cm', 'Kg', 'Galon', '1/4 Galon', 'Litro', 'Caja', 'Carril', 'Rollo', 'Pie tabla'];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Almacén · Bodegas (materia prima) — espejo de renderAlmacen() del HTML
@@ -133,12 +134,20 @@ export default function AlmacenMP() {
   function saveSupply() {
     if (!supplyForm.name.trim()) return toast('Indica el nombre', 'warn');
     const id = nextId('IN', 'insumo', 2);
+    // convFactor = cuántas unidades de SALIDA salen de 1 unidad de ENTRADA (espejo de Demo6
+    // saveSupply: outQty/entryQty). NOTA: el costeo de BOM (Innovación/Auditoría) es cost×qty y
+    // NO usa convFactor/unitOut (solo se usan como etiqueta de display), así que esto no altera
+    // ningún costo; solo modela bien la unidad de compra vs consumo.
+    const entryQty = Number(supplyForm.entryQty) || 1;
+    const outQty = Number(supplyForm.outQty) || 1;
     add('supplies', {
       id,
       name: supplyForm.name,
       unit: supplyForm.unit,
-      unitOut: supplyForm.unit,
-      convFactor: 1,
+      unitOut: supplyForm.unitOut || supplyForm.unit,
+      entryQty,
+      outQty,
+      convFactor: outQty / entryQty,
       cost: Number(supplyForm.cost) || 0,
       supplierId: supplyForm.supplierId,
       stock: Number(supplyForm.stock) || 0,
@@ -374,7 +383,7 @@ export default function AlmacenMP() {
     { key: 'id', label: 'ID', render: (r) => <span className="font-mono text-xs text-muted">{r.id}</span> },
     {
       key: 'name',
-      label: 'Insumo',
+      label: 'Nombre',
       render: (r) => (
         <div>
           <span className="text-white">
@@ -385,7 +394,9 @@ export default function AlmacenMP() {
       ),
     },
     { key: 'category', label: 'Categoría', sortValue: (r) => r.category, render: (r) => <Chip variant="gold">{r.category}</Chip> },
-    { key: 'unit', label: 'Unidad', render: (r) => <span className="text-muted">{r.unit}</span> },
+    { key: 'unit', label: 'U. entrada', render: (r) => <span className="text-muted">{r.unit}</span> },
+    { key: 'unitOut', label: 'U. salida', render: (r) => <span className="text-muted">{r.unitOut || r.unit}</span> },
+    { key: 'conv', label: 'Conv.', align: 'right', render: (r) => <span className="text-muted">{r.convFactor || 1}</span> },
     { key: 'bod', label: 'Bodega', render: (r) => <span className="text-muted">{wName(r.warehouseId)}</span> },
     { key: 'sup', label: 'Proveedor', render: (r) => <span className="text-muted">{supName(r.supplierId)}</span> },
     { key: 'cost', label: 'Costo', align: 'right', sortValue: (r) => r.cost, render: (r) => <span className="text-white">{fmtCOP(r.cost)}</span> },
@@ -604,7 +615,10 @@ export default function AlmacenMP() {
                 onClick={() =>
                   setSupplyForm({
                     name: '',
+                    entryQty: 1,
                     unit: 'Unidad',
+                    outQty: 1,
+                    unitOut: 'Unidad',
                     cost: 0,
                     supplierId: suppliers[0]?.id,
                     stock: 0,
@@ -864,33 +878,67 @@ export default function AlmacenMP() {
         footer={
           <>
             <button className="btn-outline" onClick={() => setSupplyForm(null)}>Cancelar</button>
-            <button className="btn-gold" onClick={saveSupply}>Guardar</button>
+            <button className="btn-gold" onClick={saveSupply}>Crear</button>
           </>
         }
       >
         {supplyForm && (
-          <FormGrid cols={2}>
-            <Field label="Nombre" className="sm:col-span-2"><Input value={supplyForm.name} onChange={(e) => setSupplyForm((f) => ({ ...f, name: e.target.value }))} /></Field>
-            <Field label="Unidad"><Input value={supplyForm.unit} onChange={(e) => setSupplyForm((f) => ({ ...f, unit: e.target.value }))} /></Field>
-            <Field label="Categoría">
-              <Select value={supplyForm.category} onChange={(e) => setSupplyForm((f) => ({ ...f, category: e.target.value }))}>
-                {SUPPLY_CATS.map((c) => <option key={c} value={c}>{c}</option>)}
-              </Select>
-            </Field>
-            <Field label="Costo (COP)"><Input type="number" value={supplyForm.cost} onChange={(e) => setSupplyForm((f) => ({ ...f, cost: e.target.value }))} /></Field>
-            <Field label="Proveedor">
-              <Select value={supplyForm.supplierId} onChange={(e) => setSupplyForm((f) => ({ ...f, supplierId: e.target.value }))}>
-                {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </Select>
-            </Field>
-            <Field label="Stock"><Input type="number" value={supplyForm.stock} onChange={(e) => setSupplyForm((f) => ({ ...f, stock: e.target.value }))} /></Field>
-            <Field label="Mínimo"><Input type="number" value={supplyForm.min} onChange={(e) => setSupplyForm((f) => ({ ...f, min: e.target.value }))} /></Field>
-            <Field label="Bodega">
-              <Select value={supplyForm.warehouseId} onChange={(e) => setSupplyForm((f) => ({ ...f, warehouseId: e.target.value }))}>
-                {insumoBodegas.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
-              </Select>
-            </Field>
-          </FormGrid>
+          <div className="space-y-4">
+            <FormGrid cols={1}>
+              <Field label="Nombre *"><Input value={supplyForm.name} onChange={(e) => setSupplyForm((f) => ({ ...f, name: e.target.value }))} /></Field>
+            </FormGrid>
+
+            {/* Entrada (cómo se compra) */}
+            <div className="panel-2 rounded p-3" style={{ borderLeft: '3px solid #C9A961' }}>
+              <p className="mb-2 text-xs font-semibold gold-title">📥 ENTRADA (cómo se compra el insumo)</p>
+              <FormGrid cols={2}>
+                <Field label="Cantidad *"><Input type="number" min="0.0001" step="any" value={supplyForm.entryQty} onChange={(e) => setSupplyForm((f) => ({ ...f, entryQty: e.target.value }))} /></Field>
+                <Field label="Unidad de entrada *">
+                  <Select value={supplyForm.unit} onChange={(e) => setSupplyForm((f) => ({ ...f, unit: e.target.value }))}>
+                    {ALMACEN_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                  </Select>
+                </Field>
+              </FormGrid>
+            </div>
+
+            {/* Salida (cómo se consume) */}
+            <div className="panel-2 rounded p-3" style={{ borderLeft: '3px solid #10b981' }}>
+              <p className="mb-2 text-xs font-semibold gold-title">📤 SALIDA (cómo se consume en producción)</p>
+              <FormGrid cols={2}>
+                <Field label="Cantidad *"><Input type="number" min="0.0001" step="any" value={supplyForm.outQty} onChange={(e) => setSupplyForm((f) => ({ ...f, outQty: e.target.value }))} /></Field>
+                <Field label="Unidad de salida *">
+                  <Select value={supplyForm.unitOut} onChange={(e) => setSupplyForm((f) => ({ ...f, unitOut: e.target.value }))}>
+                    {ALMACEN_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                  </Select>
+                </Field>
+              </FormGrid>
+              <p className="mt-2 text-[11px] italic text-muted">
+                Ej: 1 Caja de grapas → 144 Carriles · 1 Galón → 4 ¼ Galón. Conversión:{' '}
+                {(Number(supplyForm.outQty) || 1) / (Number(supplyForm.entryQty) || 1)} {supplyForm.unitOut}/{supplyForm.unit}
+              </p>
+            </div>
+
+            <FormGrid cols={2}>
+              <Field label="Categoría *">
+                <Select value={supplyForm.category} onChange={(e) => setSupplyForm((f) => ({ ...f, category: e.target.value }))}>
+                  {SUPPLY_CATS.map((c) => <option key={c} value={c}>{c}</option>)}
+                </Select>
+              </Field>
+              <Field label="Costo / Unidad *"><Input type="number" value={supplyForm.cost} onChange={(e) => setSupplyForm((f) => ({ ...f, cost: e.target.value }))} /></Field>
+              <Field label="Proveedor">
+                <Select value={supplyForm.supplierId} onChange={(e) => setSupplyForm((f) => ({ ...f, supplierId: e.target.value }))}>
+                  {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </Select>
+              </Field>
+              <Field label="Bodega *">
+                <Select value={supplyForm.warehouseId} onChange={(e) => setSupplyForm((f) => ({ ...f, warehouseId: e.target.value }))}>
+                  {insumoBodegas.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
+                </Select>
+              </Field>
+              <Field label="Stock"><Input type="number" value={supplyForm.stock} onChange={(e) => setSupplyForm((f) => ({ ...f, stock: e.target.value }))} /></Field>
+              <Field label="Mínimo"><Input type="number" value={supplyForm.min} onChange={(e) => setSupplyForm((f) => ({ ...f, min: e.target.value }))} /></Field>
+            </FormGrid>
+          </div>
         )}
       </Modal>
 

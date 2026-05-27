@@ -178,7 +178,7 @@ export default function AlmacenMP() {
       expectedDate: addDays(today(), 15),
       warehouseId: insumoBodegas[0]?.id || '',
       notes: '',
-      items: [{ supplyId: '', qty: 1, unit: '', cost: 0 }],
+      items: [{ supplyId: '', qty: 0, unit: '', cost: 0 }],
     });
   const setOcItem = (i, k, v) =>
     setOcForm((f) => ({ ...f, items: f.items.map((r, idx) => (idx === i ? { ...r, [k]: v } : r)) }));
@@ -193,7 +193,7 @@ export default function AlmacenMP() {
         ),
       };
     });
-  const addOcItem = () => setOcForm((f) => ({ ...f, items: [...f.items, { supplyId: '', qty: 1, unit: '', cost: 0 }] }));
+  const addOcItem = () => setOcForm((f) => ({ ...f, items: [...f.items, { supplyId: '', qty: 0, unit: '', cost: 0 }] }));
   const delOcItem = (i) => setOcForm((f) => ({ ...f, items: f.items.filter((_, idx) => idx !== i) }));
   const ocTotal = ocForm
     ? ocForm.items.reduce((a, it) => a + (Number(it.qty) || 0) * (Number(it.cost) || 0), 0)
@@ -1008,21 +1008,21 @@ export default function AlmacenMP() {
         {ocForm && (
           <div className="space-y-4">
             <FormGrid cols={2}>
-              <Field label="Proveedor *">
+              <Field label="Proveedor *" className="sm:col-span-2">
                 <Select value={ocForm.supplierId} onChange={(e) => setOcForm((f) => ({ ...f, supplierId: e.target.value }))}>
                   <option value="">— Elegir —</option>
                   {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </Select>
               </Field>
-              <Field label="Bodega destino *">
+              <Field label="Fecha emisión *"><Input type="date" value={ocForm.date} onChange={(e) => setOcForm((f) => ({ ...f, date: e.target.value }))} /></Field>
+              <Field label="Fecha esperada *"><Input type="date" value={ocForm.expectedDate} onChange={(e) => setOcForm((f) => ({ ...f, expectedDate: e.target.value }))} /></Field>
+              <Field label="Bodega destino *" className="sm:col-span-2">
                 <Select value={ocForm.warehouseId} onChange={(e) => setOcForm((f) => ({ ...f, warehouseId: e.target.value }))}>
                   <option value="">— Elegir —</option>
                   {insumoBodegas.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
                 </Select>
               </Field>
-              <Field label="Fecha emisión *"><Input type="date" value={ocForm.date} onChange={(e) => setOcForm((f) => ({ ...f, date: e.target.value }))} /></Field>
-              <Field label="Fecha esperada *"><Input type="date" value={ocForm.expectedDate} onChange={(e) => setOcForm((f) => ({ ...f, expectedDate: e.target.value }))} /></Field>
-              <Field label="Notas" className="sm:col-span-2"><Input value={ocForm.notes} onChange={(e) => setOcForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Opcional" /></Field>
+              <Field label="Notas" className="sm:col-span-2"><Input value={ocForm.notes} onChange={(e) => setOcForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Referencia, prioridad, observaciones" /></Field>
             </FormGrid>
 
             <div className="panel-2 rounded p-4">

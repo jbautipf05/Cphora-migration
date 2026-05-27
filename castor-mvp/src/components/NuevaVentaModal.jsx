@@ -175,6 +175,20 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
   // REG-H035-04 — disponibilidad de stock por ítem (fiel a onSaleItemProductChange:5828-5833).
   const stockLocations = (productId) =>
     finishedStock.filter((fs) => fs.productId === productId && fs.status === 'disponible' && fs.qty > 0);
+  const stockAvail = (productId) => stockLocations(productId).reduce((a, fs) => a + fs.qty, 0);
+  // REG-H035-10 — opciones del dropdown de producto: en Stock solo los que tienen disponibilidad
+  // (+ "stock: N" en la etiqueta), en Producción todos (espejo de onSaleItemTypeChange:5805-5813).
+  // Mantiene visible el producto ya seleccionado aunque quede fuera del filtro de stock.
+  const productOptions = (tipo, selectedId) => {
+    let list = tipo === 'stock'
+      ? products.map((p) => ({ p, avail: stockAvail(p.id) })).filter((x) => x.avail > 0)
+      : products.map((p) => ({ p, avail: null }));
+    if (selectedId && !list.some((x) => x.p.id === selectedId)) {
+      const p = products.find((x) => x.id === selectedId);
+      if (p) list = [{ p, avail: tipo === 'stock' ? stockAvail(p.id) : null }, ...list];
+    }
+    return list;
+  };
   const renderStockInfo = (it) => {
     if (it.tipo !== 'stock' || !it.productId) return null;
     const locs = stockLocations(it.productId);
@@ -598,8 +612,12 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
                   <div className="col-span-12 sm:col-span-4">
                     <span className="label text-[10px]">Producto *</span>
                     <Select value={it.productId} onChange={(e) => setItem(i, 'productId', e.target.value)} className="text-xs">
-                      <option value="">— Producto —</option>
-                      {products.map((p) => <option key={p.id} value={p.id}>{p.name} — {fmtCOP(p.price)}</option>)}
+                      <option value="">{it.tipo === 'stock' ? '— Producto en stock —' : '— Producto —'}</option>
+                      {productOptions(it.tipo, it.productId).map(({ p, avail }) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} — {avail != null ? `stock: ${avail} — ` : ''}{fmtCOP(p.price)}
+                        </option>
+                      ))}
                     </Select>
                   </div>
                   <div className="col-span-4 sm:col-span-2">

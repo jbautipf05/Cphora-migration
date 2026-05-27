@@ -1,7 +1,7 @@
 # VALIDACIÓN — Tesorería (Fase 3)
 
 **Fecha:** 2026-05-27 · **Rama:** `main` (local) · **Motor:** React, por decisión del usuario.
-**Scope de esta entrega:** **T3 — CRUD de cuentas bancarias (§7.8 v1.1)**. El resto (T1/T2/T4, que generan asientos) queda **diferido** por dependencia de TD-01 (ver abajo).
+**Scope:** **T3** (CRUD de cuentas bancarias) + **T1/T2/T4** (cableado contable), este último habilitado tras el cierre de **TD-01** por el otro desarrollador (`counters.je=12`).
 
 ## Diagnóstico previo
 
@@ -25,15 +25,21 @@ CRUD completo de cuentas bancarias en `Tesoreria.jsx`, fiel a §7.8 (v1.1) y a D
 - ✅ **Eliminar bloqueado:** Bancolombia (saldo + pagos) NO se elimina (toast de aviso, conteo intacto).
 - ✅ **Eliminar permitido:** cuenta "Tmp" (saldo 0, sin movimientos) se elimina correctamente.
 
-## ⛔ Diferido por TD-01 (acordado con el usuario)
+## T1/T2/T4 — implementado (TD-01 ya resuelto)
 
-Los bloques que **cablean el motor** quedan pendientes hasta resolver **TD-01** (colisión de IDs de asiento, ver `VALIDACION_GARANTIAS.md` y `lib/README.md`). Wirearlos ahora produciría asientos con id duplicado:
+- **T1 — Pagos entrantes:** `Aprobar` ahora marca confirmado, **acredita el banco**, recalcula `paid%` del pedido y dispara `postCustomerCollection`. `reject` queda en estado simple (solo aplica a pendientes, nunca posteó asiento).
+- **T2 — Pagos salientes:** `Confirmar` marca confirmado, **debita el banco** y dispara `postSupplierPayment`. `annulOut` re-acredita el banco si estaba confirmado (reversa del asiento = follow-up).
+- **T4 — Conciliación:** nuevo hook **`postBankAdjustment`** en `accountingEngine.js` + acción en AppContext + botón "⚖ Conciliar" por tarjeta con modal de ajuste (delta ± concepto). `delta>0` → DB `1110-XX` / CR `425095`; `delta<0` → DB `539595` / CR `1110-XX`; banco como tercero.
 
-- **T1 — Pagos entrantes:** `Aprobar` debe acreditar el saldo del banco, actualizar `paid%` del pedido y disparar `postCustomerCollection`.
-- **T2 — Pagos salientes:** `Confirmar` debe debitar el banco y disparar `postSupplierPayment`.
-- **T4 — Conciliación:** falta el hook `postBankAdjustment` (no existe en el motor React) + modal de ajuste (delta ± concepto → DB/CR `1110-XX` vs `425095`/`539595`, banco como tercero).
+### Fix colateral del motor (necesario para T2)
+`postSupplierPayment` usaba como fallback (egreso sin OC) la cuenta `510550`, que **no existe** en el catálogo PUC React → el asiento fallaba con `unknown_account`. Se cambió el fallback a **`539595`** (Otros gastos diversos, sí existe). El mapeo fino por tipo de pago (nómina vs proveedor) corresponde a "Mapeos operación→cuenta" en Contabilidad.
 
-**Recomendación:** una vez resuelto TD-01 (1-2 líneas: `counters.je = max je existente` al hidratar), T1/T2/T4 son directos (los hooks `postCustomerCollection`/`postSupplierPayment` ya existen; solo falta `postBankAdjustment`).
+### Auto-validación T1/T2/T4 (Preview MCP, 0 errores de consola)
+- ✅ **TD-01 confirmado resuelto en vivo:** los asientos en vivo nacen `JE-000013`+ (no colisionan con el seed `JE-000001..012`); sin IDs de asiento duplicados.
+- ✅ **T1:** aprobar PAG-504 (11.34M, B-01) → banco 148.5M→159.84M, `JE-000013` (DB 111005 / CR 130505 tercero C-003), `paid%` recalculado.
+- ✅ **T2:** confirmar OUT-032 (24.012M, B-02) → banco 85.75M→61.738M, `JE` (DB 539595 tercero "Nómina abril" / CR 111010).
+- ✅ **T4:** conciliar Bold +$5.000.000 → banco 23.4M→28.4M, `JE` (DB 111015 tercero B-03 / CR 425095).
+- ✅ `eslint` sin errores · `vite build` OK.
 
 ## Pasos para validación humana
 

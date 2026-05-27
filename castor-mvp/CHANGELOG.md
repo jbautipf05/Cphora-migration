@@ -23,7 +23,10 @@ Numeración consistente del sprint (se cierra a `main` con `SPRINT_PRE_DEMO.md`)
   `areasOfProduct` de Demo6); las tarjetas no caen en columnas no pertinentes.
 - **H-106** ✅ Auditoría: modales de detalle de Producto Nuevo y de Cierre de OP (el de Pedido
   ya existía). Doble clic + botón Ver.
-- H-107 (Despacho funcional): pendiente — se decide en el checkpoint según tiempo restante.
+- **H-107** ✅ Despacho funcional (flujo A): 🚚 Despachar marca la OP `despachado` + consume la
+  reserva de `finishedStock` (reservado→despachado) + pasa la solicitud a histórico (setState
+  atómico). Guard: solo despachable si las OPs están en `listo`/`op_cerrada` (mejora sobre Demo6).
+  Flujo B (recepción CEDI) diferido como EX-F3-03.
 
 ## [2026-05-26] - Fase 2.5.2 (REG-H035-01..12 — modal Nueva Venta)
 - 12 regresiones del modal Nueva Venta (`NuevaVentaModal.jsx`) cerradas. Validaciones por bloque

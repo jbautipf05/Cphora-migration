@@ -181,3 +181,50 @@ KPIs de inventario en vivo. Validado: test de algoritmo node 17/17 + lint + buil
 - **Severidad:** baja (conveniencia; el buscador cubre las telas del seed).
 - **Plan (decisión del usuario 2026-05-26):** no agregar por ahora; si el cliente lo pide tras la demo,
   incorporarlo como EX. Registrado para trazabilidad.
+
+---
+
+## EX-F3-01 — Editor de BOM en el modal de EDICIÓN de producto (Innovación) [DETECTADO EN H-104a]
+
+**Ubicación:** `src/views/Innovacion.jsx` — modal "Editar ficha (master card)".
+
+- El modal de **Nuevo producto** tiene tabla BOM + costo automático (H-104a). El modal de
+  **edición** solo permite editar costo/precio/margen y áreas, **no el BOM**. Demo6
+  (`openProductMasterEdit`) sí tiene editor de BOM en la edición.
+- **Severidad:** baja (el alta —lo que pidió el cliente— ya calcula desde el BOM; editar el BOM
+  de un producto existente es caso secundario).
+- **Plan:** portar la misma tabla BOM (+ `syncCost`) al modal de edición. Trabajo pequeño,
+  aislado a Innovación.
+
+---
+
+## EX-F3-02 — Acciones de cierre de OP en Auditoría (cerrar / crear producto CEDI / aprobar) [DETECTADO EN H-106]
+
+**Ubicación:** `src/views/Auditoria.jsx` — tabla "Cierre de OPs" + modal detalle de cierre.
+
+- H-106 agregó el modal de **detalle** del cierre (informativo). Demo6 además tiene el flujo de
+  **acciones**: `cerrarOP`/`solicitarCierreOP` (:6418-6438), `crearProductoInventario` (:6440-6470)
+  que crea `finishedStock` en CEDI, y la aprobación para facturar. React no porta esas acciones.
+- **Severidad:** media (necesario para el ciclo completo producción→inventario→facturación).
+- **Plan:** portar las 3 acciones con sus guards (área "Listo", OP cerrada habilita ingreso).
+  **Prerrequisito de EX-F3-03.**
+
+---
+
+## EX-F3-03 — Recepción CEDI / "stock listo va a CEDI automáticamente" [DIFERIDO EN H-107, decisión del usuario]
+
+**Ubicación:** flujo producción→CEDI (no es parte del despacho a cliente).
+
+- El inventario de H-107 mezclaba dos flujos: (A) **despacho a cliente** (resuelto en H-107) y
+  (B) **recepción de producción en CEDI**. (B) se difiere conscientemente.
+- **Depende de:** **EX-F3-02** (cierre de OP en Auditoría que genera el `stockMove`/`finishedStock`).
+- **Alcance (3 piezas), espejo de Demo6:**
+  1. **Cierre de OP crea el ingreso**: `crearProductoInventario` (Demo6:6440) inserta
+     `finishedStock` en `W-CEDI` con `receptionStatus:'pendiente_recepcion'` + un `stockMove`
+     `entrada_produccion`.
+  2. **Recepción en CEDI**: `confirmarRecepcionCEDI`/`markCEDIReceived` (Demo6:6472 / 1664) marca
+     la recepción y deja el `finishedStock` `disponible` en CEDI.
+  3. **UI de Despacho/Inventario**: sección "pendiente de recepción" + botón "Confirmar recepción".
+- **Severidad:** media. **Por qué se difiere (decisión del usuario 2026-05-27):** Demo6 lo modela
+  como pipeline separado del despacho; tocarlo arriesga regresión sobre Auditoría (H-106 estable);
+  el flujo A es demostrable end-to-end por sí solo; B puede agregarse después sin romper A.

@@ -189,6 +189,17 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
     );
   };
 
+  // REG-H035-03 — ruta de proceso en modo Producción (fiel a onSaleItemProductChange:5835).
+  const renderRouteInfo = (it) => {
+    if (it.tipo !== 'produccion' || !it.productId) return null;
+    const areas = products.find((p) => p.id === it.productId)?.areas || [];
+    return (
+      <div className="mt-2 text-[11px] text-brand-muted">
+        <span className="text-amber-300">⚙ Bajo pedido</span> · áreas: {areas.length ? areas.join(' → ') : '—'}
+      </div>
+    );
+  };
+
   // REG-H035-01/02 — acabados condicionales por `product.areas`, solo en modo Producción
   // (espejo de renderSaleAcabados:5841-5868). Telas = SUPPLIES categoría Telas/Textiles.
   const telas = useMemo(() => supplies.filter((s) => s.category === 'Telas' || s.category === 'Textiles'), [supplies]);
@@ -577,6 +588,7 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
                   </div>
                 </div>
                 {renderStockInfo(it)}
+                {renderRouteInfo(it)}
                 {renderAcabados(it, i)}
                 {/* REG-H035-05: label de comentario por ítem a paridad con Demo6 (addSaleItemRow:5750). */}
                 <div className="mt-2">

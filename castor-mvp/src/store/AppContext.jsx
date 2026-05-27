@@ -55,7 +55,6 @@ const ACCOUNTING_SEED = () => ({
   pucAccounts: PUC_CATALOG,
   journalEntries: SEED_JOURNAL_ENTRIES,
   journalLines: SEED_JOURNAL_LINES,
-  fiscalPeriods: SEED_FISCAL_PERIODS,
   costCenters: SEED_COST_CENTERS,
 });
 
@@ -66,6 +65,9 @@ function buildInitialState() {
     bankAccounts: SEED_BANK_ACCOUNTS,
     companyTaxProfile: SEED_TAX_PROFILE,
     payrollParams: SEED_PAYROLL_PARAMS,
+    // C2a: los periodos fiscales son estado editable (abrir/cerrar) → se persisten
+    // (a diferencia del catálogo PUC / asientos, que sí se re-siembran del código).
+    fiscalPeriods: SEED_FISCAL_PERIODS,
     // ERP — Comercial / Operación / Finanzas / Admin
     warehouses: WAREHOUSES,
     products: PRODUCTS,

@@ -14,6 +14,7 @@ import AuxIVA from './views/AuxIVA';
 import AuxRetenciones from './views/AuxRetenciones';
 import PlanPUC from './views/PlanPUC';
 import AsientosManuales from './views/AsientosManuales';
+import Cierres from './views/Cierres';
 import CentrosCosto from './views/CentrosCosto';
 import ConfigPerfilTributario from './views/ConfigPerfilTributario';
 import ConfiguracionNomina from './views/ConfiguracionNomina';
@@ -71,6 +72,7 @@ const VIEWS = {
   'aux-retenciones': () => <AuxRetenciones />,
   'plan-puc': () => <PlanPUC />,
   'asientos-manuales': () => <AsientosManuales />,
+  cierres: () => <Cierres />,
   'centros-costo': () => <CentrosCosto />,
   'config-perfil': () => <ConfigPerfilTributario />,
   'config-nomina': () => <ConfiguracionNomina />,

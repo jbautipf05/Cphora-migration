@@ -32,6 +32,7 @@ export default function Ventas() {
     postCustomerCollection,
     pendingForm,
     setPendingForm,
+    setState,
   } = useApp();
   const toast = useToast();
   const [q, setQ] = useState('');
@@ -175,28 +176,46 @@ export default function Ventas() {
     if (!hasContent) return toast('Agrega al menos un producto', 'warn');
     const orderDate = today();
 
-    let customerId = data.customerId || resolveCustomerId({ clientName }, { customers });
-    if (!customerId) {
-      customerId = nextId('C', 'cli', 3);
-      add('customers', {
-        id: customerId, name: clientName, tipo: 'lead',
-        phone: data.custPhone || '', email: data.custEmail || '', city: data.custCity || '',
-        address: data.custAddress || '', doc: data.custDoc || '', createdAt: orderDate,
-        asesor: data.asesor, linkedLeadId: null,
-      });
-      toast(`Cliente ${customerId} creado`, 'ok');
-    }
+    // Resolución de cliente (B2/ADR-011): usa el customerId del prefill o resuelve por nombre;
+    // si no hay, se crea uno nuevo. El id se genera síncrono (countersRef) para usarlo abajo.
+    const existing = data.customerId || resolveCustomerId({ clientName }, { customers });
+    const isNewCustomer = !existing;
+    const customerId = existing || nextId('C', 'cli', 3);
+    // EX-F2-03/EX-F2-05: cotización origen de la venta (si la hay) y su lead.
+    const srcQuote = saleQuoteId ? quotes.find((qq) => qq.id === saleQuoteId) : null;
+    const srcLeadId = srcQuote?.leadId || null;
 
-    // EX-F2-03 paso-4 retroactivo: si la venta nace de una cotización, fijar
-    // retroactivamente su customerId (estaba en null por ser pre-venta, o quedó
-    // desincronizado). Así la cascada B2 (nombre por customerId) alcanza también
-    // a la cotización origen y queda la trazabilidad quote↔customer.
-    if (saleQuoteId) {
-      const srcQuote = quotes.find((qq) => qq.id === saleQuoteId);
-      if (srcQuote && srcQuote.customerId !== customerId) {
-        update('quotes', saleQuoteId, { customerId });
-      }
-    }
+    // EX-F2-05 (fiel a saveSale de Demo6:6004/6015/6180): en TODA conversión quote→venta con lead,
+    // enlazar cliente↔lead y avanzar el estado del lead a 'Compro' (enum del seed; Demo6 usa 'ganado').
+    // EX-F2-03 paso-4: fijar el customerId de la cotización origen. Todo en UN setState ATÓMICO
+    // (mismo principio que la cascada B2 de updateCustomer): customers + quotes + leads a la vez,
+    // sin lecturas de estado intermedio (customerId/srcLeadId son valores síncronos del closure).
+    setState((s) => {
+      const customers = isNewCustomer
+        ? [{
+            id: customerId, name: clientName, tipo: 'lead',
+            phone: data.custPhone || '', email: data.custEmail || '', city: data.custCity || '',
+            address: data.custAddress || '', doc: data.custDoc || '', createdAt: orderDate,
+            asesor: data.asesor, linkedLeadId: srcLeadId || null,
+          }, ...s.customers]
+        : s.customers.map((c) =>
+            c.id === customerId && srcLeadId && !c.linkedLeadId ? { ...c, linkedLeadId: srcLeadId } : c,
+          );
+      const quotes2 = srcQuote
+        ? s.quotes.map((q) =>
+            q.id === saleQuoteId && q.customerId !== customerId ? { ...q, customerId } : q,
+          )
+        : s.quotes;
+      const leads = srcLeadId
+        ? s.leads.map((l) =>
+            l.id === srcLeadId
+              ? { ...l, estado: 'Compro', linkedCustomerId: l.linkedCustomerId || customerId }
+              : l,
+          )
+        : s.leads;
+      return { ...s, customers, quotes: quotes2, leads };
+    });
+    if (isNewCustomer) toast(`Cliente ${customerId} creado`, 'ok');
 
     const id = nextId('PED', 'ped');
     // H-035.3: el avance (paid%) se deriva del pago realmente registrado (no de un % suelto),

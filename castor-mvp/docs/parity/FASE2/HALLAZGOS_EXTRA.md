@@ -87,3 +87,54 @@ verificado mutando el estado y confirmando que el pedido refleja el nombre nuevo
 clientes) para poder ejercer B2 desde la UI. Solución: edición **inline** en el SlidePanel (no modal),
 con cascada acotada del nombre a `orders`+`quotes` por `customerId` (B2 completo). Ver
 `docs/parity/FASE3/VALIDACION_EX_F2_04.md` y `PROPUESTA_EDICION_CLIENTE.md`.
+
+---
+
+## EX-F2-05 — Conversión quote→venta no enlaza cliente↔lead ni avanza estado del lead [DETECTADO EN AUDITORÍA PRE-FASE 3] · ✅ RESUELTO en Fase 2.5.1
+
+**Ubicación:** `src/views/Ventas.jsx` `submitSale` (bloque de resolución/creación de cliente).
+
+- **Naturaleza:** gap heredado de H-035 (Fase 2) que EX-F2-03 volvió alcanzable y rutinario desde la UI.
+- **Comparación con Demo6:** `saveSale` línea **6004** setea `customer.linkedLeadId = quote.leadId`;
+  **6015** lo backfillea en cliente existente; **6180** `if (q?.leadId) l.estado='ganado'`.
+- **Estado React previo:** cliente creado con `linkedLeadId=null`; el lead quedaba en su estado original
+  (p.ej. "En gestión"); cliente↔lead desconectados → `resolveCustomerId(leadId)` (`migrations.js:16`)
+  devolvía `null` para ese lead (debilita B2).
+- **Severidad:** media (no crítico, no bloquea, sin crash/pérdida de datos; rompe paridad de embudo y B2).
+
+**✅ Fix (Fase 2.5.1, 2026-05-26):** en `submitSale`, dentro de **un único `setState` atómico** (mismo
+principio que la cascada B2 de `updateCustomer`), en **toda** conversión quote→venta con `leadId`
+(decisión del usuario: fiel a Demo6, no solo cuando se crea cliente nuevo):
+- cliente nuevo → `linkedLeadId = srcQuote.leadId`; cliente existente → backfill `linkedLeadId` si falta;
+- `lead.estado = 'Compro'` (enum del seed React; Demo6 usa `'ganado'`) — siempre, idempotente;
+- `lead.linkedCustomerId = lead.linkedCustomerId || customerId` (bidireccional, necesidad de React por
+  ADR-011; Demo6 no lo hace);
+- (se mantiene el paso-4: `quote.customerId`).
+Validado E2E (5 tests) en `docs/parity/FASE3/VALIDACION_EX_F2_05.md`.
+
+---
+
+## EX-F2-06 — `quote.pedidoId` / `quote.orderId` no se setean en conversión quote→venta [DETECTADO EN AUDITORÍA EX-F2-05]
+
+**Ubicación:** `src/views/Ventas.jsx` `submitSale`.
+
+- **Comparación con Demo6:** `saveSale` línea **6179**: `q.pedidoId = pedidoId; q.orderId = createdIds[0]`
+  (link cotización→pedido). React solo setea el inverso (`order.quoteId`), no el directo.
+- **Consumidores actuales en React:** **ninguno** (verificado por grep en `Cotizaciones.jsx`/`quotePdf.js`).
+- **Severidad:** baja (sin impacto funcional actual).
+- **Plan:** NO arreglar ahora. Registrar como deuda; reevaluar cuando un módulo de Fase 3+ lea estos campos.
+
+---
+
+## EX-F2-07 — La venta no reserva `finishedStock` ni registra `stockMoves` para ítems de stock [DETECTADO EN AUDITORÍA DE CIERRE EX-F2-05]
+
+**Ubicación:** `src/views/Ventas.jsx` `submitSale` (rama de venta estándar).
+
+- **Comparación con Demo6:** `saveSale` líneas **6126-6145**: para cada ítem `type==='stock'`, Demo6
+  descuenta `finishedStock` (marca `status:'reservado'`, asigna `orderId`/`pedidoId`), baja el `stock`
+  del producto maestro y registra un `stockMoves` `type:'salida_venta'`.
+- **Estado React:** `submitSale` **no toca** `finishedStock`, `products[].stock` ni `stockMoves` al vender.
+- **Severidad:** media — **alta relevancia para Fase 3 visual** (Almacén/Materia Prima/Despacho/Producción
+  e Inventario dependen de estos registros). Vender stock no reserva ni mueve inventario.
+- **Plan:** evaluar al portar los módulos de inventario/despacho en Fase 3. Verificar si la reserva debe
+  ocurrir en la venta (como Demo6) o en otro punto del flujo de despacho del modelo React.

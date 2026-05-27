@@ -620,19 +620,19 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
                       ))}
                     </Select>
                   </div>
-                  <div className="col-span-4 sm:col-span-2">
+                  <div className="col-span-3 sm:col-span-2">
                     <span className="label text-[10px]">Cantidad</span>
                     <Input type="number" min="1" value={it.qty} onChange={(e) => setItem(i, 'qty', Number(e.target.value))} className="text-xs" />
                   </div>
-                  <div className="col-span-4 sm:col-span-2">
+                  <div className="col-span-3 sm:col-span-2">
                     <span className="label text-[10px]">Precio unit.</span>
                     <Input type="number" readOnly value={priceOf(it.productId)} title="Precio desde lista" className="cursor-not-allowed bg-brand-navy/40 text-xs" />
                   </div>
-                  <div className="col-span-4 sm:col-span-2">
+                  <div className="col-span-3 sm:col-span-2">
                     <span className="label text-[10px]">% Desc.</span>
                     <Input type="number" min="0" max="100" value={it.disc} onChange={(e) => setItem(i, 'disc', Number(e.target.value))} className="text-xs" />
                   </div>
-                  <div className="col-span-12 sm:col-span-2">
+                  <div className="col-span-3 sm:col-span-2">
                     <span className="label text-[10px]">Total</span>
                     <div className="input-field flex items-center justify-end bg-brand-navy/30 text-xs font-semibold text-brand-gold-light">{fmtCOP(itemTotal(it))}</div>
                   </div>

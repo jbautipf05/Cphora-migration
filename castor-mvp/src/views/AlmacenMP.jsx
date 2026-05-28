@@ -12,6 +12,7 @@ import {
 } from '../components/widgets';
 import Modal from '../components/Modal';
 import { Field, Input, MoneyInput, Select, FormGrid } from '../components/form';
+import { Combobox } from '../components/Combobox';
 import { useToast } from '../components/Toast';
 import {
   IconBox,
@@ -1006,7 +1007,7 @@ export default function AlmacenMP() {
             <Field label="Contacto"><Input value={supForm.contact} onChange={(e) => setSupForm((f) => ({ ...f, contact: e.target.value }))} /></Field>
             <Field label="Teléfono"><Input value={supForm.phone} onChange={(e) => setSupForm((f) => ({ ...f, phone: e.target.value }))} /></Field>
             <Field label="Correo"><Input value={supForm.email} onChange={(e) => setSupForm((f) => ({ ...f, email: e.target.value }))} /></Field>
-            <Field label="Ciudad"><Input value={supForm.city} onChange={(e) => setSupForm((f) => ({ ...f, city: e.target.value }))} /></Field>
+            <Field label="Ciudad"><Combobox value={supForm.city} onChange={(e) => setSupForm((f) => ({ ...f, city: e.target.value }))} /></Field>
             <Field label="País *"><Input value={supForm.pais} onChange={(e) => setSupForm((f) => ({ ...f, pais: e.target.value }))} /></Field>
             <Field label="Dirección *"><Input value={supForm.address} onChange={(e) => setSupForm((f) => ({ ...f, address: e.target.value }))} /></Field>
             <Field label="Actividad Económica *" className="sm:col-span-2"><Input value={supForm.actividadEconomica} onChange={(e) => setSupForm((f) => ({ ...f, actividadEconomica: e.target.value }))} placeholder="Ej: Comercio al por mayor de madera" /></Field>

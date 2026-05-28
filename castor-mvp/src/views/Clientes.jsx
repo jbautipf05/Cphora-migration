@@ -5,6 +5,7 @@ import { fmtCOP } from '../lib/accounting';
 import { fmtDate, daysBetween, today, nowISO } from '../lib/format';
 import { DataTable, SlidePanel, ClearFiltersButton } from '../components/widgets';
 import { Field, Input, Select } from '../components/form';
+import { Combobox } from '../components/Combobox';
 import { IconUsers, IconCheck, IconBadge, IconPhone } from '../components/icons';
 import { useToast } from '../components/Toast';
 
@@ -415,7 +416,7 @@ export default function Clientes() {
                       {editErrors.email && <span className="mt-1 block text-xs text-red-400">{editErrors.email}</span>}
                     </Field>
                     <Field label="Ciudad">
-                      <Input value={draft.city || ''} onChange={(e) => setD('city', e.target.value)} />
+                      <Combobox value={draft.city || ''} onChange={(e) => setD('city', e.target.value)} />
                     </Field>
                     <Field label="Dirección">
                       <Input value={draft.address || ''} onChange={(e) => setD('address', e.target.value)} />

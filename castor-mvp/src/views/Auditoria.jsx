@@ -16,7 +16,7 @@ import { useToast } from '../components/Toast';
 export default function Auditoria() {
   const {
     orders, products, customers, payments, bankAccounts,
-    employees, invoiceRequests, supplies, finishedStock, warehouses, quotes,
+    employees, invoiceRequests, supplies, supplyIssues, finishedStock, warehouses, quotes,
     update, add, nextId, setState, currentUser, pushNotification,
   } = useApp();
   const toast = useToast();
@@ -439,6 +439,41 @@ export default function Auditoria() {
                   return a + (s ? (Number(s.cost) || 0) * (Number(b.qty) || 0) : 0);
                 }, 0) || (Number(p?.cost) || 0);
                 const costoMaster = costoUnit * qty;
+                // Costo real = suma de consumos efectivos de la OP (espejo Demo6:7569).
+                // Solo se cuentan supplyIssues type !== 'devolucion' (las devoluciones
+                // descontarían stock pero no son "costo real consumido").
+                const realCons = (supplyIssues || []).filter(
+                  (si) => (si.orderIds || []).includes(o.id) && si.type !== 'devolucion',
+                );
+                const costoReal = realCons.reduce(
+                  (a, si) =>
+                    a +
+                    (si.items || []).reduce((b, it) => {
+                      const s = supplies.find((x) => x.id === it.supplyId);
+                      return b + (Number(it.qty) || 0) * (Number(s?.cost) || 0);
+                    }, 0),
+                  0,
+                );
+                // Desviación % vs costo master (espejo Demo6:7569). Si master=0,
+                // desv=0 para no mostrar Infinity/NaN.
+                const desv = costoMaster > 0
+                  ? Math.round(((costoReal - costoMaster) / costoMaster) * 100)
+                  : 0;
+                // Color condicional (espejo Demo6:7589-7590). Real: rojo si >+15%,
+                // ámbar si >+5%, verde en otro caso. Desv: rojo si |desv|>15, ámbar
+                // si |desv|>5, verde en otro caso (cubre desviaciones negativas
+                // grandes también — bajo-consumo extremo es señal de medir).
+                const realCls = costoReal > costoMaster * 1.15
+                  ? 'text-red-400'
+                  : costoReal > costoMaster * 1.05
+                    ? 'text-amber-400'
+                    : 'text-emerald-400';
+                const desvAbs = Math.abs(desv);
+                const desvCls = desvAbs > 15
+                  ? 'text-red-400'
+                  : desvAbs > 5
+                    ? 'text-amber-400'
+                    : 'text-emerald-400';
                 const aprobado = !!o.auditApproved;
                 const opCerrada = o.opClosed || o.estado === 'op_cerrada';
                 const productoCreado = !!(finishedStock || []).find((f) => f.orderId === o.id && f.source === 'produccion');
@@ -454,8 +489,8 @@ export default function Auditoria() {
                     <td className="px-3 py-3 text-xs text-white">{p ? p.name : '—'} <span className="text-brand-muted">×{qty}</span></td>
                     <td className="px-3 py-3 text-right text-brand-gold-light">{fmtCOP(o.total)}</td>
                     <td className="px-3 py-3 text-right text-white">{fmtCOP(costoMaster)}</td>
-                    <td className="px-3 py-3 text-right text-emerald-400">{fmtCOP(0)}</td>
-                    <td className="px-3 py-3 text-right font-semibold text-emerald-400">0%</td>
+                    <td className={`px-3 py-3 text-right ${realCls}`}>{fmtCOP(costoReal)}</td>
+                    <td className={`px-3 py-3 text-right font-semibold ${desvCls}`}>{desv > 0 ? '+' : ''}{desv}%</td>
                     <td className="px-3 py-3">{estadoChip}</td>
                     <td className="px-3 py-3 text-right">
                       <div className="flex flex-col items-end gap-1">

@@ -3,6 +3,7 @@ import { useApp } from '../store/AppContext';
 import { calcPayrollPreview, fmtCOP } from '../lib/accounting';
 import { Panel, Badge } from '../components/ui';
 import { IconCheck, IconPlus, IconTrash } from '../components/icons';
+import { MoneyInput } from '../components/form';
 import { useToast } from '../components/Toast';
 import { today } from '../lib/format';
 
@@ -17,6 +18,28 @@ function TextField({ label, value, onChange, type = 'text', suffix, ...rest }) {
           value={value}
           onChange={(e) => onChange(type === 'number' ? e.target.valueAsNumber || 0 : e.target.value)}
           className="input-field"
+          {...rest}
+        />
+        {suffix && (
+          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted">
+            {suffix}
+          </span>
+        )}
+      </div>
+    </label>
+  );
+}
+
+// MoneyField — wrapper local para campos de dinero con separadores de miles.
+// Mismo API que TextField type="number" (onChange recibe Number) pero usa MoneyInput.
+function MoneyField({ label, value, onChange, suffix, ...rest }) {
+  return (
+    <label className="block">
+      <span className="label">{label}</span>
+      <div className="relative">
+        <MoneyInput
+          value={value}
+          onChange={(e) => onChange(Number(e.target.value) || 0)}
           {...rest}
         />
         {suffix && (
@@ -178,9 +201,8 @@ export default function ConfiguracionNomina() {
             onChange={(v) => setTaxField('tarifaICAporMil', v)}
             suffix="‰"
           />
-          <TextField
+          <MoneyField
             label="UVT vigente"
-            type="number"
             value={tax.uvtVigente}
             onChange={(v) => setTaxField('uvtVigente', v)}
             suffix="COP"
@@ -204,8 +226,8 @@ export default function ConfiguracionNomina() {
           <div>
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gold-accent/80">Bases salariales</p>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <TextField label="SMMLV" type="number" value={params.smmlv} onChange={(v) => setParamField('smmlv', v)} suffix="COP" />
-              <TextField label="Auxilio de transporte" type="number" value={params.auxTransporte} onChange={(v) => setParamField('auxTransporte', v)} suffix="COP" />
+              <MoneyField label="SMMLV" value={params.smmlv} onChange={(v) => setParamField('smmlv', v)} suffix="COP" />
+              <MoneyField label="Auxilio de transporte" value={params.auxTransporte} onChange={(v) => setParamField('auxTransporte', v)} suffix="COP" />
               <TextField label="Tope auxilio (× SMMLV)" type="number" step="0.5" value={params.auxTransporteTopeSmmlv} onChange={(v) => setParamField('auxTransporteTopeSmmlv', v)} />
               <TextField label="Exoneración Ley 1607 (× SMMLV)" type="number" value={params.exoneracionLey1607Smmlv} onChange={(v) => setParamField('exoneracionLey1607Smmlv', v)} />
             </div>
@@ -337,7 +359,7 @@ export default function ConfiguracionNomina() {
                 <TextField label="Número" value={b.number} onChange={(v) => setBankField(b.id, 'number', v)} />
               </div>
               <div className="md:col-span-3">
-                <TextField label="Saldo" type="number" value={b.balance} onChange={(v) => setBankField(b.id, 'balance', v)} suffix="COP" />
+                <MoneyField label="Saldo" value={b.balance} onChange={(v) => setBankField(b.id, 'balance', v)} suffix="COP" />
               </div>
               <div className="md:col-span-1 flex justify-center">
                 <button

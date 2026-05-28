@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useApp } from '../store/AppContext';
 import { Panel, Badge } from '../components/ui';
-import { Field, Input, Select } from '../components/form';
+import { Field, Input, MoneyInput, Select } from '../components/form';
 import { useToast } from '../components/Toast';
 
 // Configuración del perfil tributario de la empresa.
@@ -61,8 +61,7 @@ export default function ConfigPerfilTributario() {
             </Select>
           </Field>
           <Field label="UVT vigente (2026)">
-            <Input
-              type="number"
+            <MoneyInput
               value={form.uvtVigente}
               onChange={(e) => setF('uvtVigente', Number(e.target.value))}
             />

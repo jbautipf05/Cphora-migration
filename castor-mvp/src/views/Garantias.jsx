@@ -5,7 +5,7 @@ import { fmtCOP, fmtDate, today, nowISO, addDays } from '../lib/format';
 import { Toolbar, DataTable, SlidePanel } from '../components/widgets';
 import { IconShield, IconCheck, IconDoc } from '../components/icons';
 import Modal from '../components/Modal';
-import { Field, Input, Select, Textarea, FormGrid } from '../components/form';
+import { Field, Input, MoneyInput, Select, Textarea, FormGrid } from '../components/form';
 import { useToast } from '../components/Toast';
 
 const ESTADOS = ['abierta', 'en_proceso', 'resuelta', 'cerrada'];
@@ -456,7 +456,7 @@ export default function Garantias() {
         {costForm && (
           <FormGrid cols={1}>
             <Field label="Concepto"><Input value={costForm.concept} onChange={(e) => setCostForm((f) => ({ ...f, concept: e.target.value }))} placeholder="Tela, mano de obra, espuma…" /></Field>
-            <Field label="Monto (COP)"><Input type="number" min="0" value={costForm.amount} onChange={(e) => setCostForm((f) => ({ ...f, amount: e.target.value }))} /></Field>
+            <Field label="Monto (COP)"><MoneyInput value={costForm.amount} onChange={(e) => setCostForm((f) => ({ ...f, amount: e.target.value }))} /></Field>
             <Field label="Fuente del costo">
               <Select value={costForm.source} onChange={(e) => setCostForm((f) => ({ ...f, source: e.target.value }))}>
                 <option value="caja">Caja menor (CR 110510)</option>

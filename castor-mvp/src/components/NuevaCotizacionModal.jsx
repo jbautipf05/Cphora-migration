@@ -3,7 +3,7 @@ import { useApp } from '../store/AppContext';
 import { fmtCOP, nowISO, addDays, today } from '../lib/format';
 import { resolveCustomerId } from '../lib/migrations';
 import Modal from './Modal';
-import { Field, Input, Select, Textarea, FormGrid } from './form';
+import { Field, Input, MoneyInput, Select, Textarea, FormGrid } from './form';
 import { useToast } from './Toast';
 
 // Modal "Nueva cotización" reutilizable (H-010). Se usa desde Cotizaciones y desde
@@ -337,7 +337,7 @@ export default function NuevaCotizacionModal({ open, leadId = null, initialForm 
                     <Input type="number" min="1" value={it.qty} onChange={(e) => setItem(i, { qty: Number(e.target.value) })} className="!text-xs" />
                   </div>
                   <div className="col-span-2">
-                    <Input type="number" readOnly value={it.price} title="Precio desde lista (no editable)" className="!text-xs cursor-not-allowed bg-brand-navy/40" />
+                    <MoneyInput readOnly value={it.price} title="Precio desde lista (no editable)" className="!text-xs cursor-not-allowed bg-brand-navy/40" />
                   </div>
                   <button className="col-span-1 text-lg text-red-400" onClick={() => rmItem(i)}>×</button>
                 </div>

@@ -6,7 +6,7 @@ import { resolveCustomerId } from '../lib/migrations';
 import { Toolbar, SearchBox, SelectFilter, DataTable, EstadoBadge, ProgressBar, SlidePanel, ClearFiltersButton } from '../components/widgets';
 import { IconCart, IconBank, IconCheck } from '../components/icons';
 import Modal from '../components/Modal';
-import { Field, Input, Select } from '../components/form';
+import { Field, MoneyInput, Select } from '../components/form';
 import NuevaVentaModal from '../components/NuevaVentaModal';
 import { useToast } from '../components/Toast';
 
@@ -657,7 +657,7 @@ export default function Ventas() {
       >
         {pay && (
           <div className="space-y-4">
-            <Field label="Monto (COP)"><Input type="number" value={pay.amount} onChange={(e) => setPay((p) => ({ ...p, amount: e.target.value }))} /></Field>
+            <Field label="Monto (COP)"><MoneyInput value={pay.amount} onChange={(e) => setPay((p) => ({ ...p, amount: e.target.value }))} /></Field>
             <Field label="Método">
               <Select value={pay.method} onChange={(e) => setPay((p) => ({ ...p, method: e.target.value }))}>
                 {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}

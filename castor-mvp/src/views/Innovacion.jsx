@@ -4,7 +4,7 @@ import { KpiCard } from '../components/ui';
 import { fmtCOP } from '../lib/format';
 import { IconBox, IconCheck, IconShield, IconBulb } from '../components/icons';
 import Modal from '../components/Modal';
-import { Field, Input, Select, FormGrid } from '../components/form';
+import { Field, Input, MoneyInput, Select, FormGrid } from '../components/form';
 import { useToast } from '../components/Toast';
 import { PROD_AREAS, PRODUCT_CATEGORIES } from '../data/erpSeed';
 
@@ -401,8 +401,8 @@ export default function Innovacion() {
             </div>
 
             <FormGrid cols={3}>
-              <Field label="Costo final *"><Input type="number" value={form.cost} onChange={(e) => setForm((f) => ({ ...f, cost: e.target.value, costTouched: true }))} /></Field>
-              <Field label="Precio venta *"><Input type="number" value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} /></Field>
+              <Field label="Costo final *"><MoneyInput value={form.cost} onChange={(e) => setForm((f) => ({ ...f, cost: e.target.value, costTouched: true }))} /></Field>
+              <Field label="Precio venta *"><MoneyInput value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} /></Field>
               <Field label="Margen"><div className="input-field text-center font-bold text-brand-gold">{formMargin(form)}%</div></Field>
             </FormGrid>
             <p className="text-xs text-brand-muted">💡 Sugerencia BOM: {fmtCOP(formBomCost)} — puedes ajustar el costo final manualmente.</p>
@@ -502,8 +502,8 @@ export default function Innovacion() {
             </div>
 
             <FormGrid cols={3}>
-              <Field label="Costo final *"><Input type="number" value={edit.cost || 0} onChange={(e) => setEdit((f) => ({ ...f, cost: e.target.value, costTouched: true }))} /></Field>
-              <Field label="Precio venta *"><Input type="number" value={edit.price || 0} onChange={(e) => setEdit((f) => ({ ...f, price: e.target.value }))} /></Field>
+              <Field label="Costo final *"><MoneyInput value={edit.cost || 0} onChange={(e) => setEdit((f) => ({ ...f, cost: e.target.value, costTouched: true }))} /></Field>
+              <Field label="Precio venta *"><MoneyInput value={edit.price || 0} onChange={(e) => setEdit((f) => ({ ...f, price: e.target.value }))} /></Field>
               <Field label="Margen">
                 {(() => {
                   const m = Number(edit.price) > 0 ? Math.round((Number(edit.price) - Number(edit.cost)) / Number(edit.price) * 100) : 0;

@@ -6,7 +6,7 @@ import { Tabs, DataTable, EstadoBadge } from '../components/widgets';
 import Chart from '../components/Chart';
 import { IconBank, IconCheck, IconShield, IconBook } from '../components/icons';
 import Modal from '../components/Modal';
-import { Field, Input, Select, FormGrid } from '../components/form';
+import { Field, Input, MoneyInput, Select, FormGrid } from '../components/form';
 import { useToast } from '../components/Toast';
 
 const METHODS = ['Transferencia', 'Efectivo', 'Cheque', 'Tarjeta'];
@@ -315,7 +315,7 @@ export default function Tesoreria() {
               </Select>
             </Field>
             <Field label="Concepto" className="sm:col-span-2"><Input value={out.concepto} onChange={(e) => setO('concepto', e.target.value)} /></Field>
-            <Field label="Monto (COP)"><Input type="number" value={out.amount} onChange={(e) => setO('amount', e.target.value)} /></Field>
+            <Field label="Monto (COP)"><MoneyInput value={out.amount} onChange={(e) => setO('amount', e.target.value)} /></Field>
             <Field label="Método">
               <Select value={out.method} onChange={(e) => setO('method', e.target.value)}>
                 {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
@@ -356,7 +356,7 @@ export default function Tesoreria() {
             <Field label="Nº cuenta (4 últimos)"><Input value={bankForm.number} onChange={(e) => setB('number', e.target.value)} /></Field>
             <Field label="Titular"><Input value={bankForm.holder} onChange={(e) => setB('holder', e.target.value)} /></Field>
             {bankForm.mode === 'new' && (
-              <Field label="Saldo inicial (COP)"><Input type="number" min="0" value={bankForm.balance} onChange={(e) => setB('balance', e.target.value)} /></Field>
+              <Field label="Saldo inicial (COP)"><MoneyInput value={bankForm.balance} onChange={(e) => setB('balance', e.target.value)} /></Field>
             )}
             <Field label="Color (hex)"><Input value={bankForm.color} onChange={(e) => setB('color', e.target.value)} placeholder="#C9A961" /></Field>
             {bankForm.mode === 'new' && (

@@ -400,10 +400,29 @@ export function postCustomerAdvance(payment, ctx) {
 }
 
 // ── postSupplyPurchase ──────────────────────────────────────────────────────
-// Recibe `receipt = { id, date, supplierId, supplierName, items:[{qty,cost}]|amount, ivaRate? }`.
+// Recibe `receipt = { id, date, supplierId, supplierName, items:[{qty,cost}]|amount, ivaRate?, reteRate? }`.
 // Genera: Inventario MP DR / IVA descontable DR (si aplica) / Retenciones CR / CxP CR.
-// Versión simplificada del original: usa cuentas 140505 (MP), 240810 (IVA desc),
-// 236540 (Rete compras), 220505 (CxP nacionales).
+// Defaults: 140505 MP / 240810 IVA desc / 236540 Rete compras / 220505 CxP.
+// TD-07 R-2a: lee accountingMappings.supply_purchase con fallback a defaults.
+// IVA por taxRules.isDefault (account_descontable); RTF compras por la regla
+// RTF-25 (id fijo) o cualquier regla rete_fuente con conceptCode='COMP'.
+const PURCHASE_DEFAULTS = {
+  inventory_raw: '140505',
+  iva_descontable: '240810',
+  payable: '220505',
+  rete_fuente_practiced: '236540',
+};
+
+function resolveDefaultRteFteCompras(taxRules) {
+  if (!Array.isArray(taxRules)) return null;
+  // Busca explicitamente RTF-25 (compras) o la primera regla rete_fuente con conceptCode='COMP'.
+  return (
+    taxRules.find((r) => r.type === 'rete_fuente' && r.conceptCode === 'COMP') ||
+    taxRules.find((r) => r.id === 'RTF-25') ||
+    null
+  );
+}
+
 export function postSupplyPurchase(receipt, ctx) {
   if (!receipt) return { error: 'no_receipt' };
   const items = Array.isArray(receipt.items)
@@ -420,8 +439,13 @@ export function postSupplyPurchase(receipt, ctx) {
   if (!base && receipt.amount) base = +receipt.amount || 0;
   if (base <= 0) return { error: 'no_base', message: 'Base imponible cero' };
 
-  const ivaRate = receipt.ivaRate ?? 0.19;
-  const reteRate = receipt.reteRate ?? 0.025; // Rete-fte compras 2.5% por defecto
+  const m = { ...PURCHASE_DEFAULTS, ...(ctx?.accountingMappings?.supply_purchase || {}) };
+  const ivaRule = resolveDefaultIvaRule(ctx?.taxRules);
+  const rteRule = resolveDefaultRteFteCompras(ctx?.taxRules);
+
+  // Override por payload (back-compat); si no, tomar de taxRules; si no, defaults.
+  const ivaRate = receipt.ivaRate ?? (ivaRule ? +ivaRule.rate || 0 : 0.19);
+  const reteRate = receipt.reteRate ?? (rteRule ? +rteRule.rate || 0 : 0.025);
   const iva = round(base * ivaRate);
   const reteFte = round(base * reteRate);
   const totalNeto = round(base + iva - reteFte);
@@ -429,25 +453,31 @@ export function postSupplyPurchase(receipt, ctx) {
   const thirdParty = receipt.supplierId || receipt.supplierName || null;
   const supplierLabel = receipt.supplierName || receipt.supplierId || 'Proveedor';
 
+  // Cuentas: tax rule > mapping > default.
+  const cuentaInv = m.inventory_raw;
+  const cuentaIVADesc = ivaRule?.account_descontable || m.iva_descontable;
+  const cuentaRTF = rteRule?.account || m.rete_fuente_practiced;
+  const cuentaCxP = m.payable;
+
   const lines = [
     {
-      accountCode: '140505',
+      accountCode: cuentaInv,
       debit: round(base),
       credit: 0,
       description: `MP ${receipt.id || ''}`,
     },
   ];
-  if (iva > 0) {
+  if (iva > 0 && cuentaIVADesc) {
     lines.push({
-      accountCode: '240810',
+      accountCode: cuentaIVADesc,
       debit: iva,
       credit: 0,
       description: `IVA descontable ${receipt.id || ''}`,
     });
   }
-  if (reteFte > 0) {
+  if (reteFte > 0 && cuentaRTF) {
     lines.push({
-      accountCode: '236540',
+      accountCode: cuentaRTF,
       debit: 0,
       credit: reteFte,
       thirdParty,
@@ -455,7 +485,7 @@ export function postSupplyPurchase(receipt, ctx) {
     });
   }
   lines.push({
-    accountCode: '220505',
+    accountCode: cuentaCxP,
     debit: 0,
     credit: totalNeto,
     thirdParty,

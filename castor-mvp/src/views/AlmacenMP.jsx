@@ -338,7 +338,9 @@ export default function AlmacenMP() {
         if (idx !== i) return r;
         if (k === 'supplyId') {
           const s = supplies.find((x) => x.id === v);
-          return { ...r, supplyId: v, unit: s?.unitOut || s?.unit || '' };
+          // Al cambiar el insumo en una fila auto, se vuelve manual para que el cambio
+          // sobreviva a un re-toggle de OPs (que reconstruye solo las filas auto).
+          return { ...r, supplyId: v, unit: s?.unitOut || s?.unit || '', auto: false };
         }
         return { ...r, [k]: v };
       }),
@@ -1213,25 +1215,93 @@ export default function AlmacenMP() {
                 <p className="text-xs italic text-muted">Marca OPs para cargar el BOM, o agrega ítems manuales.</p>
               ) : (
                 <div className="space-y-2">
+                  {/* Headers — paridad Demo6 grid 12 col (~L2528). */}
+                  <div className="grid grid-cols-12 items-center gap-2 px-2 text-[10px] uppercase tracking-wide text-muted">
+                    <div className="col-span-4">Insumo</div>
+                    <div className="col-span-2">Cant. manual</div>
+                    <div className="col-span-2">Unidad</div>
+                    <div className="col-span-2 text-right">Costo unit. (última)</div>
+                    <div className="col-span-1 text-right">Subtotal</div>
+                    <div className="col-span-1" aria-hidden />
+                  </div>
                   {issForm.items.map((it, i) => {
                     const cost = supplyCost(it.supplyId);
                     const sub = (Number(it.qty) || 0) * cost;
                     const ins = supplies.find((s) => s.id === it.supplyId);
+                    const stockInsuf =
+                      issForm.type === 'salida' && ins && (ins.stock || 0) < (Number(it.qty) || 0);
                     return (
-                      <div key={i} className="flex flex-wrap items-center gap-2">
-                        <select value={it.supplyId} onChange={(e) => setIssItem(i, 'supplyId', e.target.value)} className="input-field flex-1 py-1 text-xs" style={{ minWidth: 150 }} disabled={it.auto}>
-                          <option value="">— insumo —</option>
-                          {supplies.map((s) => <option key={s.id} value={s.id}>{s.name} · stock {s.stock}</option>)}
-                        </select>
-                        <input type="number" min="0" step="0.01" value={it.qty} onChange={(e) => setIssItem(i, 'qty', e.target.value)} placeholder="cant." className="input-field w-20 py-1 text-xs" />
-                        <input value={it.unit} readOnly className="input-field w-16 py-1 text-xs opacity-70" title="Unidad" />
-                        <span className="w-24 text-right text-xs tabular-nums text-muted" title="Costo última entrada">{fmtCOP(cost)}</span>
-                        <span className="w-24 text-right text-xs tabular-nums text-white">{sub > 0 ? fmtCOP(sub) : '—'}</span>
-                        {it.auto && <span className="text-[10px] text-muted">BOM</span>}
-                        {issForm.type === 'salida' && ins && (ins.stock || 0) < (Number(it.qty) || 0) && (
-                          <span className="text-[10px] text-red-400" title="Stock insuficiente">⚠</span>
-                        )}
-                        <button type="button" className="text-red-300 hover:text-red-200" onClick={() => delIssItem(i)}>×</button>
+                      <div key={i} className="grid grid-cols-12 items-center gap-2">
+                        {/* Insumo — editable siempre (paridad Demo6); badge BOM inline */}
+                        <div className="col-span-4 flex items-center gap-1">
+                          <select
+                            value={it.supplyId}
+                            onChange={(e) => setIssItem(i, 'supplyId', e.target.value)}
+                            className="input-field flex-1 py-1 text-xs"
+                          >
+                            <option value="">— insumo —</option>
+                            {supplies.map((s) => (
+                              <option key={s.id} value={s.id}>{s.name} · stock {s.stock}</option>
+                            ))}
+                          </select>
+                          {it.auto && (
+                            <span
+                              className="rounded border border-gold-accent/30 bg-gold-accent/10 px-1 text-[9px] font-semibold uppercase text-gold-accent"
+                              title="Sugerido por BOM (se desmarca si cambias el insumo)"
+                            >
+                              BOM
+                            </span>
+                          )}
+                        </div>
+                        {/* Cant. manual + ⚠ stock insuficiente */}
+                        <div className="col-span-2 flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={it.qty}
+                            onChange={(e) => setIssItem(i, 'qty', e.target.value)}
+                            placeholder="0"
+                            className="input-field flex-1 py-1 text-xs"
+                          />
+                          {stockInsuf && (
+                            <span
+                              className="text-[11px] text-red-400"
+                              title={`Stock insuficiente (${ins.stock})`}
+                            >
+                              ⚠
+                            </span>
+                          )}
+                        </div>
+                        {/* Unidad (read-only) */}
+                        <input
+                          value={it.unit}
+                          readOnly
+                          className="input-field col-span-2 py-1 text-xs opacity-70"
+                          title="Unidad"
+                        />
+                        {/* Costo unit. (última) */}
+                        <span
+                          className="col-span-2 text-right text-xs tabular-nums text-muted"
+                          title="Costo última entrada"
+                        >
+                          {fmtCOP(cost)}
+                        </span>
+                        {/* Subtotal */}
+                        <span className="col-span-1 text-right text-xs tabular-nums text-white">
+                          {sub > 0 ? fmtCOP(sub) : '—'}
+                        </span>
+                        {/* Acción (sin confirmación: modal es draft hasta Registrar) */}
+                        <div className="col-span-1 text-right">
+                          <button
+                            type="button"
+                            className="text-red-300 hover:text-red-200"
+                            onClick={() => delIssItem(i)}
+                            title="Eliminar línea"
+                          >
+                            ×
+                          </button>
+                        </div>
                       </div>
                     );
                   })}

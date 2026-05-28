@@ -7,7 +7,7 @@ import { IconBox, IconTag, IconBank, IconShield } from '../components/icons';
 import { useToast } from '../components/Toast';
 import { exportPriceListPDF } from '../lib/priceListPdf';
 import Modal from '../components/Modal';
-import { Field, Input, Select, Textarea } from '../components/form';
+import { Field, Input, MoneyInput, Select, Textarea } from '../components/form';
 import { uid } from '../lib/format';
 
 // Lista de precios — catálogo de productos con filtros completos.
@@ -318,7 +318,7 @@ export default function ListaPrecios() {
                     {categorias.map((c) => <option key={c} value={c}>{c}</option>)}
                   </Select>
                 </Field>
-                <Field label="Precio comercial *"><Input type="number" min="0" value={form.price} onChange={(e) => setField('price', Number(e.target.value))} /></Field>
+                <Field label="Precio comercial *"><MoneyInput value={form.price} onChange={(e) => setField('price', Number(e.target.value))} /></Field>
                 <Field className="sm:col-span-2" label="Descripción corta / detalles de materiales">
                   <Textarea rows={2} value={form.description} onChange={(e) => setField('description', e.target.value)} placeholder="Ej: estructura de madera sólida, tapizado en tela…" />
                 </Field>

@@ -5,6 +5,7 @@ import { Panel, Badge } from '../components/ui';
 import { PUC_CATALOG, PUC_BY_CODE } from '../data/pucCatalog';
 import { fmtCOP } from '../lib/accounting';
 import { today } from '../lib/format';
+import { MoneyInput } from '../components/form';
 import { IconPlus, IconTrash, IconCheck } from '../components/icons';
 
 // Cuentas auxiliares (level 6) disponibles para asientos manuales.
@@ -156,25 +157,21 @@ export default function AsientosManuales() {
                       />
                     </td>
                     <td className="py-2 pr-2">
-                      <input
-                        type="number"
-                        min="0"
+                      <MoneyInput
                         value={l.debit}
                         onChange={(e) =>
                           updateLine(i, { debit: e.target.value, credit: 0 })
                         }
-                        className="input-field text-right tabular-nums"
+                        className="text-right tabular-nums"
                       />
                     </td>
                     <td className="py-2 pr-2">
-                      <input
-                        type="number"
-                        min="0"
+                      <MoneyInput
                         value={l.credit}
                         onChange={(e) =>
                           updateLine(i, { credit: e.target.value, debit: 0 })
                         }
-                        className="input-field text-right tabular-nums"
+                        className="text-right tabular-nums"
                       />
                     </td>
                     <td className="py-2">

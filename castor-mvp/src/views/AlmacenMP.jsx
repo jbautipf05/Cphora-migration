@@ -11,7 +11,7 @@ import {
   ClearFiltersButton,
 } from '../components/widgets';
 import Modal from '../components/Modal';
-import { Field, Input, Select, FormGrid } from '../components/form';
+import { Field, Input, MoneyInput, Select, FormGrid } from '../components/form';
 import { useToast } from '../components/Toast';
 import {
   IconBox,
@@ -965,7 +965,7 @@ export default function AlmacenMP() {
                   {SUPPLY_CATS.map((c) => <option key={c} value={c}>{c}</option>)}
                 </Select>
               </Field>
-              <Field label="Costo / Unidad *"><Input type="number" value={supplyForm.cost} onChange={(e) => setSupplyForm((f) => ({ ...f, cost: e.target.value }))} /></Field>
+              <Field label="Costo / Unidad *"><MoneyInput value={supplyForm.cost} onChange={(e) => setSupplyForm((f) => ({ ...f, cost: e.target.value }))} /></Field>
               <Field label="Proveedor">
                 <Select value={supplyForm.supplierId} onChange={(e) => setSupplyForm((f) => ({ ...f, supplierId: e.target.value }))}>
                   {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -1063,7 +1063,7 @@ export default function AlmacenMP() {
                       </select>
                       <input value={it.unit} readOnly placeholder="unidad" className="input-field w-20 py-1 text-xs opacity-70" title="Unidad del insumo" />
                       <input type="number" min="0" step="1" value={it.qty} onChange={(e) => setOcItem(i, 'qty', e.target.value)} placeholder="cant." className="input-field w-20 py-1 text-xs" />
-                      <input type="number" min="0" value={it.cost} onChange={(e) => setOcItem(i, 'cost', e.target.value)} placeholder="costo" className="input-field w-28 py-1 text-xs" title="Costo unitario" />
+                      <MoneyInput value={it.cost} onChange={(e) => setOcItem(i, 'cost', e.target.value)} placeholder="costo" className="w-28 py-1 text-xs" title="Costo unitario" />
                       <span className="w-28 text-right text-xs tabular-nums text-muted" title="Total de línea (cant × costo)">{sub > 0 ? fmtCOP(sub) : '—'}</span>
                       <button type="button" className="text-red-300 hover:text-red-200" onClick={() => delOcItem(i)}>×</button>
                     </div>
@@ -1142,7 +1142,7 @@ export default function AlmacenMP() {
                         <span className="w-16 text-right text-[11px] text-muted" title="Saldo pendiente">saldo {it.saldo}</span>
                         <input value={it.unit} readOnly className="input-field w-16 py-1 text-xs opacity-70" title="Unidad" />
                         <input type="number" min="0" value={it.qty} onChange={(e) => setRecItem(i, 'qty', e.target.value)} placeholder="recibir" className="input-field w-20 py-1 text-xs" title="Cantidad recibida" />
-                        <input type="number" min="0" value={it.cost} onChange={(e) => setRecItem(i, 'cost', e.target.value)} placeholder="costo" className="input-field w-28 py-1 text-xs" title="Costo unitario" />
+                        <MoneyInput value={it.cost} onChange={(e) => setRecItem(i, 'cost', e.target.value)} placeholder="costo" className="w-28 py-1 text-xs" title="Costo unitario" />
                         <span className="w-28 text-right text-xs tabular-nums text-muted">{sub > 0 ? fmtCOP(sub) : '—'}</span>
                       </div>
                     );

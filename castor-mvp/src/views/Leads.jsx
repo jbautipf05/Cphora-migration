@@ -5,7 +5,7 @@ import { fmtCOP, fmtDate, fmtDateTime, nowISO, daysBetween, today } from '../lib
 import { Toolbar, SearchBox, SelectFilter, DataTable, EstadoBadge, SlidePanel, ClearFiltersButton } from '../components/widgets';
 import Modal from '../components/Modal';
 import NuevaCotizacionModal from '../components/NuevaCotizacionModal';
-import { Field, Input, Select, Textarea, FormGrid } from '../components/form';
+import { Field, Input, MoneyInput, Select, Textarea, FormGrid } from '../components/form';
 import { useToast } from '../components/Toast';
 import { IconBell, IconUsers } from '../components/icons';
 
@@ -804,7 +804,7 @@ export default function Leads() {
             </div>
 
             <Field label="Valor estimado (COP)" hint="Calculado de los productos de interés">
-              <Input type="number" readOnly value={leadValor} title="Auto — no editable" className="cursor-not-allowed bg-brand-navy/40" />
+              <MoneyInput readOnly value={leadValor} title="Auto — no editable" className="cursor-not-allowed bg-brand-navy/40" />
             </Field>
           </FormGrid>
         )}

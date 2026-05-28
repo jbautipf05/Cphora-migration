@@ -5,7 +5,7 @@ import { EstadoBadge } from '../components/widgets';
 import { fmtCOP, fmtDate, today, addDays, nowISO, uid } from '../lib/format';
 import { IconShield, IconBox, IconDoc } from '../components/icons';
 import Modal from '../components/Modal';
-import { Field, Input, Select, FormGrid } from '../components/form';
+import { Field, Input, MoneyInput, Select, FormGrid } from '../components/form';
 import { useToast } from '../components/Toast';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -677,7 +677,7 @@ export default function Auditoria() {
               </Select>
             </Field>
             <Field label="Cantidad"><Input type="number" min="1" value={edit.qty} onChange={(e) => setEdit((s) => ({ ...s, qty: e.target.value }))} /></Field>
-            <Field label="Total (COP)"><Input type="number" value={edit.total} onChange={(e) => setEdit((s) => ({ ...s, total: e.target.value }))} /></Field>
+            <Field label="Total (COP)"><MoneyInput value={edit.total} onChange={(e) => setEdit((s) => ({ ...s, total: e.target.value }))} /></Field>
             <Field label="Asesor" className="sm:col-span-2"><Input value={edit.asesor || ''} onChange={(e) => setEdit((s) => ({ ...s, asesor: e.target.value }))} /></Field>
           </FormGrid>
         )}

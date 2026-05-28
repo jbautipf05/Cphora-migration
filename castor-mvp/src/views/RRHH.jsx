@@ -5,7 +5,7 @@ import { fmtCOP, fmtDate, today, daysBetween } from '../lib/format';
 import { Toolbar, SearchBox, SelectFilter, DataTable, EstadoBadge } from '../components/widgets';
 import { IconUsers, IconBank, IconBox, IconCheck } from '../components/icons';
 import Modal from '../components/Modal';
-import { Field, Input, Select, FormGrid } from '../components/form';
+import { Field, Input, MoneyInput, Select, FormGrid } from '../components/form';
 import { useToast } from '../components/Toast';
 
 // RRHH-01: 13 áreas de contratación (espejo de RRHH_AREAS de Demo6), con ortografía
@@ -180,8 +180,8 @@ export default function RRHH() {
                 {ESTADOS.map((s) => <option key={s} value={s}>{s}</option>)}
               </Select>
             </Field>
-            <Field label="Salario *"><Input type="number" value={form.salario} onChange={(e) => setF('salario', e.target.value)} /></Field>
-            <Field label="Bono"><Input type="number" value={form.bono} onChange={(e) => setF('bono', e.target.value)} /></Field>
+            <Field label="Salario *"><MoneyInput value={form.salario} onChange={(e) => setF('salario', e.target.value)} /></Field>
+            <Field label="Bono"><MoneyInput value={form.bono} onChange={(e) => setF('bono', e.target.value)} /></Field>
             <Field label="Lugar de trabajo"><Input value={form.lugarTrabajo} onChange={(e) => setF('lugarTrabajo', e.target.value)} placeholder="Ej: Bogotá · Calle 43" /></Field>
             <Field label="Email" className="sm:col-span-3"><Input type="email" value={form.email} onChange={(e) => setF('email', e.target.value)} /></Field>
           </FormGrid>

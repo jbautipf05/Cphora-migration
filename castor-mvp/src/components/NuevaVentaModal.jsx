@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import Modal from './Modal';
-import { Field, Input, Select } from './form';
+import { Field, Input, MoneyInput, Select } from './form';
 import { useToast } from './Toast';
 import { fmtCOP } from '../lib/format';
 
@@ -573,7 +573,7 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
                     <div className="col-span-12 sm:col-span-5"><span className="label text-[10px]">Nombre propuesto *</span><Input value={it.name} onChange={(e) => setInnovItem(i, 'name', e.target.value)} className="text-xs" /></div>
                     <div className="col-span-12 sm:col-span-7"><span className="label text-[10px]">Descripción *</span><Input value={it.desc} onChange={(e) => setInnovItem(i, 'desc', e.target.value)} className="text-xs" /></div>
                     <div className="col-span-4 sm:col-span-3"><span className="label text-[10px]">Cantidad *</span><Input type="number" min="1" value={it.qty} onChange={(e) => setInnovItem(i, 'qty', Number(e.target.value))} className="text-xs" /></div>
-                    <div className="col-span-8 sm:col-span-4"><span className="label text-[10px]">Precio estimado unit. *</span><Input type="number" min="0" value={it.price} onChange={(e) => setInnovItem(i, 'price', Number(e.target.value))} className="text-xs" /></div>
+                    <div className="col-span-8 sm:col-span-4"><span className="label text-[10px]">Precio estimado unit. *</span><MoneyInput value={it.price} onChange={(e) => setInnovItem(i, 'price', Number(e.target.value))} className="text-xs" /></div>
                     <div className="col-span-12 sm:col-span-5"><span className="label text-[10px]">Áreas estimadas</span><Input value={it.areas} onChange={(e) => setInnovItem(i, 'areas', e.target.value)} placeholder="Ebanistería, Tapicería…" className="text-xs" /></div>
                     <div className="col-span-12"><span className="label text-[10px]">Comentario</span><textarea value={it.comment} onChange={(e) => setInnovItem(i, 'comment', e.target.value)} rows={1} placeholder="Notas específicas del producto (opcional)" className="input-field text-xs" /></div>
                   </div>
@@ -626,7 +626,7 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
                   </div>
                   <div className="col-span-3 sm:col-span-2">
                     <span className="label text-[10px]">Precio unit.</span>
-                    <Input type="number" readOnly value={priceOf(it.productId)} title="Precio desde lista" className="cursor-not-allowed bg-brand-navy/40 text-xs" />
+                    <MoneyInput readOnly value={priceOf(it.productId)} title="Precio desde lista" className="cursor-not-allowed bg-brand-navy/40 text-xs" />
                   </div>
                   <div className="col-span-3 sm:col-span-2">
                     <span className="label text-[10px]">% Desc.</span>
@@ -713,9 +713,7 @@ export default function NuevaVentaModal({ open, onClose, products = [], customer
           <span className="mb-3 block text-sm font-semibold gold-title">💰 Registro de pago</span>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Field label="Monto recibido *">
-              <Input
-                type="number"
-                min="0"
+              <MoneyInput
                 value={f.payManual ? f.payAmount : suggestedPay}
                 onChange={(e) => { setF((p) => ({ ...p, payManual: true, payAmount: e.target.value })); setErrors((er) => (er.payAmount ? { ...er, payAmount: undefined } : er)); }}
               />

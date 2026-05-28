@@ -6,6 +6,27 @@
 // ───────────────────────────────────────────────────────────────────────────
 
 import { PUC_BY_CODE, PUC_CATALOG } from '../data/pucCatalog';
+import { PROD_AREAS } from '../data/erpSeed';
+
+// TD-07b: clasifica empleado por área para el asiento de nómina por categoría
+// (§7.11 / Doc 2: "MOD usa familia 7205xx; admin/ventas usan 5105xx/5205xx").
+// PROD_AREAS son las áreas de producción → MOD. Comercial → sales. Resto → admin.
+function classifyEmployee(emp) {
+  const area = String(emp?.area || '').trim();
+  if (PROD_AREAS.includes(area)) return 'mod';
+  if (area.toLowerCase() === 'comercial') return 'sales';
+  return 'admin';
+}
+
+const emptyCatTotals = () => ({
+  base: 0,
+  aux: 0,
+  neto: 0,
+  aportesEmpr: 0,
+  provisiones: 0,
+  retencionEmp: 0,
+  costoTotal: 0,
+});
 
 // ── Constante de nómina Colombia 2026 (defaults reales del negocio · §7.11) ──
 // Es la fuente de verdad del cálculo de nómina. El usuario puede sobrescribir
@@ -221,10 +242,12 @@ export function calcPayrollPreview(employees, params) {
       id: emp.id,
       name: emp.name,
       area: emp.area,
+      category: classifyEmployee(emp), // TD-07b: 'admin' | 'sales' | 'mod'
       base,
       aux,
       saludEmp,
       pensionEmp,
+      retencionEmp: totalDeduccionesEmp, // deducciones empleado → cuenta retención
       neto,
       aportesEmpr,
       provisiones,
@@ -241,11 +264,27 @@ export function calcPayrollPreview(employees, params) {
       t.aportesEmpr += f.aportesEmpr;
       t.provisiones += f.provisiones;
       t.costoTotal += f.costoTotal;
+      t.retencionEmp += f.retencionEmp;
       return t;
     },
-    { base: 0, aux: 0, neto: 0, aportesEmpr: 0, provisiones: 0, costoTotal: 0 },
+    { base: 0, aux: 0, neto: 0, aportesEmpr: 0, provisiones: 0, costoTotal: 0, retencionEmp: 0 },
   );
-  return { filas, totales };
+
+  // TD-07b: totales por categoría para postPayroll consolidado por área.
+  const byCategory = { admin: emptyCatTotals(), sales: emptyCatTotals(), mod: emptyCatTotals() };
+  for (const f of filas) {
+    const cat = byCategory[f.category];
+    cat.base += f.base;
+    cat.aux += f.aux;
+    cat.neto += f.neto;
+    cat.aportesEmpr += f.aportesEmpr;
+    cat.provisiones += f.provisiones;
+    cat.retencionEmp += f.retencionEmp;
+    cat.costoTotal += f.costoTotal;
+  }
+
+  // §7.11: las corridas posteadas conservan sus parámetros vía paramsSnapshot.
+  return { filas, totales, byCategory, paramsSnapshot: { ...params } };
 }
 
 // ── Saldo de una cuenta (incluye padres por prefijo) ──

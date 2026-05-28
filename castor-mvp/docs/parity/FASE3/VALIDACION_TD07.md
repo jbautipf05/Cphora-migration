@@ -34,10 +34,11 @@
 
 ## Hooks pendientes
 
-| Hook | Estado | Razón del aplazamiento |
-|---|---|---|
-| `postPayroll` | **Sin refactor** — sigue con `510506`/`250505`/`237005`/`261005`/`236505` consolidados | El seed `accountingMappings.payroll` tiene 18 campos detallados (provisiones desglosadas + aportes empleador EPS/ARL/parafiscales + pasivos por aporte) que referencian **17 cuentas que no existen en `pucCatalog.js`** (510527, 510533, 510536, 510539, 730527, 730530, 730533, 730536, 510560, 510569, 510570, 237006, 237010, 237030, 251005, 251505, 252005, 252505). Refactorizar este hook requiere: (1) ampliar PUC con esas 17 cuentas, (2) reescribir `postPayroll` para generar 1 línea por aporte/provisión (~120 líneas vs las ~50 actuales). Es un sub-proyecto, no un fix de cableado. |
-| `postBankAdjustment` / `postWarrantyCost` | Sin refactor | Casos especiales: `postBankAdjustment` usa `accountingMappings.bank_adjustment` parcialmente; `postWarrantyCost` decide cuenta de crédito por `source==='caja'|'almacen'`. Ambos son refactors menores que pueden hacerse cuando se enfrente el caso de uso. |
+> **Actualización post-cierre (commits posteriores a este doc):**
+> - `postPayroll` cerrado en **TD-07b** (`b0ab705..9fddd67`, 7 commits). Se descubrió que el plan original (desglose detallado de 18 cuentas) infringía el brief §7.11 que dice textualmente *"asiento consolidado con devengado, provisiones, aportes empleador y pasivos"*. Plan revisado solo requirió 1 cuenta PUC nueva (`730530`) y consolida por categoría admin/sales/MOD. Ver `VALIDACION_TD07B.md`.
+> - `postWarrantyCost` y `postBankAdjustment` cerrados en **R-3** (`587b579`): ambos leen ahora `accountingMappings.warranty_cost` / `.bank_adjustment` con fallback a defaults (`WARRANTY_COST_DEFAULTS`, `BANK_ADJUSTMENT_DEFAULTS`).
+>
+> **Estado final del motor: 11/11 hooks cableados a `accountingMappings`.** Cero deuda contable antes del backend (ver tabla "Cierre TD-07 completo" al final).
 
 ## Lo que NO cambió
 
@@ -77,3 +78,47 @@ Tests específicamente impactados (que validan retro-compatibilidad):
 2. **`postBankAdjustment`** cableado parcial — verificar si lee `bank_adjustment.diff_positive / diff_negative` correctamente.
 3. **`postWarrantyCost`**: cuenta de gasto `519540` está hardcoded; el seed tiene `accountingMappings.warranty_cost.warranty_expense`. Cableado trivial.
 4. **Flag de persistencia de asientos** (transversal, coordinar con Omar): los JE de los hooks no sobreviven al reload — bloquea validación e2e con UI de flujos contables (ciclo COGS+reverso, etc.).
+
+---
+
+## Cierre TD-07 completo (actualización 2026-05-28)
+
+Tras esta validación se cerraron también `postPayroll` (TD-07b) y los dos cableados menores (R-3). **El motor ahora tiene 11/11 hooks cableados a `accountingMappings`.**
+
+### Tabla resumen 11/11
+
+| # | Hook | Mapping | Sesión / Commit |
+|---|---|---|---|
+| 1 | `postDepreciation` | `accountingMappings.depreciation` | Activos Fijos `0f887e1` |
+| 2 | `emitNotaCredito` | `accountingMappings.nota_credito` + `taxRules` | NC-2 `805ae8a` |
+| 3 | `emitNotaDebito` | `accountingMappings.nota_debito` + `taxRules` | NC-2 `805ae8a` |
+| 4 | `postCostOfSaleReversal` | `accountingMappings.cogs_on_invoice` | NC-3 `508d113` |
+| 5 | `postCostOfSale` | `accountingMappings.cogs_on_invoice` | H2 `6609479` |
+| 6 | `postCustomerAdvance` | `accountingMappings.customer_advance` | H1 `08d4148` |
+| 7 | `postSale` | `accountingMappings.sale_invoice/sale_remision` + `taxRules` | R-1 `59e059f` |
+| 8 | `postCustomerCollection` | `accountingMappings.customer_collection` | R-1 `59e059f` |
+| 9 | `postSupplyPurchase` | `accountingMappings.supply_purchase` + `taxRules` (IVA desc, RTF compras) | R-2a `f55de71` |
+| 10 | `postSupplierPayment` | `accountingMappings.supplier_payment` | R-2b `fd28734` |
+| 11 | `postPayroll` | `accountingMappings.payroll` (consolidado por categoría) | TD-07b-4 `4d1f259` |
+| **+** | `postWarrantyCost` | `accountingMappings.warranty_cost` | R-3a `587b579` |
+| **+** | `postBankAdjustment` | `accountingMappings.bank_adjustment` | R-3b `587b579` |
+
+> Nota: `postWarrantyCost` y `postBankAdjustment` son **hooks adicionales** que ya tenían defaults razonables; cablearlos completa la simetría de TD-07 aunque no estaban en la lista original de "11 críticos".
+
+### Suite C4 final
+
+- **35 PASS / 0 FAIL** — todos los refactors validados por retro-compatibilidad sin modificar tests existentes (salvo `t_postPayroll_consolidado_backcompat` que se actualizó cuando el shape del asiento cambió en TD-07b-4).
+
+### Cero deuda contable
+
+Antes de comenzar el backend (Firestore, ver `ADR-010`), el motor está **completamente cableado a la capa de configuración persistida** (`accountingMappings` + `taxRules`). Esto significa que las decisiones de modelado del backend pueden enfocarse en:
+- Cómo persistir `journalEntries`/`journalLines` (flag transversal abierto).
+- Idempotencia distribuida (cliente puede emitir 2× antes de que llegue al server).
+- Locking de periodos cerrados (transacciones Firestore).
+- Migración del seed estático a colecciones reales.
+
+Sin riesgo de tener que rehacer mappings: ya están en su forma final, leídos por el motor, validados por la suite.
+
+### 19 huecos PUC remanentes — documentados como NO necesarios
+
+`VALIDACION_CONTABILIDAD_C3a.md` listaba 21 huecos; 2 cerrados (`159205` en Activos Fijos, `529595→539595` en R-2). Los 19 restantes son TODOS del bloque payroll detallado (provisiones desglosadas por tipo + aportes empleador por tipo + pasivos por aporte). El brief §7.11 dice textualmente *"asiento consolidado con devengado, provisiones, aportes empleador y pasivos"* — el detalle atómico NO es requerido. Si en el futuro se quiere desglose para reportes, se puede ampliar PUC + añadir tipo de aporte/provisión al breakdown sin romper el shape actual del asiento.

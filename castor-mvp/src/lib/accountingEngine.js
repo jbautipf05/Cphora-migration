@@ -774,6 +774,65 @@ export function emitNotaDebito(payload, ctx) {
   );
 }
 
+// postCostOfSaleReversal({ invoice, ncNumber, ratio, date? }, ctx)
+// Reverso parcial COGS por NC (castor_accounting.js:5965-5990). Solo aplica si
+// existe JE previo con source='cogs' + sourceId=invoice.orderId. Hoy no hay
+// COGS porque postCostOfSale (H2/TD-21) aún no está cableado — el hook
+// devuelve { skip:'no_cogs_je' } y la NC principal funciona igual. Cuando H2
+// esté listo, este hook se activa automáticamente sin tocar NC-4.
+// Asiento: DR finished_goods (recibe PT) / CR cogs (cancela costo) × ratio.
+export function postCostOfSaleReversal(payload, ctx) {
+  const { invoice, ncNumber, ratio, date } = payload || {};
+  if (!invoice?.id) return { error: 'invalid_invoice' };
+  if (!ncNumber) return { error: 'missing_nc_number' };
+  if (!(+ratio > 0)) return { error: 'invalid_ratio' };
+
+  const orderId =
+    invoice.orderId || (Array.isArray(invoice.orderIds) ? invoice.orderIds[0] : null);
+  if (!orderId) return { skip: 'no_order' };
+
+  const journals = ctx?.journalEntries || [];
+  const lines = ctx?.journalLines || [];
+  const cogsJE = journals.find((j) => j.source === 'cogs' && j.sourceId === orderId);
+  if (!cogsJE) return { skip: 'no_cogs_je' };
+
+  let originalCogs = 0;
+  for (const l of lines) {
+    if (l.journalId === cogsJE.id && +l.debit > 0) originalCogs += +l.debit;
+  }
+  const revAmount = round(originalCogs * ratio);
+  if (revAmount <= 0.5) return { skip: 'amount_too_small' };
+
+  const m = ctx?.accountingMappings?.cogs_on_invoice || {
+    cogs: '612035',
+    finished_goods: '143005',
+  };
+
+  return postJournalEntry(
+    {
+      date: date || today(),
+      source: 'nota_credito_cogs',
+      sourceId: ncNumber,
+      concept: `Reverso COGS por NC ${ncNumber}`,
+      lines: [
+        {
+          accountCode: m.finished_goods,
+          debit: revAmount,
+          credit: 0,
+          description: `Reingreso PT por NC ${ncNumber}`,
+        },
+        {
+          accountCode: m.cogs,
+          debit: 0,
+          credit: revAmount,
+          description: `Reverso COGS por NC ${ncNumber}`,
+        },
+      ],
+    },
+    ctx,
+  );
+}
+
 // ── Cierre de periodo / año fiscal (C2b) ──────────────────────────────────────
 // Portado de castor_accounting.js:5650-5865, adaptado a las convenciones React
 // (cuentas con level/nature/classCode; periodos con `estado`; journalEntry.period).

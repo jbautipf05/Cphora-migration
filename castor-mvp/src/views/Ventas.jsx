@@ -8,6 +8,7 @@ import { IconCart, IconBank, IconCheck } from '../components/icons';
 import Modal from '../components/Modal';
 import { Field, MoneyInput, Select } from '../components/form';
 import NuevaVentaModal from '../components/NuevaVentaModal';
+import NotaCreditoDebitoModal from '../components/NotaCreditoDebitoModal';
 import { useToast } from '../components/Toast';
 
 const METHODS = ['Transferencia', 'Tarjeta', 'Efectivo', 'Cheque'];
@@ -30,6 +31,8 @@ export default function Ventas() {
     nextId,
     postSale,
     postCustomerCollection,
+    emitNotaCredito,
+    emitNotaDebito,
     pendingForm,
     setPendingForm,
     setState,
@@ -50,6 +53,7 @@ export default function Ventas() {
   const [salePrefill, setSalePrefill] = useState(null); // EX-F2-03: precarga desde cotización
   const [saleQuoteId, setSaleQuoteId] = useState(null); // EX-F2-03: quote origen (trazabilidad + paso-4)
   const [pay, setPay] = useState(null); // {orderId, amount, method, bankId}
+  const [note, setNote] = useState(null); // {mode:'NC'|'ND', invoice} — modal NC/ND
 
   // EX-F2-03: construye el prefill (shape del form de NuevaVentaModal) desde una
   // cotización. Cliente: si la quote ya tiene customerId, copia el customer; si no,
@@ -620,6 +624,22 @@ export default function Ventas() {
               <div key={i.id} className="rounded-lg border border-brand-gold/30 bg-brand-gold/10 p-3 text-sm">
                 <p className="text-brand-gold">Documento emitido: {i.id} · {fmtCOP(i.amount)} · <span className="capitalize">{i.estado}</span></p>
                 <p className="mt-0.5 text-[11px] text-brand-muted">Numeración interna · No oficial DIAN</p>
+                {i.estado !== 'anulada' && (
+                  <div className="mt-2 flex gap-3">
+                    <button
+                      className="text-xs text-brand-gold hover:underline"
+                      onClick={() => setNote({ mode: 'NC', invoice: i })}
+                    >
+                      + Nota crédito
+                    </button>
+                    <button
+                      className="text-xs text-brand-gold hover:underline"
+                      onClick={() => setNote({ mode: 'ND', invoice: i })}
+                    >
+                      + Nota débito
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -640,6 +660,33 @@ export default function Ventas() {
         innovation={saleInnovation}
         prefill={salePrefill}
         onSubmit={submitSale}
+      />
+
+      {/* Modal Nota crédito / Nota débito (§7.9) */}
+      <NotaCreditoDebitoModal
+        open={!!note}
+        onClose={() => setNote(null)}
+        mode={note?.mode}
+        invoice={note?.invoice}
+        onSubmit={({ amount, motivo }) => {
+          if (!note) return;
+          const fn = note.mode === 'NC' ? emitNotaCredito : emitNotaDebito;
+          const payload = { invoiceId: note.invoice.id, motivo };
+          if (amount !== undefined && amount !== null && amount !== '') payload.amount = +amount;
+          const res = fn(payload);
+          if (res?.error) {
+            toast(res.message || res.error, 'err');
+            return;
+          }
+          if (res?.warning) {
+            toast(`Ya emitida previamente (${res.warning})`, 'warn');
+            setNote(null);
+            return;
+          }
+          const numId = res.ncNumber || res.ndNumber;
+          toast(`${note.mode} ${numId} emitida · ${fmtCOP(res.monto)}`, 'ok');
+          setNote(null);
+        }}
       />
 
       {/* Modal registrar pago */}

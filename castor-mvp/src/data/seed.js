@@ -86,7 +86,10 @@ export const SEED_ACCOUNTING_MAPPINGS = {
   supply_consumption: { raw_consumed: '710505', inventory_raw: '140505', wip: '141005' },
   finished_goods_in: { finished_goods: '143005', wip: '141005', raw_inventory: '140505' },
   cogs_on_invoice: { cogs: '612035', finished_goods: '143005' },
-  supplier_payment: { payable: '220505', bank_default: '111005', expense_default: '529595' },
+  // expense_default = 539595 (no 529595): el catálogo PUC curado del MVP no
+  // tiene 529595; el motor ya usaba 539595 (ver TD-07/C2c). Fix de consistencia
+  // entre seed y catálogo. Documentado en VALIDACION_CONTABILIDAD_C3a.
+  supplier_payment: { payable: '220505', bank_default: '111005', expense_default: '539595' },
   payroll: {
     salary_admin: '510506',
     salary_sales: '520506',

@@ -102,22 +102,53 @@ export default function ConfiguracionNomina() {
   // Preview de nómina recalculado en vivo a partir de los parámetros del draft.
   const preview = useMemo(() => calcPayrollPreview(employees, params), [employees, params]);
 
-  // C2c: contabiliza la nómina del periodo actual (postPayroll). totalSalarios = devengado
-  // bruto (base + aux) para que la retención (deducciones del empleado) cuadre el asiento.
-  // Idempotente por periodo (sourceId NOM-<YYYY-MM>): re-correr no duplica el asiento.
+  // Contabiliza la nómina del periodo actual (§7.11). Pasa el breakdown por
+  // categoría (admin/sales/MOD) al motor para asiento por área. Si OK,
+  // persiste el payrollRun con paramsSnapshot — §7.11: "las corridas posteadas
+  // conservan sus parámetros vía paramsSnapshot". Idempotente por NOM-<YYYY-MM>.
   const runPayroll = () => {
     const periodId = today().slice(0, 7);
+    const runId = `NOM-${periodId}`;
     const t = preview.totales;
     const res = postPayroll({
-      id: `NOM-${periodId}`, periodId, date: today(),
+      id: runId,
+      periodId,
+      date: today(),
+      byCategory: preview.byCategory,
+      // back-compat shape (por si byCategory viene vacío en ctxs anteriores):
       totalSalarios: (t.base || 0) + (t.aux || 0),
       totalNeto: t.neto || 0,
       totalAportes: t.aportesEmpr || 0,
       totalProvisiones: t.provisiones || 0,
     });
-    if (res?.ok) toast(`Nómina ${periodId} contabilizada · asiento ${res.journalEntry.id}`, 'ok');
-    else if (res?.warning === 'already_posted') toast(`La nómina ${periodId} ya estaba contabilizada (${res.journalId})`, 'info');
-    else toast(`Aviso contable: ${res?.message || res?.error || '—'}`, 'warn');
+    const persistRun = (jeId) => {
+      setState((s) => {
+        // Si ya existe un payrollRun para este periodId, no duplicar.
+        if ((s.payrollRuns || []).some((r) => r.id === runId)) return s;
+        const runRecord = {
+          id: runId,
+          periodId,
+          date: today(),
+          paramsSnapshot: preview.paramsSnapshot,
+          byCategory: preview.byCategory,
+          totales: preview.totales,
+          journalEntryId: jeId,
+          createdAt: new Date().toISOString(),
+        };
+        return { ...s, payrollRuns: [runRecord, ...(s.payrollRuns || [])] };
+      });
+    };
+    if (res?.ok) {
+      persistRun(res.journalEntry.id);
+      toast(`Nómina ${periodId} contabilizada · asiento ${res.journalEntry.id}`, 'ok');
+    } else if (res?.warning === 'already_posted') {
+      // El asiento ya existe (e.g., venía del seed): persistir el run de
+      // todas formas para que el slice payrollRuns refleje el estado real.
+      persistRun(res.journalId);
+      toast(`La nómina ${periodId} ya estaba contabilizada (${res.journalId})`, 'info');
+    } else {
+      toast(`Aviso contable: ${res?.message || res?.error || '—'}`, 'warn');
+    }
   };
 
   const dirty = useMemo(

@@ -34,6 +34,12 @@ export function FormGrid({ cols = 2, children, className = '' }) {
   return <div className={`grid grid-cols-1 gap-4 ${map[cols] || map[2]} ${className}`}>{children}</div>;
 }
 
+// Descarta una cola decimal al final del string: separador (. o ,) + 1 ó 2 dígitos,
+// con whitespace trailing opcional. Cubre formatos CO ("20.000,50") y US ("20,000.50")
+// al pegar valores con centavos. NO matchea decimales de 3+ dígitos (que serían parte
+// del separador de miles cuando el usuario tipea keystroke por keystroke, ej. "1.234").
+const stripDecimalTail = (s) => s.replace(/[.,]\d{1,2}\s*$/, '');
+
 // MoneyInput — input de dinero con separadores de miles automáticos (estilo CO: punto miles).
 // Drop-in para reemplazar <input type="number"> en campos de DINERO (precios, costos, salarios,
 // totales, montos, anticipos, débitos/créditos, balances). Visualmente muestra "20.000" mientras
@@ -74,12 +80,19 @@ export function MoneyInput({ value, onChange, className = '', ...rest }) {
 
   const handleChange = (e) => {
     const rawValue = e.target.value;
+    // PASO 1: descartar cola decimal ANTES del strip. Sin esto, al pegar "$ 20.000,50"
+    // el viejo replace(/\D/g, '') concatenaba los centavos como dígitos de miles y
+    // producía "2.000.050" en vez del "20.000" esperado.
+    const sanitizedRaw = stripDecimalTail(rawValue);
     // Cursor del input ANTES de strippear los no-dígitos. selectionStart puede ser null
     // en navegadores antiguos o tipos exóticos; fallback al final del string.
     const cursorPos = e.target.selectionStart ?? rawValue.length;
-    // Cuenta solo los dígitos en el slice [0, cursorPos): así "1.2|534" → 2 dígitos.
-    pendingDigitsBeforeCursor.current = (rawValue.slice(0, cursorPos).match(/\d/g) || []).length;
-    const digits = rawValue.replace(/\D/g, '');
+    // PASO 2: clamp del cursor al largo de sanitizedRaw — si cayó dentro de la cola
+    // decimal (caso paste), lo movemos al final lógico del valor sin cola.
+    const clampedCursor = Math.min(cursorPos, sanitizedRaw.length);
+    // Cuenta solo los dígitos en el slice [0, clampedCursor): así "1.2|534" → 2 dígitos.
+    pendingDigitsBeforeCursor.current = (sanitizedRaw.slice(0, clampedCursor).match(/\d/g) || []).length;
+    const digits = sanitizedRaw.replace(/\D/g, '');
     // Sintetiza el event que esperan los call sites: target.value en string de dígitos puros.
     onChange?.({ ...e, target: { ...e.target, value: digits } });
   };

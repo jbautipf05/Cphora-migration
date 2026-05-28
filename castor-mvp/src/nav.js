@@ -17,6 +17,7 @@ export const CONTAB_SUBVIEWS = [
   { id: 'centros-costo', label: 'Centros de Costo' },
   { id: 'config-perfil', label: 'Perfil Tributario' },
   { id: 'config-nomina', label: 'Nómina' },
+  { id: 'mapeos-cuentas', label: 'Mapeo de Cuentas' },
 ];
 
 export const NAV = [
@@ -120,6 +121,7 @@ const PAGE_META = {
   'centros-costo': { title: 'Centros de Costo', bc: 'Finanzas · Contabilidad · Centros de Costo' },
   'config-perfil': { title: 'Perfil Tributario', bc: 'Finanzas · Contabilidad · Perfil Tributario' },
   'config-nomina': { title: 'Nómina y Parámetros', bc: 'Finanzas · Contabilidad · Nómina' },
+  'mapeos-cuentas': { title: 'Mapeo de Cuentas por Evento', bc: 'Finanzas · Contabilidad · Mapeo de Cuentas' },
 };
 
 export function pageMeta(id) {

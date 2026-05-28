@@ -53,6 +53,91 @@ export const SEED_COST_CENTERS = [
   { id: 'VOL', name: 'Volcanes' },
 ];
 
+// ── Mapeo de cuentas por evento (C3a · portado de castor_accounting.js:308-359) ──
+// Define qué cuenta PUC usa cada evento operativo. Es estado editable persistido
+// (la UI permite restaurar este default). Por ahora vive como capa de configuración:
+// los hooks del motor aún usan cuentas hardcoded; el cableado posterior (que el motor
+// lea estos mapeos) es un refactor aparte ligado a TD-07 (centralizar códigos PUC).
+export const SEED_ACCOUNTING_MAPPINGS = {
+  sale_invoice: {
+    receivable: '130505',
+    revenue: '412035',
+    iva_generated: '240805',
+    discount_account: '417505',
+  },
+  sale_remision: { receivable: '130505', revenue: '412035' },
+  customer_advance: { bank_default: '111005', advance_received: '280505' },
+  customer_collection: {
+    bank_default: '111005',
+    receivable: '130505',
+    advance_received: '280505',
+    rete_fuente_received: '135515',
+    rete_iva_received: '135517',
+    rete_ica_received: '135518',
+  },
+  supply_purchase: {
+    inventory_raw: '140505',
+    iva_descontable: '240810',
+    payable: '220505',
+    rete_fuente_practiced: '236540',
+    rete_iva_practiced: '236701',
+    rete_ica_practiced: '236801',
+  },
+  supply_consumption: { raw_consumed: '710505', inventory_raw: '140505', wip: '141005' },
+  finished_goods_in: { finished_goods: '143005', wip: '141005', raw_inventory: '140505' },
+  cogs_on_invoice: { cogs: '612035', finished_goods: '143005' },
+  supplier_payment: { payable: '220505', bank_default: '111005', expense_default: '529595' },
+  payroll: {
+    salary_admin: '510506',
+    salary_sales: '520506',
+    salary_mod: '720505',
+    transport_aux: '510527',
+    // Provisiones admin (áreas no MOD)
+    cesantias_provision: '510530',
+    int_cesantias_provision: '510533',
+    prima_provision: '510536',
+    vacaciones_provision: '510539',
+    // Provisiones MOD (Producción)
+    cesantias_provision_mod: '730527',
+    int_cesantias_provision_mod: '730530',
+    prima_provision_mod: '730533',
+    vacaciones_provision_mod: '730536',
+    // Aportes empleador admin
+    eps_employer: '510560',
+    pension_employer: '510568',
+    arl_employer: '510569',
+    parafiscales_employer: '510570',
+    // Aportes empleador MOD (consolidado en 720570)
+    employer_charges_mod: '720570',
+    // Pasivos
+    rete_fuente_employee: '236505',
+    eps_payable: '237005',
+    pension_payable: '237006',
+    arl_payable: '237010',
+    parafiscales_payable: '237030',
+    cesantias_payable: '251005',
+    int_cesantias_payable: '251505',
+    prima_payable: '252005',
+    vacaciones_payable: '252505',
+    salary_payable: '250505',
+  },
+  warranty_cost: { warranty_expense: '519540', cash: '110510', raw_used: '140505' },
+  depreciation: {
+    expense_admin: '516015',
+    expense_sales: '526010',
+    expense_cif: '730560',
+    accumulated: '159220',
+    accumulated_oficina: '159220',
+    accumulated_computacion: '159225',
+    accumulated_transporte: '159240',
+    accumulated_construcciones: '159205',
+  },
+  bank_adjustment: { diff_positive: '425095', diff_negative: '539595' },
+  gmf_4x1000: { gmf_expense: '530595' },
+  nota_credito: { sales_returns: '417505', iva_generated: '240805', receivable: '130505' },
+  nota_debito: { receivable: '130505', revenue: '412035', iva_generated: '240805' },
+};
+
 // ── Asientos contables (Libro Diario) ──
 // Helper para construir un asiento balanceado y sus líneas.
 let _lineSeq = 0;

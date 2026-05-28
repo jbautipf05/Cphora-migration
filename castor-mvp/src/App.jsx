@@ -18,6 +18,7 @@ import Cierres from './views/Cierres';
 import CentrosCosto from './views/CentrosCosto';
 import ConfigPerfilTributario from './views/ConfigPerfilTributario';
 import ConfiguracionNomina from './views/ConfiguracionNomina';
+import MapeosCuentas from './views/MapeosCuentas';
 // Inicio
 import Inicio from './views/Inicio';
 // Comercial
@@ -76,6 +77,7 @@ const VIEWS = {
   'centros-costo': () => <CentrosCosto />,
   'config-perfil': () => <ConfigPerfilTributario />,
   'config-nomina': () => <ConfiguracionNomina />,
+  'mapeos-cuentas': () => <MapeosCuentas />,
 };
 
 export default function App() {

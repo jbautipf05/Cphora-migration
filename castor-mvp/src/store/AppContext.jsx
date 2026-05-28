@@ -8,6 +8,7 @@ import {
   SEED_COST_CENTERS,
   SEED_JOURNAL_ENTRIES,
   SEED_JOURNAL_LINES,
+  SEED_ACCOUNTING_MAPPINGS,
 } from '../data/seed';
 import {
   WAREHOUSES,
@@ -71,6 +72,9 @@ function buildInitialState() {
     // C2a: los periodos fiscales son estado editable (abrir/cerrar) → se persisten
     // (a diferencia del catálogo PUC / asientos, que sí se re-siembran del código).
     fiscalPeriods: SEED_FISCAL_PERIODS,
+    // C3a: mapeo de cuentas por evento (editable, persistido). Capa de configuración;
+    // el motor sigue usando cuentas hardcoded (cablearlo a leer aquí es refactor posterior).
+    accountingMappings: SEED_ACCOUNTING_MAPPINGS,
     // ERP — Comercial / Operación / Finanzas / Admin
     warehouses: WAREHOUSES,
     products: PRODUCTS,
@@ -242,6 +246,32 @@ export function AppProvider({ children }) {
         })),
       removeBankAccount: (id) =>
         setState((s) => ({ ...s, bankAccounts: s.bankAccounts.filter((b) => b.id !== id) })),
+
+      // ── Mapeos operación → cuenta (C3a) ─────────────────────────────────
+      // Edición instantánea por celda; valida que la cuenta sea auxiliar (level≥6)
+      // y activa antes de aceptar. code='' desasigna el mapeo (válido).
+      setMapping: (section, key, code) => {
+        let outcome;
+        setState((s) => {
+          if (code) {
+            const acc = (s.pucAccounts || []).find((a) => a.code === code);
+            if (!acc || acc.level < 6 || acc.activa === false) {
+              outcome = { error: 'invalid_account', message: `Cuenta ${code} no es auxiliar activa` };
+              return s;
+            }
+          }
+          outcome = { ok: true };
+          return {
+            ...s,
+            accountingMappings: {
+              ...(s.accountingMappings || {}),
+              [section]: { ...((s.accountingMappings || {})[section] || {}), [key]: code },
+            },
+          };
+        });
+        return outcome;
+      },
+      resetMappings: () => setState((s) => ({ ...s, accountingMappings: SEED_ACCOUNTING_MAPPINGS })),
 
       // Restablece a los valores seed (botón "Reset Data Demo").
       resetDemo: () => {

@@ -307,3 +307,47 @@ forma de recibirlo.
 **Validación:** test node del ciclo 7/7 (recibido, +1 al maestro, sin doble conteo, OP listo,
 move convertido, guard idempotente, sin pendientes atascados) + `eslint` 0 errores en los
 archivos tocados + `vite build` OK.
+
+## EX-F3-04 — Puente Inventario→Despacho (🚚 Solicitar / 📅 Programar desde la pestaña Clientes) · ✅ RESUELTO
+
+**Síntoma:** una OP de cliente recibida en CEDI (`receptionStatus === 'recibido'`, OP en
+`listo`) no tenía botón en Inventario Terminado para crear la `dispatchRequest` que Despacho
+filtra (`estado === 'pendiente'`). El ciclo quedaba completo pero sin trigger UI; la única
+vía era inyectar la solicitud por seed/consola. Demo6 cubría esto con dos funciones a un
+click: `solicitarDespachoDesdeInventario` (1325) y `programarDespachoCliente` (1354).
+
+**Resolución:** en `InventarioTerminado.jsx`, en la celda de acciones de cada fila de la
+pestaña Clientes, dos botones condicionados a `vista==='clientes' && r.orderId &&
+r.receptionStatus==='recibido'`:
+
+1. **🚚 Solicitar** — inserta una `dispatchRequest` `{ id: DSP-NNN (pad 3), finishedStockId,
+   orderId, pedidoId, customerId, clientName, productId, qty, ciudad, address,
+   estado:'pendiente', requestedAt, requestedBy }` en un setState inmutable. Sin modal
+   (fiel a Demo6:1325 que era ejecutivo).
+2. **📅 Programar** — abre modal con `<input type="date">` (default `today()+2`) + Motivo
+   opcional. Misma solicitud + `scheduledDate` y `scheduleNotes?`. **Mejora consciente
+   sobre Demo6**: Demo6:1354 usaba `prompt('Fecha...')`; aquí se eleva a date-picker real
+   con validación.
+
+**Guard anti-duplicado:** `useMemo` `dispatchedOrderIds` agrega todos los `orderId` (y
+`orderIds[]`) ya presentes en `dispatchRequests`. Si el `orderId` de la fila está en el
+Set, los botones se reemplazan por un badge `✓ Despacho solicitado`. Ambos handlers
+revalidan el guard al confirmar (defensa en profundidad).
+
+**Resolución de campos** (en `buildDispatchPayload`):
+- `customerId` desde `fs.customerId` con fallback a `order.customerId`.
+- `clientName` desde `fs.clientName` → `order.clientName` → `customer.name` → `'—'`.
+- `ciudad` desde `customer.city`.
+- `address` desde `order.deliveryAddress` con fallback a `customer.address`.
+- `pedidoId: fs.pedidoId || fs.orderId` (en este app `order.id === pedidoId`).
+
+**Estado `'pendiente'`** (no `'solicitado'`): clave para que la solicitud aparezca en la
+tabla pendiente de `Despacho.jsx:65`. La OP, al estar en `listo`, satisface `reqReady`,
+así que el botón "🚚 Despachar" en Despacho aparece habilitado de inmediato.
+
+**Validación:** test node ad-hoc (no commiteado) 25/25 pasan: shape del payload (todos los
+campos), guard anti-dup en ambas acciones, `reqReady=true` post-solicitud, `deliveryAddress`
+con fallback, counter `dsp` pad 3, rechazo de Programar sin fecha + `eslint` 0 errores en
+`InventarioTerminado.jsx` + `vite build` OK.
+
+**Detalle:** `docs/parity/FASE3/EX-F3-04-SOLICITAR-DESPACHO.md`.

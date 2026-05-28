@@ -506,6 +506,11 @@ export function postSupplyPurchase(receipt, ctx) {
 
 // ── postSupplierPayment ─────────────────────────────────────────────────────
 // outgoing: { id, date, beneficiario, beneficiarioId, bankAccountId|bankPucCode, amount, purchaseOrderId? }
+// TD-07 R-2b: lee accountingMappings.supplier_payment con fallback a defaults.
+// Si está ligado a OC descarga CxP (payable); si no, gasto diverso (expense_default).
+// 539595 existe en el catálogo PUC (510550 del monolito no — ver fix de seed).
+const SUPPLIER_PAYMENT_DEFAULTS = { payable: '220505', expense_default: '539595' };
+
 export function postSupplierPayment(outgoing, ctx) {
   if (!outgoing || !outgoing.amount)
     return { error: 'invalid_payment', message: 'Pago incompleto' };
@@ -513,10 +518,8 @@ export function postSupplierPayment(outgoing, ctx) {
   const bankPuc = outgoing.bankPucCode || resolveBankPuc(outgoing.bankAccountId, ctx);
   if (!bankPuc) return { error: 'missing_bank', message: 'Cuenta bancaria no resuelta' };
 
-  // Si está ligado a OC descarga CxP; si no, gasto diverso (fallback). 539595 existe en
-  // el catálogo React (510550 no). El mapeo fino por tipo de pago queda para "Mapeos
-  // operación→cuenta" en Contabilidad.
-  const debitAccount = outgoing.purchaseOrderId ? '220505' : '539595';
+  const m = { ...SUPPLIER_PAYMENT_DEFAULTS, ...(ctx?.accountingMappings?.supplier_payment || {}) };
+  const debitAccount = outgoing.purchaseOrderId ? m.payable : m.expense_default;
   const thirdParty = outgoing.beneficiarioId || outgoing.beneficiario || null;
 
   return postJournalEntry(

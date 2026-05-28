@@ -185,6 +185,13 @@ export const SEED_DOC_NUMBERING = [
   { id: 'NUM-ND', kind: 'ND', prefix: 'ND', rangeFrom: 1, rangeTo: 999, currentNumber: 0, active: true, description: 'Notas débito · numeración interna' },
 ];
 
+// ── Notas crédito / Notas débito (§7.9 · portado de castor_accounting.js:5870-6099) ──
+// Editables persistidos. Empiezan vacíos: se llenan al emitir desde Ventas. Cada
+// registro lleva su journalEntryId (asiento principal) y, en el caso de NC con
+// reverso COGS, también cogsReversalJournalEntryId.
+export const SEED_NOTAS_CREDITO = [];
+export const SEED_NOTAS_DEBITO = [];
+
 // ── Asientos contables (Libro Diario) ──
 // Helper para construir un asiento balanceado y sus líneas.
 let _lineSeq = 0;

@@ -335,3 +335,22 @@ export function accountingStatus(state) {
     bancos: DEFAULT_BANKS_V11,
   };
 }
+
+// ── nextDocNumber: helper puro de numeración interna (C3c · §7.9) ──
+// Calcula el siguiente número para un kind (FAC/REM/NC/ND) leyendo el
+// docNumbering del state. NO muta: el caller (acción de AppContext) es quien
+// hace el bump de currentNumber después de un postJournalEntry exitoso.
+// Devuelve { id, number, counterId } o { error, message }.
+export function nextDocNumber(kind, docNumbering) {
+  const counter = (docNumbering || []).find((d) => d.kind === kind);
+  if (!counter) return { error: 'unknown_kind', message: `No hay contador para ${kind}` };
+  if (!counter.active) return { error: 'inactive', message: `Contador ${kind} inactivo` };
+  const next = (+counter.currentNumber || 0) + 1;
+  const from = +counter.rangeFrom || 1;
+  const to = +counter.rangeTo || 9999;
+  if (next < from || next > to) {
+    return { error: 'out_of_range', message: `${kind} fuera de rango [${from}-${to}]` };
+  }
+  const id = `${counter.prefix}-${String(next).padStart(3, '0')}`;
+  return { id, number: next, counterId: counter.id };
+}

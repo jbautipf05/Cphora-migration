@@ -13,6 +13,8 @@ import {
   SEED_DOC_NUMBERING,
   SEED_FIXED_ASSETS,
   SEED_DEPRECIATION_RUNS,
+  SEED_NOTAS_CREDITO,
+  SEED_NOTAS_DEBITO,
 } from '../data/seed';
 import {
   WAREHOUSES,
@@ -94,6 +96,11 @@ function buildInitialState() {
     // run genera su asiento contable (postDepreciation) idempotente por periodId.
     fixedAssets: SEED_FIXED_ASSETS,
     depreciationRuns: SEED_DEPRECIATION_RUNS,
+    // Notas crédito y débito (§7.9). Editables persistidos. Cada registro
+    // contiene el journalEntryId del asiento principal y (en NC) el id del
+    // reverso COGS si aplica.
+    notasCredito: SEED_NOTAS_CREDITO,
+    notasDebito: SEED_NOTAS_DEBITO,
     // ERP — Comercial / Operación / Finanzas / Admin
     warehouses: WAREHOUSES,
     products: PRODUCTS,

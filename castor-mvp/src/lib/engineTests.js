@@ -333,6 +333,113 @@ export const TESTS = [
       assertHasLine(r, '261005', 'credit', 1700); // provisiones por pagar
     },
   },
+  {
+    id: 't_postPayroll_admin_only',
+    description: 'postPayroll byCategory admin-only: 510506+510530+510568',
+    fn: (ctx) => {
+      const r = postPayroll(
+        {
+          id: 'NOM-2026-04-A', periodId: '2026-04', date: '2026-04-30',
+          byCategory: {
+            admin: { base: 10000, aux: 200, neto: 9400, aportesEmpr: 1500, provisiones: 1700, retencionEmp: 800 },
+            sales: { base: 0, aux: 0, neto: 0, aportesEmpr: 0, provisiones: 0, retencionEmp: 0 },
+            mod:   { base: 0, aux: 0, neto: 0, aportesEmpr: 0, provisiones: 0, retencionEmp: 0 },
+          },
+        },
+        ctx,
+      );
+      assertOk(r);
+      assertBalanced(r);
+      assertHasLine(r, '510506', 'debit', 10200); // devengado admin = base+aux
+      assertHasLine(r, '510530', 'debit', 1700);
+      assertHasLine(r, '510568', 'debit', 1500);
+      assertHasLine(r, '250505', 'credit', 9400);
+      assertHasLine(r, '236505', 'credit', 800);
+      // no debe haber líneas de sales ni MOD
+      if (r.lines.find((l) => l.accountCode === '520506')) throw new Error('admin-only no debe tener 520506');
+      if (r.lines.find((l) => l.accountCode === '720505')) throw new Error('admin-only no debe tener 720505');
+      if (r.lines.find((l) => l.accountCode === '730530')) throw new Error('admin-only no debe tener 730530');
+    },
+  },
+  {
+    id: 't_postPayroll_sales_only',
+    description: 'postPayroll byCategory sales-only: 520506 + provisiones/aportes admin+sales',
+    fn: (ctx) => {
+      const r = postPayroll(
+        {
+          id: 'NOM-2026-04-S', periodId: '2026-04', date: '2026-04-30',
+          byCategory: {
+            admin: { base: 0, aux: 0, neto: 0, aportesEmpr: 0, provisiones: 0, retencionEmp: 0 },
+            sales: { base: 6500, aux: 0, neto: 5980, aportesEmpr: 1300, provisiones: 1100, retencionEmp: 520 },
+            mod:   { base: 0, aux: 0, neto: 0, aportesEmpr: 0, provisiones: 0, retencionEmp: 0 },
+          },
+        },
+        ctx,
+      );
+      assertOk(r);
+      assertBalanced(r);
+      assertHasLine(r, '520506', 'debit', 6500); // devengado ventas
+      assertHasLine(r, '510530', 'debit', 1100); // provisiones admin+ventas (consolidado)
+      assertHasLine(r, '510568', 'debit', 1300); // aportes admin+ventas (consolidado)
+      if (r.lines.find((l) => l.accountCode === '510506')) throw new Error('sales-only no debe tener 510506');
+      if (r.lines.find((l) => l.accountCode === '730530')) throw new Error('sales-only no debe tener 730530 (es MOD)');
+    },
+  },
+  {
+    id: 't_postPayroll_mod_only',
+    description: 'postPayroll byCategory MOD-only: 720505+730530+720570',
+    fn: (ctx) => {
+      const r = postPayroll(
+        {
+          id: 'NOM-2026-04-M', periodId: '2026-04', date: '2026-04-30',
+          byCategory: {
+            admin: { base: 0, aux: 0, neto: 0, aportesEmpr: 0, provisiones: 0, retencionEmp: 0 },
+            sales: { base: 0, aux: 0, neto: 0, aportesEmpr: 0, provisiones: 0, retencionEmp: 0 },
+            mod:   { base: 4200, aux: 200, neto: 4064, aportesEmpr: 700, provisiones: 800, retencionEmp: 336 },
+          },
+        },
+        ctx,
+      );
+      assertOk(r);
+      assertBalanced(r);
+      assertHasLine(r, '720505', 'debit', 4400); // devengado MOD = base+aux
+      assertHasLine(r, '730530', 'debit', 800); // provisiones MOD (cuenta nueva TD-07b-1)
+      assertHasLine(r, '720570', 'debit', 700); // aportes MOD consolidado
+      if (r.lines.find((l) => l.accountCode === '510506')) throw new Error('MOD-only no debe tener 510506');
+      if (r.lines.find((l) => l.accountCode === '510530')) throw new Error('MOD-only no debe tener 510530 (admin/sales)');
+    },
+  },
+  {
+    id: 't_postPayroll_mix_idempotency',
+    description: 'postPayroll mix admin+sales+MOD: 7 cuentas balanceadas + idempotencia',
+    fn: (ctx) => {
+      const payload = {
+        id: 'NOM-2026-04-X', periodId: '2026-04', date: '2026-04-30',
+        byCategory: {
+          admin: { base: 10000, aux: 200, neto: 9400, aportesEmpr: 1500, provisiones: 1700, retencionEmp: 800 },
+          sales: { base: 6500, aux: 0, neto: 5980, aportesEmpr: 1300, provisiones: 1100, retencionEmp: 520 },
+          mod:   { base: 4200, aux: 200, neto: 4064, aportesEmpr: 700, provisiones: 800, retencionEmp: 336 },
+        },
+      };
+      const r1 = postPayroll(payload, ctx);
+      assertOk(r1);
+      assertBalanced(r1);
+      // 3 líneas de devengado + 2 provisiones + 2 aportes + 4 pasivos = 11 líneas
+      assertEqual(r1.lines.length, 11, 'mix tiene 3+2+2+4 lineas');
+      assertHasLine(r1, '510506', 'debit', 10200);
+      assertHasLine(r1, '520506', 'debit', 6500);
+      assertHasLine(r1, '720505', 'debit', 4400);
+      assertHasLine(r1, '510530', 'debit', 2800); // 1700 + 1100
+      assertHasLine(r1, '730530', 'debit', 800);
+      assertHasLine(r1, '510568', 'debit', 2800); // 1500 + 1300
+      assertHasLine(r1, '720570', 'debit', 700);
+      // idempotencia: re-postear con mismo sourceId devuelve warning
+      const ctx2 = applyToCtx(ctx, r1);
+      const r2 = postPayroll(payload, ctx2);
+      assertWarning(r2, 'already_posted');
+      assertEqual(r1.journalEntry.id, r2.journalId, 'mismo JE id');
+    },
+  },
 
   // reverseJournalEntry ────────────────────────────────────────────────────
   {

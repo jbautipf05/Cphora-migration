@@ -221,7 +221,11 @@ export function postSale(invoice, ctx) {
   const base = invoice.base ?? invoice.total / (1 + ivaRate);
   const iva = invoice.iva ?? invoice.total - base;
   const total = invoice.total;
-  const cuentaIngreso = invoice.cuentaIngreso || '413505';
+  // 412035 ("Industria de muebles") existe en el catálogo PUC React curado;
+  // 413505 (del monolito) no está. Si no se ajusta el catálogo, todo postSale
+  // sin `cuentaIngreso` explícito fallaba con unknown_account. Detectado por
+  // el centro de pruebas C4. Mismo patrón que los fixes 510550→539595 (C2c).
+  const cuentaIngreso = invoice.cuentaIngreso || '412035';
   const cuentaIVA = '240805';
   const cuentaCxR = '130505';
 

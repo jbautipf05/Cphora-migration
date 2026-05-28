@@ -21,6 +21,8 @@ import ConfiguracionNomina from './views/ConfiguracionNomina';
 import MapeosCuentas from './views/MapeosCuentas';
 import ReglasTributarias from './views/ReglasTributarias';
 import NumeracionDocumentos from './views/NumeracionDocumentos';
+import HubExportacion from './views/HubExportacion';
+import CentroPruebas from './views/CentroPruebas';
 // Inicio
 import Inicio from './views/Inicio';
 // Comercial
@@ -82,6 +84,8 @@ const VIEWS = {
   'mapeos-cuentas': () => <MapeosCuentas />,
   'reglas-tributarias': () => <ReglasTributarias />,
   'numeracion-docs': () => <NumeracionDocumentos />,
+  exportar: () => <HubExportacion />,
+  'pruebas-contables': () => <CentroPruebas />,
 };
 
 export default function App() {

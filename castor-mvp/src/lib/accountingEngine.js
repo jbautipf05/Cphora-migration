@@ -344,6 +344,43 @@ function resolveBankPuc(bankId, ctx) {
   return b?.pucCode || null;
 }
 
+// postCustomerAdvance(payment, ctx) · H1
+// Anticipo de cliente cuando AÚN NO se ha emitido la factura del pedido.
+// Diferencia clave vs postCustomerCollection: el crédito va a 280505 Anticipos
+// (pasivo) en lugar de 130505 Clientes. Cuando luego se emita la factura, la
+// aplicación del anticipo es un asiento separado (DR 280505 / CR 130505).
+// source='customer_advance', sourceId=payment.id.
+export function postCustomerAdvance(payment, ctx) {
+  if (!payment || !(+payment.amount > 0))
+    return { error: 'invalid_payment', message: 'Anticipo sin monto válido' };
+  const m = ctx?.accountingMappings?.customer_advance || {
+    bank_default: '111005',
+    advance_received: '280505',
+  };
+  const bankPuc =
+    payment.bankPucCode || resolveBankPuc(payment.bankAccountId, ctx) || m.bank_default;
+  if (!bankPuc) return { error: 'missing_bank', message: 'Cuenta bancaria no resuelta' };
+
+  return postJournalEntry(
+    {
+      date: payment.date || today(),
+      source: 'customer_advance',
+      sourceId: payment.id,
+      concept: `Anticipo cliente ${payment.id}${payment.orderId ? ' · ' + payment.orderId : ''}`,
+      lines: [
+        { accountCode: bankPuc, debit: +payment.amount, credit: 0 },
+        {
+          accountCode: m.advance_received,
+          debit: 0,
+          credit: +payment.amount,
+          thirdParty: payment.customerId || null,
+        },
+      ],
+    },
+    ctx,
+  );
+}
+
 // ── postSupplyPurchase ──────────────────────────────────────────────────────
 // Recibe `receipt = { id, date, supplierId, supplierName, items:[{qty,cost}]|amount, ivaRate? }`.
 // Genera: Inventario MP DR / IVA descontable DR (si aplica) / Retenciones CR / CxP CR.

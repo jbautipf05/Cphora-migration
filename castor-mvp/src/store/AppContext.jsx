@@ -48,6 +48,7 @@ import {
   postSale as engPostSale,
   postCostOfSale as engPostCostOfSale,
   postCustomerCollection as engPostCollection,
+  postCustomerAdvance as engPostCustomerAdvance,
   postSupplyPurchase as engPostSupplyPurchase,
   postSupplierPayment as engPostSupplierPayment,
   postPayroll as engPostPayroll,
@@ -747,6 +748,14 @@ export function AppProvider({ children }) {
         let outcome;
         setState((s) => {
           outcome = engPostCollection(payment, s);
+          return applyJournalResult(s, outcome);
+        });
+        return outcome;
+      },
+      postCustomerAdvance: (payment) => {
+        let outcome;
+        setState((s) => {
+          outcome = engPostCustomerAdvance(payment, s);
           return applyJournalResult(s, outcome);
         });
         return outcome;

@@ -18,7 +18,7 @@ export default function Tesoreria() {
   const {
     bankAccounts, payments, outgoingPayments, orders, suppliers, employees, pucAccounts, journalLines,
     update, add, setState, nextId,
-    postCustomerCollection, postSupplierPayment, postBankAdjustment,
+    postCustomerCollection, postCustomerAdvance, postSupplierPayment, postBankAdjustment,
   } = useApp();
   const toast = useToast();
   const [tab, setTab] = useState('entrantes');
@@ -82,8 +82,14 @@ export default function Tesoreria() {
       }
       return { ...s, payments: np, bankAccounts: nb, orders: no };
     });
-    const res = postCustomerCollection({ id, date: today(), customerId: order?.customerId || null, bankAccountId: p.bankId, amount: p.amount, invoiceId: p.orderId });
-    if (res?.ok) toast(`Ingreso aprobado · asiento ${res.journalEntry.id}`, 'ok');
+    // H1: si es anticipo de un pedido aún no facturado, contabiliza contra
+    // 280505 (pasivo) en lugar de 130505 (cartera). Cualquier otro pago
+    // (abono contra factura emitida) sigue por postCustomerCollection.
+    const isAdvance = p.type === 'anticipo' && order && !order.invoiced;
+    const res = isAdvance
+      ? postCustomerAdvance({ id, date: today(), customerId: order?.customerId || null, bankAccountId: p.bankId, amount: p.amount, orderId: p.orderId })
+      : postCustomerCollection({ id, date: today(), customerId: order?.customerId || null, bankAccountId: p.bankId, amount: p.amount, invoiceId: p.orderId });
+    if (res?.ok) toast(`${isAdvance ? 'Anticipo' : 'Ingreso'} aprobado · asiento ${res.journalEntry.id}`, 'ok');
     else toast(`Ingreso aprobado (aviso contable: ${res?.message || res?.error || '—'})`, 'warn');
   };
   // reject solo aplica a pendientes (nunca se posteó asiento) → estado simple.

@@ -20,6 +20,7 @@ import {
   postSale,
   postCostOfSale,
   postCustomerCollection,
+  postCustomerAdvance,
   postSupplyPurchase,
   postSupplierPayment,
   postPayroll,
@@ -58,6 +59,7 @@ function makeCtx() {
       cogs_on_invoice: { cogs: '612035', finished_goods: '143005' },
       nota_credito: { sales_returns: '417505', iva_generated: '240805', receivable: '130505' },
       nota_debito: { receivable: '130505', revenue: '412035', iva_generated: '240805' },
+      customer_advance: { bank_default: '111005', advance_received: '280505' },
     },
     taxRules: [
       { id: 'IVA-19', type: 'iva', name: 'IVA 19%', rate: 0.19, account_generated: '240805', isDefault: true },
@@ -548,6 +550,45 @@ export const TESTS = [
       const invoice = { id: 'FAC-TEST', orderId: 'PED-TEST', type: 'factura', total: 1190 };
       const rev = postCostOfSaleReversal({ invoice, ncNumber: 'NC-001', ratio: 0.5 }, ctx);
       if (rev.skip !== 'no_cogs_je') throw new Error(`expected skip='no_cogs_je', got ${JSON.stringify(rev)}`);
+    },
+  },
+
+  // postCustomerAdvance (H1) ────────────────────────────────────────────────
+  {
+    id: 't_postCustomerAdvance',
+    description: 'postCustomerAdvance: DB banco / CR 280505 anticipo',
+    fn: (ctx) => {
+      const r = postCustomerAdvance(
+        { id: 'PAG-ADV-1', date: '2026-04-15', customerId: 'C-001', bankAccountId: 'B-01', amount: 5000, orderId: 'PED-TEST' },
+        ctx,
+      );
+      assertOk(r);
+      assertBalanced(r);
+      assertHasLine(r, '111005', 'debit', 5000);
+      assertHasLine(r, '280505', 'credit', 5000);
+      assertEqual(r.journalEntry.source, 'customer_advance');
+      assertEqual(r.journalEntry.sourceId, 'PAG-ADV-1');
+    },
+  },
+  {
+    id: 't_postCustomerAdvance_fallback_bank',
+    description: 'postCustomerAdvance usa bank_default si no resuelve bankAccountId',
+    fn: (ctx) => {
+      const r = postCustomerAdvance(
+        { id: 'PAG-ADV-2', date: '2026-04-15', customerId: 'C-001', amount: 3000 },
+        ctx,
+      );
+      assertOk(r);
+      assertHasLine(r, '111005', 'debit', 3000); // bank_default del mapping
+      assertHasLine(r, '280505', 'credit', 3000);
+    },
+  },
+  {
+    id: 't_postCustomerAdvance_invalid_amount',
+    description: 'postCustomerAdvance falla si amount ≤ 0',
+    fn: (ctx) => {
+      const r = postCustomerAdvance({ id: 'PAG-X', amount: 0 }, ctx);
+      assertError(r, 'invalid_payment');
     },
   },
 ];

@@ -36,7 +36,9 @@ export default function InventarioTerminado() {
   const [clientFilter, setClientFilter] = useState('');
   const [todasAlaVez, setTodasAlaVez] = useState(false);
   const [selected, setSelected] = useState(new Set());
-  const [trasladoForm, setTrasladoForm] = useState(null); // { ids:[...], destino, motivo }
+  // qty solo se usa cuando ids.length === 1 (modal single): permite traslado parcial.
+  // En bulk (ids.length >= 2) el campo no se renderiza y cada item se traslada completo.
+  const [trasladoForm, setTrasladoForm] = useState(null); // { ids:[...], destino, motivo, qty? }
   // Puente Inventario→Despacho (acción 📅 Programar): modal con date-picker (mejora consciente
   // sobre Demo6, que usaba prompt() en programarDespachoCliente:1354). 🚚 Solicitar no usa modal
   // porque el flujo de Demo6:1325 (solicitarDespachoDesdeInventario) tampoco pedía datos extra.
@@ -225,24 +227,52 @@ export default function InventarioTerminado() {
   };
 
   // Aplica traslado a los items seleccionados.
-  // NOTA: generamos los IDs FUERA del callback de setState para evitar
-  // nested setState (nextId hace su propio setState internamente).
+  //
+  // Paridad Demo6 (saveTraslado:1499-1512): el traslado solo cambia warehouseId.
+  // T-2: NO se setea status='en_transito' (esa lógica zombie del React anterior
+  // dejaba items con 'en_transito' para siempre porque no había workflow de
+  // "confirmar llegada"; Demo6 nunca tocó el status durante el traslado).
+  //
+  // T-1: traslado PARCIAL en modal single. Si ids.length === 1 y
+  // trasladoForm.qty < fs.qty, se splittea el FS en dos:
+  //   1) FS original conserva warehouseId y status, qty decrementada.
+  //   2) Nuevo FS en bodega destino con la qty trasladada, preservando
+  //      productId, customerId, orderId, pedidoId, clientName (reserva intacta)
+  //      y status del original. ID via timestamp pattern (mismo que MOV-).
+  //
+  // Bulk (ids.length >= 2): cada item se traslada completo, sin input qty.
   const applyTraslado = () => {
     const destino = trasladoForm.destino;
     if (!destino) return toast('Selecciona bodega destino', 'warn');
     if (!trasladoForm.ids?.length) return toast('Selecciona items', 'warn');
+
+    const isSingle = trasladoForm.ids.length === 1;
+    let qtyTraslado = null;
+    let fsSingle = null;
+    if (isSingle) {
+      fsSingle = finishedStock.find((x) => x.id === trasladoForm.ids[0]);
+      if (!fsSingle) return toast('Item no encontrado', 'warn');
+      qtyTraslado = Number(trasladoForm.qty);
+      if (!qtyTraslado || qtyTraslado < 1 || qtyTraslado > fsSingle.qty) {
+        return toast('Cantidad fuera de rango', 'warn');
+      }
+    }
+    const splitParcial = isSingle && qtyTraslado < fsSingle.qty;
+
     const tsBase = Date.now().toString(36);
     const idsSet = new Set(trasladoForm.ids);
     const userName = currentUser?.name || 'Sistema';
     setState((s) => {
       const moves = trasladoForm.ids.map((id, i) => {
         const fs = s.finishedStock.find((x) => x.id === id);
+        // T-1: el move registra la qty REAL trasladada, no la del FS completo.
+        const moveQty = isSingle ? qtyTraslado : fs?.qty;
         return {
           id: `MOV-${tsBase}-${i}`,
           type: 'traslado',
           finishedStockId: id,
           productId: fs?.productId,
-          qty: fs?.qty,
+          qty: moveQty,
           fromWarehouseId: fs?.warehouseId,
           toWarehouseId: destino,
           reason: trasladoForm.motivo || 'Traslado manual',
@@ -250,15 +280,43 @@ export default function InventarioTerminado() {
           date: new Date().toISOString().slice(0, 10),
         };
       });
+
+      let newFinishedStock;
+      if (splitParcial) {
+        // Split: decrementar original + crear nuevo en destino. El nuevo hereda
+        // todos los campos del original (incluyendo reserva customerId/orderId)
+        // y conserva el status (T-2: no se setea en_transito).
+        const original = s.finishedStock.find((x) => x.id === fsSingle.id);
+        const newFs = {
+          ...original,
+          id: `FS-${tsBase}-split`,
+          qty: qtyTraslado,
+          warehouseId: destino,
+        };
+        newFinishedStock = s.finishedStock.map((fs) =>
+          fs.id === fsSingle.id ? { ...fs, qty: fs.qty - qtyTraslado } : fs,
+        );
+        newFinishedStock = [newFs, ...newFinishedStock];
+      } else {
+        // Traslado completo (bulk, o single con qty === fs.qty): solo cambia
+        // warehouseId. T-2: sin status='en_transito'.
+        newFinishedStock = s.finishedStock.map((fs) =>
+          idsSet.has(fs.id) ? { ...fs, warehouseId: destino } : fs,
+        );
+      }
+
       return {
         ...s,
-        finishedStock: s.finishedStock.map((fs) =>
-          idsSet.has(fs.id) ? { ...fs, warehouseId: destino, status: 'en_transito' } : fs,
-        ),
+        finishedStock: newFinishedStock,
         stockMoves: [...moves, ...(s.stockMoves || [])],
       };
     });
-    toast(`${trasladoForm.ids.length} item(s) trasladados a ${wName(destino)}`, 'ok');
+    toast(
+      splitParcial
+        ? `${qtyTraslado} unidad(es) trasladadas a ${wName(destino)} (split)`
+        : `${trasladoForm.ids.length} item(s) trasladados a ${wName(destino)}`,
+      'ok',
+    );
     setSelected(new Set());
     setTrasladoForm(null);
   };
@@ -635,7 +693,7 @@ export default function InventarioTerminado() {
                             </span>
                           )}
                         <button
-                          onClick={() => setTrasladoForm({ ids: [r.id], destino: '', motivo: '' })}
+                          onClick={() => setTrasladoForm({ ids: [r.id], destino: '', motivo: '', qty: r.qty })}
                           className="text-xs text-gold-accent hover:underline"
                         >
                           ↔ Trasladar
@@ -691,6 +749,26 @@ export default function InventarioTerminado() {
                 ))}
               </Select>
             </Field>
+            {/* T-3: campo cantidad SOLO en modal single (ids.length === 1). En bulk no
+                se renderiza — cada item se traslada completo. */}
+            {trasladoForm.ids.length === 1 && (() => {
+              const fsSingle = finishedStock.find((x) => x.id === trasladoForm.ids[0]);
+              if (!fsSingle) return null;
+              return (
+                <Field label="Cantidad a trasladar" hint={`Disponibles: ${fsSingle.qty}`}>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={fsSingle.qty}
+                    required
+                    value={trasladoForm.qty ?? fsSingle.qty}
+                    onChange={(e) =>
+                      setTrasladoForm((f) => ({ ...f, qty: e.target.value }))
+                    }
+                  />
+                </Field>
+              );
+            })()}
             <Field label="Motivo">
               <Input
                 value={trasladoForm.motivo}
@@ -700,6 +778,29 @@ export default function InventarioTerminado() {
                 placeholder="Ej: reubicación por demanda"
               />
             </Field>
+            {/* T-5: preview de items en modal bulk (ids.length >= 2). Espejo Demo6:1391-1395. */}
+            {trasladoForm.ids.length >= 2 && (
+              <div className="panel-2 max-h-44 overflow-y-auto rounded p-3">
+                <p className="mb-2 text-xs text-muted">Items a trasladar:</p>
+                <div className="space-y-1">
+                  {trasladoForm.ids.map((id) => {
+                    const fs = finishedStock.find((x) => x.id === id);
+                    if (!fs) return null;
+                    const p = prod(fs.productId);
+                    return (
+                      <div
+                        key={id}
+                        className="border-t border-white/5 pt-1 text-xs first:border-0 first:pt-0"
+                      >
+                        <span className="text-white">{p?.name || fs.productId}</span>
+                        <span className="text-muted"> ×{fs.qty}</span>
+                        <span className="text-muted"> · {wName(fs.warehouseId)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </FormGrid>
         )}
       </Modal>

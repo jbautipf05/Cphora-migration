@@ -53,13 +53,16 @@ import {
   postWarrantyCost as engPostWarrantyCost,
   postBankAdjustment as engPostBankAdjustment,
   postDepreciation as engPostDepreciation,
+  emitNotaCredito as engEmitNotaCredito,
+  emitNotaDebito as engEmitNotaDebito,
+  postCostOfSaleReversal as engPostCogsReversal,
   reverseJournalEntry as engReverse,
   closePeriod as engClosePeriod,
   reopenPeriod as engReopenPeriod,
   closeFiscalYear as engCloseFiscalYear,
   applyJournalResult,
 } from '../lib/accountingEngine';
-import { calcDepreciationPreview } from '../lib/accounting';
+import { calcDepreciationPreview, nextDocNumber } from '../lib/accounting';
 
 // Slices contables: siempre se siembran desde el código (catálogo/asientos
 // estáticos). La Contabilidad queda fuera de alcance hasta tener castor_accounting.js.
@@ -496,6 +499,203 @@ export function AppProvider({ children }) {
               return item ? { ...a, depAcumulada: item.depAcumNueva } : a;
             }),
             depreciationRuns: [run, ...(applied.depreciationRuns || [])],
+          };
+        });
+        return outcome;
+      },
+
+      // ── Notas crédito / Notas débito (§7.9) ──────────────────────────────
+      // Orquestación completa (numeración → idempotencia → asiento → reverso
+      // COGS si aplica → registro NC/ND → update de factura → bump del
+      // contador), todo en un setState atómico. Patrón calcado de
+      // runDepreciation. amount opcional: si se omite, NC/ND total.
+      emitNotaCredito: ({ invoiceId, amount, motivo }) => {
+        let outcome;
+        setState((s) => {
+          const invoice = (s.invoices || []).find((i) => i.id === invoiceId);
+          if (!invoice) {
+            outcome = { error: 'invoice_not_found', message: `Factura ${invoiceId} no existe` };
+            return s;
+          }
+          if (!motivo || !String(motivo).trim()) {
+            outcome = { error: 'missing_motivo', message: 'Motivo requerido' };
+            return s;
+          }
+          const total = +(invoice.total != null ? invoice.total : invoice.amount) || 0;
+          const monto =
+            amount === undefined || amount === null || amount === '' ? total : +amount;
+          if (!(monto > 0)) {
+            outcome = { error: 'amount_zero', message: 'Monto NC ≤ 0' };
+            return s;
+          }
+
+          const num = nextDocNumber('NC', s.docNumbering);
+          if (num.error) {
+            outcome = num;
+            return s;
+          }
+
+          // Idempotencia por si la acción se dispara dos veces antes de que
+          // el bump del contador llegue al state (defensa en profundidad).
+          const dup = (s.journalEntries || []).find(
+            (j) => j.source === 'nota_credito' && j.sourceId === num.id,
+          );
+          if (dup) {
+            outcome = { warning: 'already_posted', journalId: dup.id };
+            return s;
+          }
+
+          const post = engEmitNotaCredito(
+            { invoice, amount: monto, ncNumber: num.id, motivo },
+            s,
+          );
+          if (!post.ok) {
+            outcome = post;
+            return s;
+          }
+          let next = applyJournalResult(s, post);
+
+          // Reverso COGS proporcional (hoy devuelve skip por no haber JE de
+          // cogs — se activa solo cuando H2/TD-21 esté cableado).
+          const ratio = monto / total;
+          const cogsRev = engPostCogsReversal(
+            { invoice, ncNumber: num.id, ratio },
+            next,
+          );
+          let cogsRevJEId = null;
+          if (cogsRev?.ok) {
+            next = applyJournalResult(next, cogsRev);
+            cogsRevJEId = cogsRev.journalEntry?.id || null;
+          }
+
+          const isTotal = Math.abs(monto - total) < 0.5;
+          const montoRound = Math.round(monto * 100) / 100;
+          const ncRecord = {
+            id: num.id,
+            ncNumber: num.id,
+            invoiceId,
+            motivo: String(motivo).trim(),
+            fecha: post.journalEntry.date,
+            monto: montoRound,
+            isTotal,
+            journalEntryId: post.journalEntry.id,
+            cogsReversalJournalEntryId: cogsRevJEId,
+            createdBy: s.currentUser?.name || 'sistema',
+            createdAt: nowISO(),
+          };
+
+          outcome = {
+            ok: true,
+            ncNumber: num.id,
+            journalEntryId: post.journalEntry.id,
+            cogsReversalJournalEntryId: cogsRevJEId,
+            monto: montoRound,
+            isTotal,
+          };
+
+          return {
+            ...next,
+            notasCredito: [ncRecord, ...(next.notasCredito || [])],
+            docNumbering: (next.docNumbering || []).map((d) =>
+              d.id === num.counterId ? { ...d, currentNumber: num.number } : d,
+            ),
+            invoices: (next.invoices || []).map((i) => {
+              if (i.id !== invoiceId) return i;
+              if (isTotal) {
+                return { ...i, estado: 'anulada', anuladaPor: num.id };
+              }
+              return {
+                ...i,
+                notasCredito: [
+                  ...(i.notasCredito || []),
+                  { ncId: num.id, monto: montoRound, fecha: ncRecord.fecha },
+                ],
+              };
+            }),
+          };
+        });
+        return outcome;
+      },
+
+      emitNotaDebito: ({ invoiceId, amount, motivo }) => {
+        let outcome;
+        setState((s) => {
+          const invoice = (s.invoices || []).find((i) => i.id === invoiceId);
+          if (!invoice) {
+            outcome = { error: 'invoice_not_found', message: `Factura ${invoiceId} no existe` };
+            return s;
+          }
+          if (!motivo || !String(motivo).trim()) {
+            outcome = { error: 'missing_motivo', message: 'Motivo requerido' };
+            return s;
+          }
+          const monto = +amount;
+          if (!(monto > 0)) {
+            outcome = { error: 'amount_zero', message: 'Monto ND debe ser > 0' };
+            return s;
+          }
+
+          const num = nextDocNumber('ND', s.docNumbering);
+          if (num.error) {
+            outcome = num;
+            return s;
+          }
+
+          const dup = (s.journalEntries || []).find(
+            (j) => j.source === 'nota_debito' && j.sourceId === num.id,
+          );
+          if (dup) {
+            outcome = { warning: 'already_posted', journalId: dup.id };
+            return s;
+          }
+
+          const post = engEmitNotaDebito(
+            { invoice, amount: monto, ndNumber: num.id, motivo },
+            s,
+          );
+          if (!post.ok) {
+            outcome = post;
+            return s;
+          }
+          const next = applyJournalResult(s, post);
+
+          const montoRound = Math.round(monto * 100) / 100;
+          const ndRecord = {
+            id: num.id,
+            ndNumber: num.id,
+            invoiceId,
+            motivo: String(motivo).trim(),
+            fecha: post.journalEntry.date,
+            monto: montoRound,
+            journalEntryId: post.journalEntry.id,
+            createdBy: s.currentUser?.name || 'sistema',
+            createdAt: nowISO(),
+          };
+
+          outcome = {
+            ok: true,
+            ndNumber: num.id,
+            journalEntryId: post.journalEntry.id,
+            monto: montoRound,
+          };
+
+          return {
+            ...next,
+            notasDebito: [ndRecord, ...(next.notasDebito || [])],
+            docNumbering: (next.docNumbering || []).map((d) =>
+              d.id === num.counterId ? { ...d, currentNumber: num.number } : d,
+            ),
+            invoices: (next.invoices || []).map((i) =>
+              i.id === invoiceId
+                ? {
+                    ...i,
+                    notasDebito: [
+                      ...(i.notasDebito || []),
+                      { ndId: num.id, monto: montoRound, fecha: ndRecord.fecha },
+                    ],
+                  }
+                : i,
+            ),
           };
         });
         return outcome;

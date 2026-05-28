@@ -619,6 +619,161 @@ export function postDepreciation(run, ctx) {
   );
 }
 
+// ── Notas crédito / Notas débito (§7.9) ───────────────────────────────────────
+// Portado de castor_accounting.js:5870-6099. A diferencia del monolito (que
+// muta state.notasCredito/Debito y maneja idempotencia interna), aquí el hook
+// sólo construye y postea el asiento; el caller (AppContext) asigna el número
+// (nextDocNumber), persiste el registro NC/ND y bumpea docNumbering.
+// Idempotencia: el caller verifica JE previo con mismo source+sourceId.
+// Cuentas leídas de accountingMappings con fallback a defaults; IVA resuelta
+// vía taxRules (regla isDefault) con fallback a 19% — mismo patrón TD-07 light
+// que postDepreciation. Reverso COGS proporcional vendrá en NC-3.
+const NC_DEFAULTS = { sales_returns: '417505', iva_generated: '240805', receivable: '130505' };
+const ND_DEFAULTS = { receivable: '130505', revenue: '412035', iva_generated: '240805' };
+
+function resolveDefaultIvaRule(taxRules) {
+  if (!Array.isArray(taxRules)) return null;
+  return taxRules.find((r) => r.type === 'iva' && r.isDefault) || null;
+}
+
+// Cruza invoice → customerId real (FK). Prioriza invoice.customerId; si no
+// existe (caso de los seeds actuales) cruza invoice.orderId → orders[].customerId.
+// Fallback: clientName como cadena (peor identidad, pero no rompe el asiento).
+function resolveInvoiceCustomer(invoice, orders) {
+  if (invoice?.customerId) return invoice.customerId;
+  if (invoice?.orderId && Array.isArray(orders)) {
+    const order = orders.find((o) => o.id === invoice.orderId);
+    if (order?.customerId) return order.customerId;
+  }
+  return invoice?.clientName || null;
+}
+
+// Base + IVA proporcional al monto NC/ND sobre el total. Si era remisión o
+// la regla de IVA es 0%, devuelve { base: monto, iva: 0 }.
+function splitBaseIva({ amount, invoice, taxRules }) {
+  const isRemision = invoice?.type === 'remisión' || invoice?.type === 'remision';
+  const ivaRule = isRemision ? null : resolveDefaultIvaRule(taxRules);
+  const rate = ivaRule ? +ivaRule.rate || 0 : isRemision ? 0 : 0.19;
+  if (rate <= 0) return { base: round(amount), iva: 0, ivaRule, rate };
+  const base = round(amount / (1 + rate));
+  const iva = round(amount - base);
+  return { base, iva, ivaRule, rate };
+}
+
+// emitNotaCredito({ invoice, amount, ncNumber, motivo, date? }, ctx)
+// DR sales_returns (base) + DR iva_generated (reverso IVA) / CR receivable (monto).
+// El caller decide si es total (amount = invoice.total) o parcial (amount < total).
+export function emitNotaCredito(payload, ctx) {
+  if (!payload) return { error: 'no_payload', message: 'Falta payload' };
+  const { invoice, amount, ncNumber, motivo, date } = payload;
+  if (!invoice?.id) return { error: 'invalid_invoice', message: 'Factura inválida' };
+  if (!ncNumber) return { error: 'missing_nc_number', message: 'Falta número NC' };
+  if (!motivo || !String(motivo).trim())
+    return { error: 'missing_motivo', message: 'Motivo requerido' };
+  const total = +(invoice.total != null ? invoice.total : invoice.amount) || 0;
+  if (total <= 0) return { error: 'invoice_zero', message: 'Factura sin monto' };
+  const monto = round(+amount || 0);
+  if (monto <= 0) return { error: 'amount_zero', message: 'Monto NC ≤ 0' };
+  if (monto > total + 0.5)
+    return { error: 'amount_exceeds_invoice', message: `Monto NC ${monto} excede factura ${total}` };
+
+  const m = ctx?.accountingMappings?.nota_credito || NC_DEFAULTS;
+  const { base, iva, ivaRule } = splitBaseIva({ amount: monto, invoice, taxRules: ctx?.taxRules });
+  const thirdParty = resolveInvoiceCustomer(invoice, ctx?.orders);
+
+  const lines = [
+    {
+      accountCode: m.sales_returns,
+      debit: base,
+      credit: 0,
+      thirdParty,
+      description: `NC ${ncNumber} · Devolución venta ${invoice.id}`,
+    },
+  ];
+  if (iva > 0) {
+    const ivaAccount = ivaRule?.account_generated || m.iva_generated;
+    lines.push({
+      accountCode: ivaAccount,
+      debit: iva,
+      credit: 0,
+      description: `NC ${ncNumber} · Reverso IVA`,
+    });
+  }
+  lines.push({
+    accountCode: m.receivable,
+    debit: 0,
+    credit: monto,
+    thirdParty,
+    description: `NC ${ncNumber} · Crédito a cliente`,
+  });
+
+  return postJournalEntry(
+    {
+      date: date || invoice.emitDate || today(),
+      source: 'nota_credito',
+      sourceId: ncNumber,
+      concept: `Nota crédito ${ncNumber} · ${motivo}`,
+      lines,
+    },
+    ctx,
+  );
+}
+
+// emitNotaDebito({ invoice, amount, ndNumber, motivo, date? }, ctx)
+// DR receivable (monto) / CR revenue (base) + CR iva_generated (IVA).
+// Casos típicos: cobro de intereses, ajuste de precio al alza, gastos al cliente.
+export function emitNotaDebito(payload, ctx) {
+  if (!payload) return { error: 'no_payload', message: 'Falta payload' };
+  const { invoice, amount, ndNumber, motivo, date } = payload;
+  if (!invoice?.id) return { error: 'invalid_invoice', message: 'Factura inválida' };
+  if (!ndNumber) return { error: 'missing_nd_number', message: 'Falta número ND' };
+  if (!motivo || !String(motivo).trim())
+    return { error: 'missing_motivo', message: 'Motivo requerido' };
+  const monto = round(+amount || 0);
+  if (monto <= 0) return { error: 'amount_zero', message: 'Monto ND ≤ 0' };
+
+  const m = ctx?.accountingMappings?.nota_debito || ND_DEFAULTS;
+  const { base, iva, ivaRule } = splitBaseIva({ amount: monto, invoice, taxRules: ctx?.taxRules });
+  const thirdParty = resolveInvoiceCustomer(invoice, ctx?.orders);
+
+  const lines = [
+    {
+      accountCode: m.receivable,
+      debit: monto,
+      credit: 0,
+      thirdParty,
+      description: `ND ${ndNumber} · Cargo a cliente`,
+    },
+    {
+      accountCode: m.revenue,
+      debit: 0,
+      credit: base,
+      thirdParty,
+      description: `ND ${ndNumber} · Mayor venta ${invoice.id}`,
+    },
+  ];
+  if (iva > 0) {
+    const ivaAccount = ivaRule?.account_generated || m.iva_generated;
+    lines.push({
+      accountCode: ivaAccount,
+      debit: 0,
+      credit: iva,
+      description: `ND ${ndNumber} · IVA`,
+    });
+  }
+
+  return postJournalEntry(
+    {
+      date: date || invoice.emitDate || today(),
+      source: 'nota_debito',
+      sourceId: ndNumber,
+      concept: `Nota débito ${ndNumber} · ${motivo}`,
+      lines,
+    },
+    ctx,
+  );
+}
+
 // ── Cierre de periodo / año fiscal (C2b) ──────────────────────────────────────
 // Portado de castor_accounting.js:5650-5865, adaptado a las convenciones React
 // (cuentas con level/nature/classCode; periodos con `estado`; journalEntry.period).

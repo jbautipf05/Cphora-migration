@@ -151,6 +151,10 @@ export const PUC_CATALOG = [
   A('720570', 'Aportes mano de obra directa', 'debito'),
   A('73', 'COSTOS INDIRECTOS', 'debito'),
   A('7305', 'COSTOS INDIRECTOS DE FABRICACIÓN', 'debito'),
+  // 730530 = provisiones consolidadas MOD (cesantías + intereses + prima + vacaciones).
+  // Necesaria para cumplir §7.11 / Doc 2: "MOD usa familia 7205xx + 720570 consolidado".
+  // El equivalente admin/ventas (510530) ya existe. Añadida en TD-07b.
+  A('730530', 'Cesantías y prestaciones MOD (provisión)', 'debito'),
   A('730560', 'Depreciaciones (CIF)', 'debito'),
 ];
 

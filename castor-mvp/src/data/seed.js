@@ -154,6 +154,17 @@ export const SEED_TAX_RULES = [
   { id: 'RICA-BOG', type: 'rete_ica', name: 'ReteICA Bogotá 9.66×1000', rate: 0.00966, account: '236801', baseUVT: 27 },
 ];
 
+// ── Numeración de documentos (C3c · portado de castor_accounting.js:374-381) ──
+// 4 consecutivos internos: FAC (factura), REM (remisión), NC (nota crédito),
+// ND (nota débito). Editable persistido. NO oficial DIAN — la facturación oficial
+// se gestiona en sistema externo (proveedor tecnológico autorizado, fuera del MVP).
+export const SEED_DOC_NUMBERING = [
+  { id: 'NUM-FAC', kind: 'FAC', prefix: 'FAC', rangeFrom: 1, rangeTo: 5000, currentNumber: 0, active: true, description: 'Facturas de venta · numeración interna' },
+  { id: 'NUM-REM', kind: 'REM', prefix: 'REM', rangeFrom: 1, rangeTo: 9999, currentNumber: 14, active: true, description: 'Remisiones · numeración interna' },
+  { id: 'NUM-NC', kind: 'NC', prefix: 'NC', rangeFrom: 1, rangeTo: 999, currentNumber: 0, active: true, description: 'Notas crédito · numeración interna' },
+  { id: 'NUM-ND', kind: 'ND', prefix: 'ND', rangeFrom: 1, rangeTo: 999, currentNumber: 0, active: true, description: 'Notas débito · numeración interna' },
+];
+
 // ── Asientos contables (Libro Diario) ──
 // Helper para construir un asiento balanceado y sus líneas.
 let _lineSeq = 0;

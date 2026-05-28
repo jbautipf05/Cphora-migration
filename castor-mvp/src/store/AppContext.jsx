@@ -10,6 +10,7 @@ import {
   SEED_JOURNAL_LINES,
   SEED_ACCOUNTING_MAPPINGS,
   SEED_TAX_RULES,
+  SEED_DOC_NUMBERING,
 } from '../data/seed';
 import {
   WAREHOUSES,
@@ -80,6 +81,10 @@ function buildInitialState() {
     // Restricción: un solo `isDefault` por `type`. Capa de configuración; el motor
     // todavía no las consume (cablearlo es refactor posterior junto a accountingMappings).
     taxRules: SEED_TAX_RULES,
+    // C3c: numeración interna de documentos (FAC/REM/NC/ND). Editable persistido.
+    // "Numeración interna · No oficial DIAN" — la facturación oficial se gestiona
+    // por proveedor tecnológico externo (fuera del MVP).
+    docNumbering: SEED_DOC_NUMBERING,
     // ERP — Comercial / Operación / Finanzas / Admin
     warehouses: WAREHOUSES,
     products: PRODUCTS,
@@ -362,6 +367,26 @@ export function AppProvider({ children }) {
         });
         return outcome;
       },
+
+      // ── Numeración de documentos (C3c) ───────────────────────────────────
+      // Edición inline campo a campo. Coerce a int para campos numéricos,
+      // boolean para `active`. Espejo de setNumeracion (castor_accounting.js:3205).
+      setDocNumberingField: (id, field, value) =>
+        setState((s) => ({
+          ...s,
+          docNumbering: (s.docNumbering || []).map((d) => {
+            if (d.id !== id) return d;
+            let v;
+            if (field === 'rangeFrom' || field === 'rangeTo' || field === 'currentNumber') {
+              v = Math.max(0, Math.floor(+value || 0));
+            } else if (field === 'active') {
+              v = !!value;
+            } else {
+              v = value;
+            }
+            return { ...d, [field]: v };
+          }),
+        })),
 
       // Restablece a los valores seed (botón "Reset Data Demo").
       resetDemo: () => {

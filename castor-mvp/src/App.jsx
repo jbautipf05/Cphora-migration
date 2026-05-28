@@ -20,6 +20,7 @@ import ConfigPerfilTributario from './views/ConfigPerfilTributario';
 import ConfiguracionNomina from './views/ConfiguracionNomina';
 import MapeosCuentas from './views/MapeosCuentas';
 import ReglasTributarias from './views/ReglasTributarias';
+import NumeracionDocumentos from './views/NumeracionDocumentos';
 // Inicio
 import Inicio from './views/Inicio';
 // Comercial
@@ -80,6 +81,7 @@ const VIEWS = {
   'config-nomina': () => <ConfiguracionNomina />,
   'mapeos-cuentas': () => <MapeosCuentas />,
   'reglas-tributarias': () => <ReglasTributarias />,
+  'numeracion-docs': () => <NumeracionDocumentos />,
 };
 
 export default function App() {

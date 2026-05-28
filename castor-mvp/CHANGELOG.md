@@ -27,6 +27,11 @@ Numeración consistente del sprint (se cierra a `main` con `SPRINT_PRE_DEMO.md`)
   reserva de `finishedStock` (reservado→despachado) + pasa la solicitud a histórico (setState
   atómico). Guard: solo despachable si las OPs están en `listo`/`op_cerrada` (mejora sobre Demo6).
   Flujo B (recepción CEDI) diferido como EX-F3-03.
+- **EX-F3-04** ✅ Puente Inventario→Despacho: en la pestaña Clientes de Inventario Terminado,
+  acciones 🚚 Solicitar y 📅 Programar sobre filas con `receptionStatus==='recibido'`. Espejo de
+  `solicitarDespachoDesdeInventario` (Demo6:1325) y `programarDespachoCliente` (Demo6:1354).
+  Guard anti-duplicado por `orderId`. Programar usa modal con `<input type="date">` real
+  (mejora consciente sobre el `prompt()` de Demo6). Counter `dsp` pad 3 → `DSP-003`.
 
 ## [2026-05-26] - Fase 2.5.2 (REG-H035-01..12 — modal Nueva Venta)
 - 12 regresiones del modal Nueva Venta (`NuevaVentaModal.jsx`) cerradas. Validaciones por bloque

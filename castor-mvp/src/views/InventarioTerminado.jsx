@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
 import { KpiCard, Chip } from '../components/ui';
 import { fmtCOP } from '../lib/accounting';
-import { fmtDate, today, nowISO } from '../lib/format';
+import { fmtDate, today, nowISO, addDays } from '../lib/format';
 import { ClearFiltersButton } from '../components/widgets';
 import { IconBox, IconDashboard, IconCheck, IconShield, IconBank } from '../components/icons';
 import { useToast } from '../components/Toast';
@@ -16,7 +16,17 @@ import { Field, Input, Select, FormGrid } from '../components/form';
 // estado y acción "Trasladar".
 // ─────────────────────────────────────────────────────────────────────────────
 export default function InventarioTerminado() {
-  const { finishedStock, products, warehouses, customers, setState, currentUser } = useApp();
+  const {
+    finishedStock,
+    products,
+    warehouses,
+    customers,
+    orders,
+    dispatchRequests,
+    setState,
+    currentUser,
+    nextId,
+  } = useApp();
   const toast = useToast();
   const [bodega, setBodega] = useState(''); // '' = todas
   const [vista, setVista] = useState('stock'); // stock | clientes
@@ -27,6 +37,10 @@ export default function InventarioTerminado() {
   const [todasAlaVez, setTodasAlaVez] = useState(false);
   const [selected, setSelected] = useState(new Set());
   const [trasladoForm, setTrasladoForm] = useState(null); // { ids:[...], destino, motivo }
+  // Puente Inventario→Despacho (acción 📅 Programar): modal con date-picker (mejora consciente
+  // sobre Demo6, que usaba prompt() en programarDespachoCliente:1354). 🚚 Solicitar no usa modal
+  // porque el flujo de Demo6:1325 (solicitarDespachoDesdeInventario) tampoco pedía datos extra.
+  const [programarForm, setProgramarForm] = useState(null); // { fsId, fecha, motivo }
 
   const ptWarehouses = warehouses.filter((w) => w.tipo === 'terminado');
   const wById = (id) => warehouses.find((w) => w.id === id);
@@ -85,6 +99,72 @@ export default function InventarioTerminado() {
       };
     });
     toast('✓ Recepción confirmada · producto disponible en CEDI', 'ok');
+  };
+
+  // ── Puente Inventario→Despacho ────────────────────────────────────────────
+  // Set de orderIds que ya tienen una solicitud (pendiente o despachada): guard anti-duplicado.
+  const dispatchedOrderIds = useMemo(
+    () =>
+      new Set(
+        (dispatchRequests || []).flatMap((d) =>
+          d.orderIds?.length ? d.orderIds : d.orderId ? [d.orderId] : [],
+        ),
+      ),
+    [dispatchRequests],
+  );
+
+  // Construye el payload base de la solicitud (espejo de solicitarDespachoDesdeInventario:1325 /
+  // programarDespachoCliente:1354 de Demo6). Resuelve ciudad/dirección desde el customer del
+  // pedido + el deliveryAddress de la orden si existe.
+  const buildDispatchPayload = (fs) => {
+    const order = orders.find((o) => o.id === fs.orderId);
+    const customerId = fs.customerId || order?.customerId || null;
+    const customer = customerId ? customers.find((c) => c.id === customerId) : null;
+    const clientName = fs.clientName || order?.clientName || customer?.name || '—';
+    const ciudad = customer?.city || '';
+    const address = order?.deliveryAddress || customer?.address || '';
+    return {
+      id: nextId('DSP', 'dsp', 3),
+      finishedStockId: fs.id,
+      orderId: fs.orderId,
+      pedidoId: fs.pedidoId || fs.orderId, // en este app order.id === pedidoId
+      customerId,
+      clientName,
+      productId: fs.productId,
+      qty: fs.qty,
+      ciudad,
+      address,
+      estado: 'pendiente', // ← clave: Despacho.jsx filtra por 'pendiente'
+      requestedAt: nowISO(),
+      requestedBy: currentUser?.name || 'Inventario',
+    };
+  };
+
+  // 🚚 Solicitar despacho (Demo6:1325). Inserción inmutable + guard anti-dup.
+  const solicitarDespacho = (fs) => {
+    if (dispatchedOrderIds.has(fs.orderId)) {
+      return toast('Ya existe una solicitud de despacho para este pedido', 'warn');
+    }
+    const req = buildDispatchPayload(fs);
+    setState((s) => ({ ...s, dispatchRequests: [req, ...(s.dispatchRequests || [])] }));
+    toast(`🚚 ${req.id} solicitado · pendiente en Despacho`, 'ok');
+  };
+
+  // 📅 Programar despacho (Demo6:1354). Espejo del anterior + scheduledDate del modal.
+  const programarDespacho = () => {
+    const { fsId, fecha, motivo } = programarForm || {};
+    const fs = finishedStock.find((x) => x.id === fsId);
+    if (!fs) return toast('Item no encontrado', 'warn');
+    if (!fecha) return toast('Selecciona una fecha programada', 'warn');
+    if (dispatchedOrderIds.has(fs.orderId)) {
+      setProgramarForm(null);
+      return toast('Ya existe una solicitud de despacho para este pedido', 'warn');
+    }
+    const req = { ...buildDispatchPayload(fs), scheduledDate: fecha };
+    if (motivo) req.scheduleNotes = motivo;
+    setState((s) => ({ ...s, dispatchRequests: [req, ...(s.dispatchRequests || [])] }));
+    toast(`📅 ${req.id} programado para ${fmtDate(fecha)}`, 'ok');
+    setProgramarForm(null);
   };
 
   // Resumen por bodega usado en las tarjetas (líneas, terminados, valor).
@@ -514,12 +594,53 @@ export default function InventarioTerminado() {
                       <Chip variant={statusVariant(r.status)}>{r.status || 'disponible'}</Chip>
                     </td>
                     <td className="px-3 py-3 text-right">
-                      <button
-                        onClick={() => setTrasladoForm({ ids: [r.id], destino: '', motivo: '' })}
-                        className="text-xs text-gold-accent hover:underline"
-                      >
-                        ↔ Trasladar
-                      </button>
+                      <div className="flex flex-wrap justify-end gap-2">
+                        {/* Puente Inventario→Despacho: solo en vista Clientes, recibido en CEDI,
+                            y sin solicitud previa para esa OP (guard anti-duplicado). */}
+                        {vista === 'clientes' &&
+                          r.orderId &&
+                          r.receptionStatus === 'recibido' &&
+                          !dispatchedOrderIds.has(r.orderId) && (
+                            <>
+                              <button
+                                onClick={() => solicitarDespacho(r)}
+                                className="rounded-lg border border-emerald-500/30 px-2 py-1 text-[11px] text-emerald-300 transition hover:bg-emerald-500/10"
+                                title="Crear solicitud de despacho (pendiente) en Despacho"
+                              >
+                                🚚 Solicitar
+                              </button>
+                              <button
+                                onClick={() =>
+                                  setProgramarForm({
+                                    fsId: r.id,
+                                    fecha: addDays(today(), 2),
+                                    motivo: '',
+                                  })
+                                }
+                                className="rounded-lg border border-sky-500/30 px-2 py-1 text-[11px] text-sky-300 transition hover:bg-sky-500/10"
+                                title="Programar despacho con fecha específica"
+                              >
+                                📅 Programar
+                              </button>
+                            </>
+                          )}
+                        {vista === 'clientes' &&
+                          r.orderId &&
+                          dispatchedOrderIds.has(r.orderId) && (
+                            <span
+                              className="text-[11px] italic text-muted"
+                              title="Ya hay una solicitud de despacho para esta OP."
+                            >
+                              ✓ Despacho solicitado
+                            </span>
+                          )}
+                        <button
+                          onClick={() => setTrasladoForm({ ids: [r.id], destino: '', motivo: '' })}
+                          className="text-xs text-gold-accent hover:underline"
+                        >
+                          ↔ Trasladar
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -577,6 +698,48 @@ export default function InventarioTerminado() {
                   setTrasladoForm((f) => ({ ...f, motivo: e.target.value }))
                 }
                 placeholder="Ej: reubicación por demanda"
+              />
+            </Field>
+          </FormGrid>
+        )}
+      </Modal>
+
+      {/* Modal de programación de despacho (📅 Programar). Demo6:1354 usaba prompt() para la fecha;
+          aquí lo elevamos a un date-picker real (mejora consciente sobre Demo6). */}
+      <Modal
+        open={!!programarForm}
+        onClose={() => setProgramarForm(null)}
+        title="📅 Programar despacho"
+        size="sm"
+        footer={
+          <>
+            <button className="btn-outline" onClick={() => setProgramarForm(null)}>
+              Cancelar
+            </button>
+            <button className="btn-gold" onClick={programarDespacho}>
+              Confirmar programación
+            </button>
+          </>
+        }
+      >
+        {programarForm && (
+          <FormGrid cols={1}>
+            <Field label="Fecha programada" hint="Por defecto, 2 días desde hoy.">
+              <Input
+                type="date"
+                value={programarForm.fecha}
+                onChange={(e) =>
+                  setProgramarForm((f) => ({ ...f, fecha: e.target.value }))
+                }
+              />
+            </Field>
+            <Field label="Motivo / nota (opcional)">
+              <Input
+                value={programarForm.motivo}
+                onChange={(e) =>
+                  setProgramarForm((f) => ({ ...f, motivo: e.target.value }))
+                }
+                placeholder="Ej: coordinar con cliente para entrega"
               />
             </Field>
           </FormGrid>

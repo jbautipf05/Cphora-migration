@@ -6,6 +6,7 @@ import { Toolbar, SearchBox, SelectFilter, DataTable, EstadoBadge, SlidePanel, C
 import Modal from '../components/Modal';
 import NuevaCotizacionModal from '../components/NuevaCotizacionModal';
 import { Field, Input, MoneyInput, Select, Textarea, FormGrid } from '../components/form';
+import { Combobox } from '../components/Combobox';
 import { useToast } from '../components/Toast';
 import { IconBell, IconUsers } from '../components/icons';
 
@@ -766,7 +767,7 @@ export default function Leads() {
             </Field>
             <Field label="Email"><Input value={form.email} onChange={(e) => set('email', e.target.value)} /></Field>
             <Field label="Documento"><Input value={form.doc} onChange={(e) => set('doc', e.target.value)} /></Field>
-            <Field label="Ciudad"><Input value={form.city} onChange={(e) => set('city', e.target.value)} /></Field>
+            <Field label="Ciudad"><Combobox value={form.city} onChange={(e) => set('city', e.target.value)} /></Field>
             <Field label="Dirección" className="sm:col-span-2"><Input value={form.address} onChange={(e) => set('address', e.target.value)} /></Field>
             <Field label="Canal *">
               <Select value={form.channel} onChange={(e) => set('channel', e.target.value)}>

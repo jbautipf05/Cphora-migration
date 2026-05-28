@@ -6,6 +6,7 @@ import { Toolbar, SearchBox, SelectFilter, DataTable, EstadoBadge } from '../com
 import { IconUsers, IconBank, IconBox, IconCheck } from '../components/icons';
 import Modal from '../components/Modal';
 import { Field, Input, MoneyInput, Select, FormGrid } from '../components/form';
+import { Combobox } from '../components/Combobox';
 import { useToast } from '../components/Toast';
 
 // RRHH-01: 13 áreas de contratación (espejo de RRHH_AREAS de Demo6), con ortografía
@@ -162,7 +163,7 @@ export default function RRHH() {
             </Field>
             <Field label="Celular *"><Input value={form.celular} onChange={(e) => setF('celular', e.target.value)} /></Field>
             <Field label="Dirección" className="sm:col-span-2"><Input value={form.direccion} onChange={(e) => setF('direccion', e.target.value)} /></Field>
-            <Field label="Ciudad"><Input value={form.ciudad} onChange={(e) => setF('ciudad', e.target.value)} /></Field>
+            <Field label="Ciudad"><Combobox value={form.ciudad} onChange={(e) => setF('ciudad', e.target.value)} /></Field>
             <Field label="Fecha de nacimiento"><Input type="date" value={form.fechaNacimiento} onChange={(e) => setF('fechaNacimiento', e.target.value)} /></Field>
             <Field label="Fecha de ingreso *"><Input type="date" value={form.hiredAt} onChange={(e) => setF('hiredAt', e.target.value)} /></Field>
             <Field label="Fecha de retiro"><Input type="date" value={form.fechaRetiro} onChange={(e) => setF('fechaRetiro', e.target.value)} /></Field>

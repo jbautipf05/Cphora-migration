@@ -4,6 +4,7 @@ import { fmtCOP, nowISO, addDays, today } from '../lib/format';
 import { resolveCustomerId } from '../lib/migrations';
 import Modal from './Modal';
 import { Field, Input, MoneyInput, Select, Textarea, FormGrid } from './form';
+import { Combobox } from './Combobox';
 import { useToast } from './Toast';
 
 // Modal "Nueva cotización" reutilizable (H-010). Se usa desde Cotizaciones y desde
@@ -298,7 +299,7 @@ export default function NuevaCotizacionModal({ open, leadId = null, initialForm 
               </Select>
             </Field>
             <Field label="Cliente *"><Input value={form.clientName} onChange={(e) => setF('clientName', e.target.value)} /></Field>
-            <Field label="Ciudad"><Input value={form.city} onChange={(e) => setF('city', e.target.value)} /></Field>
+            <Field label="Ciudad"><Combobox value={form.city} onChange={(e) => setF('city', e.target.value)} /></Field>
           </FormGrid>
 
           {/* Caja lead nuevo (espejo HTML 4558) — sólo si no hay lead seleccionado */}

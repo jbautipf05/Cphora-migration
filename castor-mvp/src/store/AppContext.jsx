@@ -67,18 +67,25 @@ import {
 } from '../lib/accountingEngine';
 import { calcDepreciationPreview, nextDocNumber } from '../lib/accounting';
 
-// Slices contables: siempre se siembran desde el código (catálogo/asientos
-// estáticos). La Contabilidad queda fuera de alcance hasta tener castor_accounting.js.
+// Slices estáticos del motor contable: siempre se siembran desde el código.
+// Solo cuentas del catálogo PUC y centros de costo — los asientos en vivo
+// (journalEntries/journalLines) viven en buildInitialState desde TD-08 y SÍ
+// se persisten para que los hooks (postSale, postPayroll, NC, etc.) sobrevivan
+// al reload. Habilita validación e2e de ciclos contables y prepara el modelo
+// para Firestore (ver ADR-010).
 const ACCOUNTING_SEED = () => ({
   pucAccounts: PUC_CATALOG,
-  journalEntries: SEED_JOURNAL_ENTRIES,
-  journalLines: SEED_JOURNAL_LINES,
   costCenters: SEED_COST_CENTERS,
 });
 
 function buildInitialState() {
   return {
     ...ACCOUNTING_SEED(),
+    // TD-08: asientos contables persistidos (antes vivían en ACCOUNTING_SEED).
+    // El seed solo cubre el primer hydrate (sin saved state); después los JE
+    // generados por los hooks del motor sobreviven al reload.
+    journalEntries: SEED_JOURNAL_ENTRIES,
+    journalLines: SEED_JOURNAL_LINES,
     // Editables de contabilidad (sí se persisten)
     bankAccounts: SEED_BANK_ACCOUNTS,
     companyTaxProfile: SEED_TAX_PROFILE,

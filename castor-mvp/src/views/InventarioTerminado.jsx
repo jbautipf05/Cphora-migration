@@ -628,7 +628,7 @@ export default function InventarioTerminado() {
                           r.orderId &&
                           dispatchedOrderIds.has(r.orderId) && (
                             <span
-                              className="text-[11px] italic text-muted"
+                              className="rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-300"
                               title="Ya hay una solicitud de despacho para esta OP."
                             >
                               ✓ Despacho solicitado

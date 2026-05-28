@@ -1179,7 +1179,7 @@ export default function AlmacenMP() {
             <FormGrid cols={3}>
               <Field label="Tipo *">
                 <Select value={issForm.type} onChange={(e) => setIssForm((f) => ({ ...f, type: e.target.value }))}>
-                  <option value="salida">Salida a producción (−)</option>
+                  <option value="salida">Salida a producción</option>
                   <option value="devolucion">Devolución al almacén (+)</option>
                 </Select>
               </Field>

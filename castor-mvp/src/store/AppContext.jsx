@@ -11,6 +11,8 @@ import {
   SEED_ACCOUNTING_MAPPINGS,
   SEED_TAX_RULES,
   SEED_DOC_NUMBERING,
+  SEED_FIXED_ASSETS,
+  SEED_DEPRECIATION_RUNS,
 } from '../data/seed';
 import {
   WAREHOUSES,
@@ -48,12 +50,14 @@ import {
   postPayroll as engPostPayroll,
   postWarrantyCost as engPostWarrantyCost,
   postBankAdjustment as engPostBankAdjustment,
+  postDepreciation as engPostDepreciation,
   reverseJournalEntry as engReverse,
   closePeriod as engClosePeriod,
   reopenPeriod as engReopenPeriod,
   closeFiscalYear as engCloseFiscalYear,
   applyJournalResult,
 } from '../lib/accountingEngine';
+import { calcDepreciationPreview } from '../lib/accounting';
 
 // Slices contables: siempre se siembran desde el código (catálogo/asientos
 // estáticos). La Contabilidad queda fuera de alcance hasta tener castor_accounting.js.
@@ -85,6 +89,11 @@ function buildInitialState() {
     // "Numeración interna · No oficial DIAN" — la facturación oficial se gestiona
     // por proveedor tecnológico externo (fuera del MVP).
     docNumbering: SEED_DOC_NUMBERING,
+    // Activos fijos + corridas de depreciación. Editables persistidos. La
+    // depreciación lineal mensual se corre desde la vista ActivosFijos; cada
+    // run genera su asiento contable (postDepreciation) idempotente por periodId.
+    fixedAssets: SEED_FIXED_ASSETS,
+    depreciationRuns: SEED_DEPRECIATION_RUNS,
     // ERP — Comercial / Operación / Finanzas / Admin
     warehouses: WAREHOUSES,
     products: PRODUCTS,
@@ -111,7 +120,7 @@ function buildInitialState() {
     marketingAssets: MARKETING_ASSETS,
     dispatchRequests: DISPATCH_REQUESTS,
     notifications: [],
-    counters: { lead: 105, cot: 2002, ped: 1253, op: 5004, gar: 51, pag: 504, out: 32, emp: 7, inn: 2, mkt: 12, sup: 5, insumo: 8, oc: 3003, prod: 8, dsp: 2, fac: 2, rem: 14, cli: 4, rcp: 0, je: 12, iss: 0 },
+    counters: { lead: 105, cot: 2002, ped: 1253, op: 5004, gar: 51, pag: 504, out: 32, emp: 7, inn: 2, mkt: 12, sup: 5, insumo: 8, oc: 3003, prod: 8, dsp: 2, fac: 2, rem: 14, cli: 4, rcp: 0, je: 11, iss: 0, af: 7 },
     currentUser: { id: 'u1', name: 'Alexander Vivas', role: 'gerencia' },
   };
 }
@@ -387,6 +396,103 @@ export function AppProvider({ children }) {
             return { ...d, [field]: v };
           }),
         })),
+
+      // ── Activos fijos + depreciación mensual ─────────────────────────────
+      // CRUD básico + runDepreciation que: calcula la cuota mensual por activo,
+      // postea el asiento balanceado (DB gasto / CR acumulada), actualiza
+      // fixedAssets.depAcumulada y registra el run en depreciationRuns. Todo
+      // en un setState atómico. Idempotente por periodId.
+      addFixedAsset: (asset) => {
+        let outcome;
+        setState((s) => {
+          if (!asset?.name || !asset?.category || !asset?.usage) {
+            outcome = { error: 'invalid_asset', message: 'name, category y usage son requeridos' };
+            return s;
+          }
+          const cost = +asset.cost || 0;
+          const useful = +asset.usefulLifeMonths || 0;
+          if (cost <= 0) {
+            outcome = { error: 'invalid_cost', message: 'cost debe ser > 0' };
+            return s;
+          }
+          if (useful <= 0) {
+            outcome = { error: 'invalid_useful_life', message: 'usefulLifeMonths debe ser > 0' };
+            return s;
+          }
+          const n = (s.counters?.af || 0) + 1;
+          const id = `AF-${String(n).padStart(3, '0')}`;
+          const newAsset = {
+            id,
+            name: String(asset.name).trim(),
+            category: asset.category,
+            usage: asset.usage,
+            cost,
+            salvageValue: +asset.salvageValue || 0,
+            usefulLifeMonths: useful,
+            depAcumulada: +asset.depAcumulada || 0,
+            estado: asset.estado || 'activo',
+            startDate: asset.startDate || null,
+          };
+          outcome = { ok: true, id };
+          return {
+            ...s,
+            fixedAssets: [...(s.fixedAssets || []), newAsset],
+            counters: { ...s.counters, af: n },
+          };
+        });
+        return outcome;
+      },
+      updateFixedAsset: (id, patch) =>
+        setState((s) => ({
+          ...s,
+          fixedAssets: (s.fixedAssets || []).map((a) => (a.id === id ? { ...a, ...patch } : a)),
+        })),
+      removeFixedAsset: (id) =>
+        setState((s) => ({
+          ...s,
+          fixedAssets: (s.fixedAssets || []).filter((a) => a.id !== id),
+        })),
+      runDepreciation: (periodId) => {
+        let outcome;
+        setState((s) => {
+          const calc = calcDepreciationPreview(s.fixedAssets, periodId, s.depreciationRuns);
+          if (calc.error || calc.warning) {
+            outcome = calc;
+            return s;
+          }
+          const runDraft = {
+            id: 'DEP-' + periodId,
+            periodId,
+            runAt: nowISO(),
+            items: calc.items,
+            total: calc.total,
+            journalEntryId: null,
+          };
+          const post = engPostDepreciation(runDraft, s);
+          if (!post.ok) {
+            outcome = post;
+            return s;
+          }
+          const applied = applyJournalResult(s, post);
+          const run = { ...runDraft, journalEntryId: post.journalEntry.id };
+          outcome = {
+            ok: true,
+            runId: run.id,
+            journalEntryId: post.journalEntry.id,
+            total: run.total,
+            itemCount: run.items.length,
+          };
+          return {
+            ...applied,
+            fixedAssets: (applied.fixedAssets || []).map((a) => {
+              const item = calc.items.find((it) => it.assetId === a.id);
+              return item ? { ...a, depAcumulada: item.depAcumNueva } : a;
+            }),
+            depreciationRuns: [run, ...(applied.depreciationRuns || [])],
+          };
+        });
+        return outcome;
+      },
 
       // Restablece a los valores seed (botón "Reset Data Demo").
       resetDemo: () => {

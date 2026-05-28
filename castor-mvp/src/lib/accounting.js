@@ -265,6 +265,55 @@ export function getSaldoCuenta(code, lines, entries, period = 'all') {
   return total;
 }
 
+// ── Depreciación lineal mensual (preview) ──────────────────────────────────
+// Calcula la cuota de depreciación mensual de cada activo activo según el
+// método de línea recta: depMes = (cost - salvageValue) / usefulLifeMonths.
+// Respeta el tope `cost - salvageValue` (no deprecia más del valor depreciable).
+// Idempotente: si ya hay run para el periodo, devuelve {warning, runId}.
+// Función pura: no muta `assets` ni `depreciationRuns`.
+export function calcDepreciationPreview(assets, periodId, depreciationRuns) {
+  if (!periodId || !/^\d{4}-\d{2}$/.test(periodId)) {
+    return { error: 'invalid_period', message: 'periodId debe ser YYYY-MM' };
+  }
+  const existing = (depreciationRuns || []).find((r) => r.periodId === periodId);
+  if (existing) return { warning: 'already_run', runId: existing.id };
+
+  const active = (assets || []).filter((a) => a.estado === 'activo');
+  if (!active.length) return { error: 'no_assets', message: 'Sin activos fijos activos' };
+
+  const items = [];
+  let total = 0;
+  for (const a of active) {
+    const cost = +a.cost || 0;
+    const salvage = +a.salvageValue || 0;
+    const useful = +a.usefulLifeMonths || 0;
+    if (useful <= 0 || cost <= 0) continue;
+    const depMensual = Math.round((cost - salvage) / useful);
+    if (depMensual <= 0) continue;
+    const depAcumPrev = Math.round(+a.depAcumulada || 0);
+    const cap = Math.round(cost - salvage);
+    let monto = depMensual;
+    let depAcumNueva = depAcumPrev + depMensual;
+    if (depAcumNueva > cap) {
+      monto = Math.max(0, cap - depAcumPrev);
+      depAcumNueva = depAcumPrev + monto;
+    }
+    if (monto <= 0) continue;
+    items.push({
+      assetId: a.id,
+      assetName: a.name || '',
+      category: a.category || '',
+      usage: a.usage || '',
+      monto,
+      depAcumPrev,
+      depAcumNueva,
+    });
+    total += monto;
+  }
+  if (!items.length) return { error: 'no_assets_to_depreciate', message: 'Ningún activo con cuota válida' };
+  return { ok: true, periodId, items, total };
+}
+
 // ── Estado del motor contable (reemplaza la alerta "no cargado") ──
 // Devuelve OK siempre que el catálogo PUC y los asientos estén presentes.
 export function accountingStatus(state) {

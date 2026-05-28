@@ -58,6 +58,7 @@ export const PUC_CATALOG = [
   A('1528', 'EQUIPO DE CÓMPUTO Y COMUNICACIÓN', 'debito'),
   A('152805', 'Equipo de cómputo', 'debito'),
   A('1592', 'DEPRECIACIÓN ACUMULADA', 'credito'),
+  A('159205', 'Construcciones y edificaciones (dep. acum.)', 'credito'),
   A('159220', 'Equipo de oficina (dep. acum.)', 'credito'),
   A('159225', 'Equipo de cómputo (dep. acum.)', 'credito'),
   A('159240', 'Flota y equipo de transporte (dep. acum.)', 'credito'),

@@ -532,6 +532,93 @@ export function postBankAdjustment(adj, ctx) {
   );
 }
 
+// ── postDepreciation (Activos fijos) ──────────────────────────────────────────
+// Portado de castor_accounting.js:1851 (_resolveDepreciationAccounts) y :1938
+// (postDepreciation). Genera el asiento del run mensual: por cada activo,
+// DB cuenta de gasto / CR cuenta de depreciación acumulada por `item.monto`.
+// Las cuentas se resuelven leyendo `ctx.accountingMappings.depreciation` (slice
+// C3a), con fallback hardcoded para compat. Es el primer cableado real de
+// TD-07: la depreciación lee de la configuración editable en vez de constantes.
+// Idempotente por (source='depreciation', sourceId=run.id).
+
+const DEPRECIATION_DEFAULTS = {
+  expense_admin: '516015',
+  expense_sales: '526010',
+  expense_cif: '730560',
+  accumulated_oficina: '159220',
+  accumulated_computacion: '159225',
+  accumulated_transporte: '159240',
+  accumulated_construcciones: '159205',
+};
+
+function resolveDepreciationAccounts(asset, accountingMappings) {
+  const m = { ...DEPRECIATION_DEFAULTS, ...(accountingMappings?.depreciation || {}) };
+  const usage = String(asset.usage || 'admin').toLowerCase();
+  let expense = m.expense_admin;
+  if (usage === 'sales' || usage === 'ventas') expense = m.expense_sales;
+  else if (usage === 'cif' || usage === 'produccion' || usage === 'producción') expense = m.expense_cif;
+  if (asset.expenseAccountCode) expense = asset.expenseAccountCode;
+
+  const cat = String(asset.category || '').toLowerCase();
+  let accumulated = m.accumulated_oficina || m.accumulated;
+  if (/comput/.test(cat)) accumulated = m.accumulated_computacion || accumulated;
+  else if (/transp|veh/.test(cat)) accumulated = m.accumulated_transporte || accumulated;
+  else if (/constr|edif/.test(cat)) accumulated = m.accumulated_construcciones || accumulated;
+  if (asset.accumulatedAccountCode) accumulated = asset.accumulatedAccountCode;
+
+  return { expense, accumulated };
+}
+
+export function postDepreciation(run, ctx) {
+  if (!run || !run.id) return { error: 'invalid_run', message: 'Run inválido' };
+  const items = run.items || run.assets;
+  if (!Array.isArray(items) || !items.length)
+    return { error: 'no_items', message: 'Run sin activos' };
+  const { fixedAssets = [], costCenters = [], accountingMappings } = ctx || {};
+
+  const lines = [];
+  for (const item of items) {
+    const asset = fixedAssets.find((a) => a.id === item.assetId);
+    if (!asset) continue;
+    const accs = resolveDepreciationAccounts(asset, accountingMappings);
+    // Cost center opcional por usage (admin/ventas/cif → ADMIN/VENTAS/TALLER).
+    let cc = null;
+    const usage = String(asset.usage || '').toLowerCase();
+    const findCC = (id) => costCenters.find((c) => c.id === id || c.code === id)?.id || null;
+    if (usage === 'admin') cc = findCC('ADMIN');
+    else if (usage === 'sales' || usage === 'ventas') cc = findCC('VENTAS');
+    else if (usage === 'cif' || usage === 'produccion' || usage === 'producción') cc = findCC('TALLER');
+
+    const label = `${asset.id}${asset.name ? ' · ' + asset.name : ''}`;
+    lines.push({
+      accountCode: accs.expense,
+      debit: item.monto,
+      credit: 0,
+      costCenter: cc,
+      description: `Depreciación ${label}`,
+    });
+    lines.push({
+      accountCode: accs.accumulated,
+      debit: 0,
+      credit: item.monto,
+      costCenter: cc,
+      description: `Dep. acumulada ${label}`,
+    });
+  }
+  if (!lines.length) return { error: 'no_lines', message: 'Sin líneas a postear' };
+
+  return postJournalEntry(
+    {
+      date: run.periodId + '-28',
+      source: 'depreciation',
+      sourceId: run.id,
+      concept: `Depreciación ${run.periodId} · ${items.length} activo(s)`,
+      lines,
+    },
+    ctx,
+  );
+}
+
 // ── Cierre de periodo / año fiscal (C2b) ──────────────────────────────────────
 // Portado de castor_accounting.js:5650-5865, adaptado a las convenciones React
 // (cuentas con level/nature/classCode; periodos con `estado`; journalEntry.period).

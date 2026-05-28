@@ -154,6 +154,26 @@ export const SEED_TAX_RULES = [
   { id: 'RICA-BOG', type: 'rete_ica', name: 'ReteICA Bogotá 9.66×1000', rate: 0.00966, account: '236801', baseUVT: 27 },
 ];
 
+// ── Activos fijos (módulo · portado del shape del monolito castor_accounting.js) ──
+// 7 activos representativos del negocio Castor: mezcla de categorías
+// (oficina/computacion/transporte/otros) y usages (admin/sales/cif). El campo
+// `depAcumulada` refleja meses ya depreciados desde el `startDate` (simula que
+// la empresa lleva operando ~3 años antes de la implementación del ERP).
+// La depreciación es línea recta: depMensual = (cost - salvageValue) / usefulLifeMonths.
+export const SEED_FIXED_ASSETS = [
+  { id: 'AF-001', name: 'Escritorios y mobiliario oficina', category: 'oficina', usage: 'admin', cost: 5000000, salvageValue: 500000, usefulLifeMonths: 60, depAcumulada: 1500000, estado: 'activo', startDate: '2024-04-01' },
+  { id: 'AF-002', name: 'Equipos de cómputo gerencia', category: 'computacion', usage: 'admin', cost: 12000000, salvageValue: 1200000, usefulLifeMonths: 36, depAcumulada: 6000000, estado: 'activo', startDate: '2024-04-01' },
+  { id: 'AF-003', name: 'Camioneta de despacho Bogotá', category: 'transporte', usage: 'sales', cost: 80000000, salvageValue: 20000000, usefulLifeMonths: 84, depAcumulada: 17142857, estado: 'activo', startDate: '2024-04-01' },
+  { id: 'AF-004', name: 'Torno industrial taller', category: 'otros', usage: 'cif', cost: 35000000, salvageValue: 5000000, usefulLifeMonths: 120, depAcumulada: 6000000, estado: 'activo', startDate: '2024-04-01' },
+  { id: 'AF-005', name: 'POS showroom Castor 43', category: 'computacion', usage: 'sales', cost: 4000000, salvageValue: 400000, usefulLifeMonths: 36, depAcumulada: 2000000, estado: 'activo', startDate: '2024-04-01' },
+  { id: 'AF-006', name: 'Cámaras de seguridad CEDI', category: 'oficina', usage: 'admin', cost: 3500000, salvageValue: 0, usefulLifeMonths: 60, depAcumulada: 233333, estado: 'activo', startDate: '2026-01-01' },
+  { id: 'AF-007', name: 'Licencias software contable (legado)', category: 'otros', usage: 'admin', cost: 2500000, salvageValue: 0, usefulLifeMonths: 36, depAcumulada: 2500000, estado: 'inactivo', startDate: '2022-01-01' },
+];
+
+// Corridas de depreciación (historial). Seed vacío — se va llenando al correr
+// el proceso desde la vista ActivosFijos.
+export const SEED_DEPRECIATION_RUNS = [];
+
 // ── Numeración de documentos (C3c · portado de castor_accounting.js:374-381) ──
 // 4 consecutivos internos: FAC (factura), REM (remisión), NC (nota crédito),
 // ND (nota débito). Editable persistido. NO oficial DIAN — la facturación oficial
@@ -267,17 +287,12 @@ const ENTRIES = [
       ['261005', 0, 5697630],
     ],
   },
+  // Nota: el JE histórico de depreciación de abril (DEP-2026-04) fue eliminado del
+  // seed para que el usuario pueda correr el proceso desde la vista ActivosFijos
+  // sin colisión por idempotencia. Los `depAcumulada` del SEED_FIXED_ASSETS
+  // reflejan el estado PRE-abril.
   {
-    je: { id: 'JE-000011', date: '2026-04-30', period: '2026-04', source: 'depreciation', sourceId: 'DEP-2026-04', concept: 'Depreciación mensual abril 2026 (línea recta)', status: 'posted' },
-    lines: [
-      ['516015', 300000, 0, { costCenter: 'ADMIN' }],
-      ['526010', 250000, 0, { costCenter: 'VENTAS' }],
-      ['159220', 0, 300000],
-      ['159225', 0, 250000],
-    ],
-  },
-  {
-    je: { id: 'JE-000012', date: '2026-04-30', period: '2026-04', source: 'supplier_payment', sourceId: 'OUT-031', concept: 'Pago proveedor OC-3003 · Pinturas Industriales SA', status: 'posted' },
+    je: { id: 'JE-000011', date: '2026-04-30', period: '2026-04', source: 'supplier_payment', sourceId: 'OUT-031', concept: 'Pago proveedor OC-3003 · Pinturas Industriales SA', status: 'posted' },
     lines: [
       ['220505', 2609600, 0, { thirdParty: 'Pinturas Industriales SA' }],
       ['111005', 0, 2609600],

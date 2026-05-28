@@ -138,6 +138,22 @@ export const SEED_ACCOUNTING_MAPPINGS = {
   nota_debito: { receivable: '130505', revenue: '412035', iva_generated: '240805' },
 };
 
+// ── Reglas tributarias (C3b · portado de castor_accounting.js:361-372) ──
+// 8 reglas seed: 3 IVAs (19/5/0), 3 ReteFte (compras/servicios/honorarios),
+// ReteIVA, ReteICA Bogotá. Editable persistido. Restricción: un solo `isDefault`
+// por `type` (la UI lo enforza). Las reglas tipo `iva` usan account_generated +
+// account_descontable; las demás usan `account` singular.
+export const SEED_TAX_RULES = [
+  { id: 'IVA-19', type: 'iva', name: 'IVA 19%', rate: 0.19, account_generated: '240805', account_descontable: '240810', isDefault: true },
+  { id: 'IVA-5', type: 'iva', name: 'IVA 5%', rate: 0.05, account_generated: '240805', account_descontable: '240810' },
+  { id: 'IVA-0', type: 'iva', name: 'IVA 0% / excluido', rate: 0, account_generated: null, account_descontable: null, appliesToRemision: true },
+  { id: 'RTF-25', type: 'rete_fuente', name: 'Compras 2.5%', rate: 0.025, account: '236540', baseUVT: 27, conceptCode: 'COMP' },
+  { id: 'RTF-35', type: 'rete_fuente', name: 'Servicios 3.5%', rate: 0.035, account: '236525', baseUVT: 4, conceptCode: 'SERV' },
+  { id: 'RTF-11', type: 'rete_fuente', name: 'Honorarios 11%', rate: 0.11, account: '236515', baseUVT: 0, conceptCode: 'HON' },
+  { id: 'RIVA-15', type: 'rete_iva', name: 'ReteIVA 15%', rate: 0.15, account: '236701', appliesOver: 'iva' },
+  { id: 'RICA-BOG', type: 'rete_ica', name: 'ReteICA Bogotá 9.66×1000', rate: 0.00966, account: '236801', baseUVT: 27 },
+];
+
 // ── Asientos contables (Libro Diario) ──
 // Helper para construir un asiento balanceado y sus líneas.
 let _lineSeq = 0;

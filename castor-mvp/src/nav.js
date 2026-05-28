@@ -18,6 +18,7 @@ export const CONTAB_SUBVIEWS = [
   { id: 'config-perfil', label: 'Perfil Tributario' },
   { id: 'config-nomina', label: 'Nómina' },
   { id: 'mapeos-cuentas', label: 'Mapeo de Cuentas' },
+  { id: 'reglas-tributarias', label: 'Reglas Tributarias' },
 ];
 
 export const NAV = [
@@ -122,6 +123,7 @@ const PAGE_META = {
   'config-perfil': { title: 'Perfil Tributario', bc: 'Finanzas · Contabilidad · Perfil Tributario' },
   'config-nomina': { title: 'Nómina y Parámetros', bc: 'Finanzas · Contabilidad · Nómina' },
   'mapeos-cuentas': { title: 'Mapeo de Cuentas por Evento', bc: 'Finanzas · Contabilidad · Mapeo de Cuentas' },
+  'reglas-tributarias': { title: 'Reglas Tributarias', bc: 'Finanzas · Contabilidad · Reglas Tributarias' },
 };
 
 export function pageMeta(id) {

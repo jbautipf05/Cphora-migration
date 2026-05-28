@@ -9,6 +9,7 @@ import {
   SEED_JOURNAL_ENTRIES,
   SEED_JOURNAL_LINES,
   SEED_ACCOUNTING_MAPPINGS,
+  SEED_TAX_RULES,
 } from '../data/seed';
 import {
   WAREHOUSES,
@@ -75,6 +76,10 @@ function buildInitialState() {
     // C3a: mapeo de cuentas por evento (editable, persistido). Capa de configuración;
     // el motor sigue usando cuentas hardcoded (cablearlo a leer aquí es refactor posterior).
     accountingMappings: SEED_ACCOUNTING_MAPPINGS,
+    // C3b: reglas tributarias (IVA, ReteFte, ReteIVA, ReteICA). Editable persistido.
+    // Restricción: un solo `isDefault` por `type`. Capa de configuración; el motor
+    // todavía no las consume (cablearlo es refactor posterior junto a accountingMappings).
+    taxRules: SEED_TAX_RULES,
     // ERP — Comercial / Operación / Finanzas / Admin
     warehouses: WAREHOUSES,
     products: PRODUCTS,
@@ -272,6 +277,91 @@ export function AppProvider({ children }) {
         return outcome;
       },
       resetMappings: () => setState((s) => ({ ...s, accountingMappings: SEED_ACCOUNTING_MAPPINGS })),
+
+      // ── Reglas tributarias (C3b) ─────────────────────────────────────────
+      // Tres acciones CRUD. add/update validan cuenta auxiliar activa y enforzan
+      // "un solo default por type". remove valida que la regla no esté siendo
+      // usada por documentos vía taxBreakdown (espejo de castor_accounting.js:3143).
+      addTaxRule: (rule) => {
+        let outcome;
+        setState((s) => {
+          const id = String(rule?.id || '').trim();
+          if (!id) {
+            outcome = { error: 'missing_id', message: 'ID requerido' };
+            return s;
+          }
+          if ((s.taxRules || []).find((r) => r.id === id)) {
+            outcome = { error: 'duplicate_id', message: `ID ${id} ya existe` };
+            return s;
+          }
+          const acc = rule.account || rule.account_generated || rule.account_descontable;
+          if (acc) {
+            const a = (s.pucAccounts || []).find((x) => x.code === acc);
+            if (!a || a.level < 6 || a.activa === false) {
+              outcome = { error: 'invalid_account', message: `Cuenta ${acc} no es auxiliar activa` };
+              return s;
+            }
+          }
+          outcome = { ok: true, id };
+          let next = [...(s.taxRules || []), rule];
+          if (rule.isDefault) {
+            next = next.map((r) =>
+              r.id !== id && r.type === rule.type ? { ...r, isDefault: false } : r,
+            );
+          }
+          return { ...s, taxRules: next };
+        });
+        return outcome;
+      },
+      updateTaxRule: (id, patch) => {
+        let outcome;
+        setState((s) => {
+          const existing = (s.taxRules || []).find((r) => r.id === id);
+          if (!existing) {
+            outcome = { error: 'not_found', message: `Regla ${id} no existe` };
+            return s;
+          }
+          const merged = { ...existing, ...patch };
+          const acc = merged.account || merged.account_generated || merged.account_descontable;
+          if (acc) {
+            const a = (s.pucAccounts || []).find((x) => x.code === acc);
+            if (!a || a.level < 6 || a.activa === false) {
+              outcome = { error: 'invalid_account', message: `Cuenta ${acc} no es auxiliar activa` };
+              return s;
+            }
+          }
+          outcome = { ok: true };
+          let next = (s.taxRules || []).map((r) => (r.id === id ? merged : r));
+          if (merged.isDefault) {
+            next = next.map((r) =>
+              r.id !== id && r.type === merged.type ? { ...r, isDefault: false } : r,
+            );
+          }
+          return { ...s, taxRules: next };
+        });
+        return outcome;
+      },
+      removeTaxRule: (id) => {
+        let outcome;
+        setState((s) => {
+          const used =
+            (s.invoices || []).some((i) => i.taxBreakdown?.ivaRuleId === id) ||
+            (s.supplyReceipts || []).some((r) => r.taxBreakdown?.ivaRuleId === id) ||
+            (s.payments || []).some((p) =>
+              (p.taxBreakdown?.retenciones || []).some((r) => r.ruleId === id),
+            ) ||
+            (s.outgoingPayments || []).some((p) =>
+              (p.taxBreakdown?.retenciones || []).some((r) => r.ruleId === id),
+            );
+          if (used) {
+            outcome = { error: 'in_use', message: `Regla ${id} está en uso por documentos` };
+            return s;
+          }
+          outcome = { ok: true };
+          return { ...s, taxRules: (s.taxRules || []).filter((r) => r.id !== id) };
+        });
+        return outcome;
+      },
 
       // Restablece a los valores seed (botón "Reset Data Demo").
       resetDemo: () => {

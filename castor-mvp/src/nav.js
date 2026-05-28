@@ -21,6 +21,7 @@ export const CONTAB_SUBVIEWS = [
   { id: 'mapeos-cuentas', label: 'Mapeo de Cuentas' },
   { id: 'reglas-tributarias', label: 'Reglas Tributarias' },
   { id: 'numeracion-docs', label: 'Numeración Documentos' },
+  { id: 'notas-cd', label: 'Notas Crédito/Débito' },
   { id: 'exportar', label: 'Hub de Exportación' },
   { id: 'pruebas-contables', label: 'Centro de Pruebas' },
 ];
@@ -130,6 +131,7 @@ const PAGE_META = {
   'mapeos-cuentas': { title: 'Mapeo de Cuentas por Evento', bc: 'Finanzas · Contabilidad · Mapeo de Cuentas' },
   'reglas-tributarias': { title: 'Reglas Tributarias', bc: 'Finanzas · Contabilidad · Reglas Tributarias' },
   'numeracion-docs': { title: 'Numeración de Documentos', bc: 'Finanzas · Contabilidad · Numeración' },
+  'notas-cd': { title: 'Notas Crédito y Débito', bc: 'Finanzas · Contabilidad · Notas Crédito/Débito' },
   exportar: { title: 'Hub de Exportación', bc: 'Finanzas · Contabilidad · Exportación' },
   'pruebas-contables': { title: 'Centro de Pruebas', bc: 'Finanzas · Contabilidad · Pruebas' },
 };

@@ -271,22 +271,35 @@ export function postCostOfSale(invoice, ctx) {
   );
 }
 
+// Defaults para postSale: se usan como fallback si accountingMappings.sale_invoice
+// (o .sale_remision) no resuelve un campo. 412035 ("Industria de muebles") existe
+// en el catálogo PUC React curado; 413505 (del monolito) no — por eso 412035 es
+// el default. Patrón TD-07: mapping → default → override por payload.
+const SALE_INVOICE_DEFAULTS = { receivable: '130505', revenue: '412035', iva_generated: '240805' };
+const SALE_REMISION_DEFAULTS = { receivable: '130505', revenue: '412035' };
+
 export function postSale(invoice, ctx) {
   if (!invoice || !invoice.id || !invoice.total)
     return { error: 'invalid_invoice', message: 'Factura incompleta' };
 
   const isRemision = invoice.type === 'remisión' || invoice.type === 'remision';
-  const ivaRate = isRemision ? 0 : 0.19;
+  // Mapping: el seed distingue sale_invoice (con IVA) de sale_remision (sin IVA).
+  // Usa el correspondiente con fallback a defaults.
+  const m = isRemision
+    ? { ...SALE_REMISION_DEFAULTS, ...(ctx?.accountingMappings?.sale_remision || {}) }
+    : { ...SALE_INVOICE_DEFAULTS, ...(ctx?.accountingMappings?.sale_invoice || {}) };
+
+  // IVA: regla isDefault de taxRules; remisión no aplica.
+  const ivaRule = isRemision ? null : resolveDefaultIvaRule(ctx?.taxRules);
+  const ivaRate = ivaRule ? +ivaRule.rate || 0 : isRemision ? 0 : 0.19;
+
   const base = invoice.base ?? invoice.total / (1 + ivaRate);
   const iva = invoice.iva ?? invoice.total - base;
   const total = invoice.total;
-  // 412035 ("Industria de muebles") existe en el catálogo PUC React curado;
-  // 413505 (del monolito) no está. Si no se ajusta el catálogo, todo postSale
-  // sin `cuentaIngreso` explícito fallaba con unknown_account. Detectado por
-  // el centro de pruebas C4. Mismo patrón que los fixes 510550→539595 (C2c).
-  const cuentaIngreso = invoice.cuentaIngreso || '412035';
-  const cuentaIVA = '240805';
-  const cuentaCxR = '130505';
+  // Override por payload (back-compat con tests y casos de venta con cuenta específica).
+  const cuentaIngreso = invoice.cuentaIngreso || m.revenue;
+  const cuentaIVA = ivaRule?.account_generated || m.iva_generated;
+  const cuentaCxR = m.receivable;
 
   const lines = [
     {
@@ -297,7 +310,7 @@ export function postSale(invoice, ctx) {
     },
     { accountCode: cuentaIngreso, debit: 0, credit: round(base) },
   ];
-  if (iva > 0) lines.push({ accountCode: cuentaIVA, debit: 0, credit: round(iva) });
+  if (iva > 0 && cuentaIVA) lines.push({ accountCode: cuentaIVA, debit: 0, credit: round(iva) });
 
   return postJournalEntry(
     {
@@ -313,11 +326,16 @@ export function postSale(invoice, ctx) {
 
 // ── postCustomerCollection ──────────────────────────────────────────────────
 // payment: { id, date, customerId, bankAccountId|bankPucCode, amount, invoiceId? }
+// Lee accountingMappings.customer_collection.receivable con fallback a 130505.
+// El bank PUC se resuelve por bankPucCode > bankAccountId.
+const COLLECTION_DEFAULTS = { receivable: '130505' };
+
 export function postCustomerCollection(payment, ctx) {
   if (!payment || !payment.amount)
     return { error: 'invalid_payment', message: 'Pago incompleto' };
   const bankPuc = payment.bankPucCode || resolveBankPuc(payment.bankAccountId, ctx);
   if (!bankPuc) return { error: 'missing_bank', message: 'Cuenta bancaria no resuelta' };
+  const m = { ...COLLECTION_DEFAULTS, ...(ctx?.accountingMappings?.customer_collection || {}) };
 
   return postJournalEntry(
     {
@@ -328,7 +346,7 @@ export function postCustomerCollection(payment, ctx) {
       lines: [
         { accountCode: bankPuc, debit: payment.amount, credit: 0 },
         {
-          accountCode: '130505',
+          accountCode: m.receivable,
           debit: 0,
           credit: payment.amount,
           thirdParty: payment.customerId,

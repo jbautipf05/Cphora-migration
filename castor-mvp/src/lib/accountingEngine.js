@@ -731,17 +731,25 @@ export function postPayroll(run, ctx) {
 // Costo manual de un caso de garantía (espejo de castor_accounting.js:1387).
 //   warranty:  { id, customerId?, clientName }
 //   costEntry: { id, amount, source:'caja'|'almacen', concept?, date? }
-// source==='caja'    → DB 519540 / CR 110510 (caja menor) por amount.
-// source==='almacen' → DB 519540 / CR 140505 (materias primas) por amount.
-// La cuenta de gasto 519540 lleva el cliente como tercero. Idempotente por costEntry.id.
+// TD-07 R-3a: lee accountingMappings.warranty_cost con fallback a defaults.
+// source==='caja'    → DB warranty_expense / CR cash       (default 519540/110510).
+// source==='almacen' → DB warranty_expense / CR raw_used   (default 519540/140505).
+// La cuenta de gasto lleva el cliente como tercero. Idempotente por costEntry.id.
+const WARRANTY_COST_DEFAULTS = {
+  warranty_expense: '519540',
+  cash: '110510',
+  raw_used: '140505',
+};
+
 export function postWarrantyCost(warranty, costEntry, ctx) {
   if (!warranty || !costEntry)
     return { error: 'invalid_args', message: 'Faltan datos de garantía o costo' };
   const amount = round(costEntry.amount);
   if (amount <= 0) return { error: 'zero_amount', message: 'Monto de costo en cero' };
 
+  const m = { ...WARRANTY_COST_DEFAULTS, ...(ctx?.accountingMappings?.warranty_cost || {}) };
   const fromAlmacen = costEntry.source === 'almacen';
-  const creditAccount = fromAlmacen ? '140505' : '110510';
+  const creditAccount = fromAlmacen ? m.raw_used : m.cash;
   const thirdParty = warranty.customerId || warranty.clientName || null;
   const concept = costEntry.concept || costEntry.description || 'Costo de garantía';
 
@@ -752,7 +760,13 @@ export function postWarrantyCost(warranty, costEntry, ctx) {
       sourceId: costEntry.id,
       concept: `Garantía ${warranty.id} · ${concept}`,
       lines: [
-        { accountCode: '519540', debit: amount, credit: 0, thirdParty, description: concept },
+        {
+          accountCode: m.warranty_expense,
+          debit: amount,
+          credit: 0,
+          thirdParty,
+          description: concept,
+        },
         {
           accountCode: creditAccount,
           debit: 0,
@@ -768,9 +782,15 @@ export function postWarrantyCost(warranty, costEntry, ctx) {
 // ── postBankAdjustment ────────────────────────────────────────────────────────
 // Conciliación / ajuste manual de saldo bancario (espejo de adjustBank, Demo6:3765).
 //   adj: { id, bankId|bankPucCode, delta (+/-), concept, date? }
-// delta > 0 → DB 1110-XX / CR 425095 (ingreso por ajuste).
-// delta < 0 → DB 539595 / CR 1110-XX (gasto por ajuste).
+// TD-07 R-3b: lee accountingMappings.bank_adjustment con fallback a defaults.
+// delta > 0 → DB bank / CR diff_positive (default 425095, ingreso por ajuste).
+// delta < 0 → DB diff_negative / CR bank (default 539595, gasto por ajuste).
 // El banco va como tercero en la línea de la cuenta 1110-XX. Idempotente por adj.id.
+const BANK_ADJUSTMENT_DEFAULTS = {
+  diff_positive: '425095',
+  diff_negative: '539595',
+};
+
 export function postBankAdjustment(adj, ctx) {
   if (!adj) return { error: 'no_adj', message: 'Falta el ajuste' };
   const delta = +adj.delta || 0;
@@ -778,12 +798,19 @@ export function postBankAdjustment(adj, ctx) {
   const bankPuc = adj.bankPucCode || resolveBankPuc(adj.bankId, ctx);
   if (!bankPuc) return { error: 'missing_bank', message: 'Cuenta bancaria no resuelta' };
 
+  const m = { ...BANK_ADJUSTMENT_DEFAULTS, ...(ctx?.accountingMappings?.bank_adjustment || {}) };
   const amount = round(Math.abs(delta));
   const concept = adj.concept || 'Ajuste / conciliación bancaria';
-  const bankLine = (debit, credit) => ({ accountCode: bankPuc, debit, credit, thirdParty: adj.bankId || null, description: concept });
+  const bankLine = (debit, credit) => ({
+    accountCode: bankPuc,
+    debit,
+    credit,
+    thirdParty: adj.bankId || null,
+    description: concept,
+  });
   const lines = delta > 0
-    ? [bankLine(amount, 0), { accountCode: '425095', debit: 0, credit: amount, description: 'Ingreso por ajuste' }]
-    : [{ accountCode: '539595', debit: amount, credit: 0, description: 'Gasto por ajuste' }, bankLine(0, amount)];
+    ? [bankLine(amount, 0), { accountCode: m.diff_positive, debit: 0, credit: amount, description: 'Ingreso por ajuste' }]
+    : [{ accountCode: m.diff_negative, debit: amount, credit: 0, description: 'Gasto por ajuste' }, bankLine(0, amount)];
 
   return postJournalEntry(
     {

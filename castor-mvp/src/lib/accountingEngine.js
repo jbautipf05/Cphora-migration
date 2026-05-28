@@ -648,6 +648,16 @@ function resolveInvoiceCustomer(invoice, orders) {
   return invoice?.clientName || null;
 }
 
+// Devuelve la fecha contable para la NC/ND. Si la factura está en un periodo
+// cerrado, usa hoy (decisión deliberada del monolito castor_accounting.js:5948:
+// "no rompe cierres pasados"). Si no, usa invoice.emitDate.
+function resolveDocDate(invoice, fiscalPeriods, fallbackToday) {
+  const candidate = invoice?.emitDate || invoice?.issuedAt || fallbackToday;
+  const period = findPeriod(candidate, fiscalPeriods);
+  if (period && period.estado === 'cerrado') return fallbackToday;
+  return candidate;
+}
+
 // Base + IVA proporcional al monto NC/ND sobre el total. Si era remisión o
 // la regla de IVA es 0%, devuelve { base: monto, iva: 0 }.
 function splitBaseIva({ amount, invoice, taxRules }) {
@@ -709,7 +719,7 @@ export function emitNotaCredito(payload, ctx) {
 
   return postJournalEntry(
     {
-      date: date || invoice.emitDate || today(),
+      date: date || resolveDocDate(invoice, ctx?.fiscalPeriods, today()),
       source: 'nota_credito',
       sourceId: ncNumber,
       concept: `Nota crédito ${ncNumber} · ${motivo}`,
@@ -764,7 +774,7 @@ export function emitNotaDebito(payload, ctx) {
 
   return postJournalEntry(
     {
-      date: date || invoice.emitDate || today(),
+      date: date || resolveDocDate(invoice, ctx?.fiscalPeriods, today()),
       source: 'nota_debito',
       sourceId: ndNumber,
       concept: `Nota débito ${ndNumber} · ${motivo}`,

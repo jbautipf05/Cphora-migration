@@ -308,9 +308,13 @@ export const TESTS = [
   },
 
   // postPayroll ────────────────────────────────────────────────────────────
+  // TD-07b: tras el refactor a asiento consolidado por categoría (§7.11), el
+  // shape consolidado (back-compat) trata todo como admin. El devengado va a
+  // 510506 (base+aux = totalSalarios), las provisiones a 510530, los aportes
+  // empleador a 510568, los pasivos a 250505/236505/237005/261005.
   {
-    id: 't_postPayroll',
-    description: 'postPayroll genera asiento balanceado con neto + aportes + provisiones',
+    id: 't_postPayroll_consolidado_backcompat',
+    description: 'postPayroll con shape consolidado: devengado→510506, provisiones→510530, aportes→510568',
     fn: (ctx) => {
       const r = postPayroll(
         {
@@ -321,7 +325,12 @@ export const TESTS = [
       );
       assertOk(r);
       assertBalanced(r);
-      assertHasLine(r, '510506', 'debit', 13200); // gasto = 10000 + 1500 + 1700
+      assertHasLine(r, '510506', 'debit', 10000); // devengado (base+aux)
+      assertHasLine(r, '510530', 'debit', 1700); // provisiones admin+sales
+      assertHasLine(r, '510568', 'debit', 1500); // aportes empleador admin+sales
+      assertHasLine(r, '250505', 'credit', 9000); // neto
+      assertHasLine(r, '237005', 'credit', 1500); // aportes por pagar
+      assertHasLine(r, '261005', 'credit', 1700); // provisiones por pagar
     },
   },
 

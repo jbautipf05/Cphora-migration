@@ -543,58 +543,176 @@ export function postSupplierPayment(outgoing, ctx) {
   );
 }
 
-// ── postPayroll ─────────────────────────────────────────────────────────────
-// run: { id, periodId, total, totalNeto, totalAportes, totalProvisiones }
-// Genera asiento simplificado: Gasto nómina DR / Pasivo a pagar CR (neto + retenciones).
-// Versión muy reducida del runPayroll/postPayroll del original (líneas 1629-1842).
+// ── postPayroll (§7.11 · TD-07b) ────────────────────────────────────────────
+// run shape detallado:  { id, periodId, date?, byCategory: { admin, sales, mod } }
+// run shape consolidado (back-compat): { id, periodId, totalSalarios, totalNeto,
+//   totalAportes, totalProvisiones }
+//
+// Genera asiento CONSOLIDADO por categoría (no detallado por tipo de aporte ni
+// provisión — el brief Doc 2 lo pide así): 1 línea de devengado por categoría
+// (510506/520506/720505), 1-2 líneas de provisiones (510530 admin+sales / 730530
+// MOD), 1-2 líneas de aportes empleador (510568 admin+sales / 720570 MOD), y
+// pasivos consolidados (250505 neto, 236505 deducciones empleado, 237005
+// aportes empleador, 261005 provisiones).
+//
+// Cuentas en cascada: accountingMappings.payroll > PAYROLL_DEFAULTS.
+// Idempotencia: por (source='payroll', sourceId=run.id).
+const PAYROLL_DEFAULTS = {
+  salary_admin: '510506',
+  salary_sales: '520506',
+  salary_mod: '720505',
+  cesantias_provision: '510530', // admin+sales (consolidado)
+  cesantias_provision_mod: '730530', // MOD (cuenta nueva en TD-07b-1)
+  eps_employer: '510568', // admin+sales aportes empleador (consolidado)
+  employer_charges_mod: '720570', // MOD aportes empleador (consolidado)
+  salary_payable: '250505',
+  rete_fuente_employee: '236505',
+  eps_payable: '237005',
+  cesantias_payable: '261005',
+};
+
+const emptyPayrollCat = () => ({
+  base: 0,
+  aux: 0,
+  neto: 0,
+  aportesEmpr: 0,
+  provisiones: 0,
+  retencionEmp: 0,
+});
+
 export function postPayroll(run, ctx) {
   if (!run || !run.id) return { error: 'invalid_run', message: 'Run de nómina inválido' };
-  const totalSalarios = round(run.totalSalarios || run.total || 0);
-  const totalNeto = round(run.totalNeto || totalSalarios);
-  const totalAportes = round(run.totalAportes || 0);
-  const totalProvisiones = round(run.totalProvisiones || 0);
-  if (totalSalarios <= 0)
+  const m = { ...PAYROLL_DEFAULTS, ...(ctx?.accountingMappings?.payroll || {}) };
+
+  // Normalizar a shape detallado. Si viene byCategory, usarlo. Si no, tratar
+  // los totales globales como admin (back-compat con tests + callers viejos).
+  let byCat = run.byCategory;
+  if (!byCat) {
+    const totalSalarios = round(run.totalSalarios || run.total || 0);
+    if (totalSalarios <= 0)
+      return { error: 'zero_amount', message: 'Total de nómina cero' };
+    const totalNeto = round(run.totalNeto || totalSalarios);
+    const totalAportes = round(run.totalAportes || 0);
+    const totalProvisiones = round(run.totalProvisiones || 0);
+    const gasto = totalSalarios + totalAportes + totalProvisiones;
+    const retencionEmp = round(gasto - totalNeto - totalAportes - totalProvisiones);
+    byCat = {
+      admin: {
+        base: totalSalarios,
+        aux: 0,
+        neto: totalNeto,
+        aportesEmpr: totalAportes,
+        provisiones: totalProvisiones,
+        retencionEmp,
+      },
+      sales: emptyPayrollCat(),
+      mod: emptyPayrollCat(),
+    };
+  }
+
+  const a = { ...emptyPayrollCat(), ...(byCat.admin || {}) };
+  const s = { ...emptyPayrollCat(), ...(byCat.sales || {}) };
+  const o = { ...emptyPayrollCat(), ...(byCat.mod || {}) };
+
+  // Devengado por categoría (base + aux) → DR 510506/520506/720505.
+  const devAdmin = round(a.base + a.aux);
+  const devSales = round(s.base + s.aux);
+  const devMod = round(o.base + o.aux);
+  if (devAdmin + devSales + devMod <= 0)
     return { error: 'zero_amount', message: 'Total de nómina cero' };
 
-  const gasto = totalSalarios + totalAportes + totalProvisiones;
-  const aportesPorPagar = totalAportes;
-  const provisionesPorPagar = totalProvisiones;
-  const retencionEmp = round(gasto - totalNeto - aportesPorPagar - provisionesPorPagar);
-
-  const lines = [
-    {
-      accountCode: '510506',
-      debit: round(gasto),
+  const lines = [];
+  if (devAdmin > 0)
+    lines.push({
+      accountCode: m.salary_admin,
+      debit: devAdmin,
       credit: 0,
-      description: 'Gasto nómina periodo',
-    },
-    {
-      accountCode: '250505',
+      description: 'Devengado admin (sueldo+aux)',
+    });
+  if (devSales > 0)
+    lines.push({
+      accountCode: m.salary_sales,
+      debit: devSales,
+      credit: 0,
+      description: 'Devengado ventas (sueldo+aux)',
+    });
+  if (devMod > 0)
+    lines.push({
+      accountCode: m.salary_mod,
+      debit: devMod,
+      credit: 0,
+      description: 'Devengado MOD (sueldo+aux)',
+    });
+
+  // Provisiones consolidadas por categoría (5105xx admin+sales / 7305xx MOD).
+  const provNonMod = round(a.provisiones + s.provisiones);
+  const provMod = round(o.provisiones);
+  if (provNonMod > 0)
+    lines.push({
+      accountCode: m.cesantias_provision,
+      debit: provNonMod,
+      credit: 0,
+      description: 'Provisiones admin+ventas',
+    });
+  if (provMod > 0)
+    lines.push({
+      accountCode: m.cesantias_provision_mod,
+      debit: provMod,
+      credit: 0,
+      description: 'Provisiones MOD',
+    });
+
+  // Aportes empleador consolidados por categoría (5105xx admin+sales / 720570 MOD).
+  const aporNonMod = round(a.aportesEmpr + s.aportesEmpr);
+  const aporMod = round(o.aportesEmpr);
+  if (aporNonMod > 0)
+    lines.push({
+      accountCode: m.eps_employer,
+      debit: aporNonMod,
+      credit: 0,
+      description: 'Aportes empleador admin+ventas',
+    });
+  if (aporMod > 0)
+    lines.push({
+      accountCode: m.employer_charges_mod,
+      debit: aporMod,
+      credit: 0,
+      description: 'Aportes empleador MOD',
+    });
+
+  // Pasivos consolidados (CR).
+  const totalNeto = round(a.neto + s.neto + o.neto);
+  const totalRetencion = round(a.retencionEmp + s.retencionEmp + o.retencionEmp);
+  const totalAportes = round(aporNonMod + aporMod);
+  const totalProvisiones = round(provNonMod + provMod);
+
+  if (totalNeto > 0)
+    lines.push({
+      accountCode: m.salary_payable,
       debit: 0,
       credit: totalNeto,
       description: 'Salarios por pagar',
-    },
-  ];
-  if (aportesPorPagar > 0)
-    lines.push({
-      accountCode: '237005',
-      debit: 0,
-      credit: aportesPorPagar,
-      description: 'Aportes EPS/Pensión',
     });
-  if (provisionesPorPagar > 0)
+  if (totalRetencion > 0)
     lines.push({
-      accountCode: '261005', // provisión cesantías/prima/vacaciones (existe en el catálogo y lo usa el seed)
+      accountCode: m.rete_fuente_employee,
       debit: 0,
-      credit: provisionesPorPagar,
-      description: 'Provisión cesantías/prima/vacaciones',
+      credit: totalRetencion,
+      description: 'Deducciones empleado (salud+pensión)',
     });
-  if (retencionEmp > 0)
+  if (totalAportes > 0)
     lines.push({
-      accountCode: '236505',
+      accountCode: m.eps_payable,
       debit: 0,
-      credit: retencionEmp,
-      description: 'Retención laboral',
+      credit: totalAportes,
+      description: 'Aportes empleador por pagar',
+    });
+  if (totalProvisiones > 0)
+    lines.push({
+      accountCode: m.cesantias_payable,
+      debit: 0,
+      credit: totalProvisiones,
+      description: 'Provisiones por pagar',
     });
 
   return postJournalEntry(

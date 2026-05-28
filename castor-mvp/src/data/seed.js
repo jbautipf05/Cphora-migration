@@ -195,6 +195,12 @@ export const SEED_DOC_NUMBERING = [
 export const SEED_NOTAS_CREDITO = [];
 export const SEED_NOTAS_DEBITO = [];
 
+// ── Corridas de nómina (§7.11 · "Persiste en state.payrollRuns") ──
+// Editable persistido. Cada corrida lleva paramsSnapshot (las corridas
+// posteadas conservan sus parámetros) y journalEntryId del asiento. Idempotente
+// por periodId.
+export const SEED_PAYROLL_RUNS = [];
+
 // ── Asientos contables (Libro Diario) ──
 // Helper para construir un asiento balanceado y sus líneas.
 let _lineSeq = 0;

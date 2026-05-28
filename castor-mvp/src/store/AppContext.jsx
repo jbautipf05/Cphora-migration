@@ -15,6 +15,7 @@ import {
   SEED_DEPRECIATION_RUNS,
   SEED_NOTAS_CREDITO,
   SEED_NOTAS_DEBITO,
+  SEED_PAYROLL_RUNS,
 } from '../data/seed';
 import {
   WAREHOUSES,
@@ -106,6 +107,10 @@ function buildInitialState() {
     // reverso COGS si aplica.
     notasCredito: SEED_NOTAS_CREDITO,
     notasDebito: SEED_NOTAS_DEBITO,
+    // Corridas de nómina (§7.11). Editables persistidos. Cada corrida tiene
+    // paramsSnapshot (los parámetros del momento) y el journalEntryId del
+    // asiento contable. Idempotente por periodId.
+    payrollRuns: SEED_PAYROLL_RUNS,
     // ERP — Comercial / Operación / Finanzas / Admin
     warehouses: WAREHOUSES,
     products: PRODUCTS,

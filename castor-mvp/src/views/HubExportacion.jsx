@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
 import { Panel, Badge } from '../components/ui';
 import { useToast } from '../components/Toast';
-import { exportView } from '../lib/exportHelpers';
+import { exportView, exportFomPlusFormat } from '../lib/exportHelpers';
 import PeriodFilter from '../components/PeriodFilter';
 
 // C4 · Hub de exportación de reportes contables.
@@ -100,16 +100,33 @@ export default function HubExportacion() {
       </div>
 
       <Panel
-        title="FomPlus (pendiente)"
+        title="FomPlus"
         subtitle="Exportador ERP único soportado según brief v1.1 §7.15"
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="max-w-2xl text-xs text-muted">
-            El layout oficial de FomPlus está pendiente de confirmar con el proveedor antes de implementar el
-            formato definitivo. Una vez se reciba la especificación, este slot generará el archivo con los
-            headers y delimitador requeridos por FomPlus.
+            Genera un CSV del libro diario (BOM UTF-8 + separador <code className="text-brand-gold">;</code>)
+            sobre los asientos del periodo seleccionado, listo para integración con FomPlus. Los nombres
+            exactos de las columnas pueden ajustarse cuando se reciba la especificación oficial vigente del
+            proveedor (cambio menor: renombrar/reordenar headers).
           </p>
-          <Badge tone="amber">Pendiente layout</Badge>
+          <div className="flex items-center gap-2">
+            <Badge tone="amber">Layout sujeto a spec proveedor</Badge>
+            <button
+              onClick={() => {
+                const filters = period && period !== 'all' ? { periodId: period } : {};
+                try {
+                  const res = exportFomPlusFormat(app, filters);
+                  toast(`Descargado fomplus${res.periodId ? '_' + res.periodId : ''}.csv · ${res.rowCount} líneas`, 'ok');
+                } catch (e) {
+                  toast(`Error exportando FomPlus: ${e.message}`, 'error');
+                }
+              }}
+              className="rounded-lg border border-gold-accent/40 bg-gold-accent/10 px-3 py-1.5 text-xs font-semibold text-brand-gold transition hover:bg-gold-accent/20"
+            >
+              Descargar FomPlus
+            </button>
+          </div>
         </div>
       </Panel>
 

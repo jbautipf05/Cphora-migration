@@ -254,6 +254,23 @@ export function buildExportRows(view, state, filters = {}) {
   }
 }
 
+// ── FomPlus (§7.15 · único exportador ERP soportado v1.1) ─────────────────
+// Doc 2 (p.26) confirma firma + formato:
+//   exportFomPlusFormat(periodId)  ·  CSV con BOM UTF-8 + separador ';'
+//   Cobertura: journal_entries
+// El layout exacto de columnas se confirmará con el proveedor; mientras
+// tanto se usan los headers estándar del libro diario CO (los mismos del
+// dispatcher genérico) — cuando llegue la spec real, basta renombrar/reordenar
+// los headers en esta función (los datos por línea no cambian).
+export function exportFomPlusFormat(state, filters = {}) {
+  const { headers, rows } = buildExportRows('journal_entries', state, filters);
+  const periodTag = filters.periodId ? `_${filters.periodId}` : '';
+  const baseName = `fomplus${periodTag}_${today()}`;
+  const content = rowsToCsv([headers, ...rows], ';');
+  downloadText(`${baseName}.csv`, content, { withBOM: true, mime: 'text/csv' });
+  return { ok: true, rowCount: rows.length, periodId: filters.periodId || null };
+}
+
 // ── Dispatcher de exportación ─────────────────────────────────────────────
 // formats: 'csv' | 'json' | 'xlsx'
 export function exportView(view, format, state, filters = {}) {

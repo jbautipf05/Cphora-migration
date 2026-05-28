@@ -801,8 +801,9 @@ export default function AlmacenMP() {
           <div className="panel p-4">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-muted">
-                Salidas de insumo a producción (descuentan stock) y devoluciones (suman). El BOM se carga
-                automático desde las OPs seleccionadas; la cantidad es editable.
+                Registra salidas de insumos hacia producción (multi-OP con buscador) o devoluciones.
+                El BOM se carga automático; la columna de cantidad entregada es manual y muestra
+                unidad + costo (última entrada).
               </span>
               <span className="ml-auto text-sm text-muted">{(supplyIssues || []).length} salidas</span>
               <button className="btn-gold" onClick={openIssue}>+ Registrar salida</button>
@@ -816,7 +817,7 @@ export default function AlmacenMP() {
                   <th className="px-3 py-2">Fecha</th>
                   <th className="px-3 py-2">Tipo</th>
                   <th className="px-3 py-2">OPs</th>
-                  <th className="px-3 py-2">Insumos</th>
+                  <th className="px-3 py-2">Insumos (cant. manual · unidad · costo)</th>
                   <th className="px-3 py-2 text-right">Valor</th>
                   <th className="px-3 py-2">Por</th>
                 </tr>
@@ -832,8 +833,27 @@ export default function AlmacenMP() {
                         <Chip variant={x.type === 'devolucion' ? 'gold' : 'ok'}>{x.type || 'salida'}</Chip>
                       </td>
                       <td className="px-3 py-2 font-mono text-xs text-gold-accent">{(x.orderIds || []).join(', ') || '—'}</td>
+                      {/* Paridad Demo6 renderAlmacenSalidas (~L2228): un item por línea con
+                          qty+unidad destacados (Demo6 usa <b>) y costo unitario al final. */}
                       <td className="px-3 py-2 text-xs text-white">
-                        {(x.items || []).map((it) => `${supplyName(it.supplyId)} ×${it.qty} ${it.unit || ''}`).join(', ')}
+                        <div className="space-y-0.5">
+                          {(x.items || []).map((it, i) => {
+                            const ins = supplies.find((s) => s.id === it.supplyId);
+                            const unit = it.unit || ins?.unitOut || ins?.unit || '';
+                            return (
+                              <div key={i}>
+                                {supplyName(it.supplyId)}
+                                {' · '}
+                                <strong className="text-white">
+                                  {it.qty}
+                                  {unit ? ` ${unit}` : ''}
+                                </strong>
+                                {' · '}
+                                <span className="text-muted">{fmtCOP(supplyCost(it.supplyId))}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </td>
                       <td className="px-3 py-2 text-right text-gold-accent">{fmtCOP(total)}</td>
                       <td className="px-3 py-2 text-muted">{x.registeredBy || '—'}</td>

@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react';
+
 // Campos de formulario reutilizables, con el look del demo (.input-field/.label).
 
 export function Field({ label, children, className = '', hint }) {
@@ -42,15 +44,49 @@ export function FormGrid({ cols = 2, children, className = '' }) {
 // fmtCOP del proyecto); todos los no-dígitos del input se strippean (permite pegar "$20.000,50"
 // y queda "20000" — los centavos se descartan a propósito).
 export function MoneyInput({ value, onChange, className = '', ...rest }) {
+  const inputRef = useRef(null);
+  // Guarda cuántos dígitos había a la izquierda del cursor en el momento del cambio.
+  // Lo usamos en el useEffect para reposicionar el cursor tras el re-render con separadores.
+  // null = no hay reposición pendiente (estado inicial / readOnly / cambio externo).
+  const pendingDigitsBeforeCursor = useRef(null);
+
   const num = value === '' || value == null || Number.isNaN(Number(value)) ? '' : Number(value);
   const display = num === '' ? '' : num.toLocaleString('es-CO');
+
+  // Fix de cursor: cuando React re-renderiza el input con un value formateado distinto
+  // al raw (ej. raw "12534" → display "12.534"), el browser por defecto coloca el cursor
+  // al final. Acá restauramos su posición lógica: tantos dígitos a la izquierda como
+  // tenía antes del cambio. Los puntos de miles del display se saltean al iterar.
+  useEffect(() => {
+    const target = pendingDigitsBeforeCursor.current;
+    if (target == null || !inputRef.current) return;
+    pendingDigitsBeforeCursor.current = null;
+    let pos = 0;
+    let seen = 0;
+    while (pos < display.length && seen < target) {
+      if (/\d/.test(display[pos])) seen += 1;
+      pos += 1;
+    }
+    // setSelectionRange en inputs type=text es seguro; en type=number tira en algunos
+    // browsers, pero MoneyInput usa type=text expresamente.
+    inputRef.current.setSelectionRange(pos, pos);
+  }, [display]);
+
   const handleChange = (e) => {
-    const digits = e.target.value.replace(/\D/g, '');
+    const rawValue = e.target.value;
+    // Cursor del input ANTES de strippear los no-dígitos. selectionStart puede ser null
+    // en navegadores antiguos o tipos exóticos; fallback al final del string.
+    const cursorPos = e.target.selectionStart ?? rawValue.length;
+    // Cuenta solo los dígitos en el slice [0, cursorPos): así "1.2|534" → 2 dígitos.
+    pendingDigitsBeforeCursor.current = (rawValue.slice(0, cursorPos).match(/\d/g) || []).length;
+    const digits = rawValue.replace(/\D/g, '');
     // Sintetiza el event que esperan los call sites: target.value en string de dígitos puros.
     onChange?.({ ...e, target: { ...e.target, value: digits } });
   };
+
   return (
     <input
+      ref={inputRef}
       type="text"
       inputMode="numeric"
       value={display}

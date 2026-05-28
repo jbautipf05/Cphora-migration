@@ -18,11 +18,15 @@ import { PUC_CATALOG } from '../data/pucCatalog';
 import {
   postJournalEntry,
   postSale,
+  postCostOfSale,
   postCustomerCollection,
   postSupplyPurchase,
   postSupplierPayment,
   postPayroll,
   postBankAdjustment,
+  emitNotaCredito,
+  emitNotaDebito,
+  postCostOfSaleReversal,
   reverseJournalEntry,
   closePeriod,
   reopenPeriod,
@@ -42,6 +46,22 @@ function makeCtx() {
     ],
     counters: { je: 0 },
     bankAccounts: [{ id: 'B-01', bank: 'Bancolombia', pucCode: '111005' }],
+    // Fixtures para postCostOfSale + emitNotaCredito/Debito + reverso COGS
+    products: [
+      { id: 'p-test', sku: 'TEST', name: 'Test Product', price: 1190, cost: 700 },
+    ],
+    orders: [
+      { id: 'PED-TEST', customerId: 'C-001', productId: 'p-test', qty: 2 },
+    ],
+    customers: [{ id: 'C-001', name: 'Cliente Test' }],
+    accountingMappings: {
+      cogs_on_invoice: { cogs: '612035', finished_goods: '143005' },
+      nota_credito: { sales_returns: '417505', iva_generated: '240805', receivable: '130505' },
+      nota_debito: { receivable: '130505', revenue: '412035', iva_generated: '240805' },
+    },
+    taxRules: [
+      { id: 'IVA-19', type: 'iva', name: 'IVA 19%', rate: 0.19, account_generated: '240805', isDefault: true },
+    ],
   };
 }
 
@@ -396,6 +416,138 @@ export const TESTS = [
       const r = reopenPeriod('2026-04', ctxClosed);
       assertOk(r);
       assertEqual(r.reversal, null, 'sin reversal porque no había closing JE');
+    },
+  },
+
+  // postCostOfSale (H2 / TD-21) ────────────────────────────────────────────
+  {
+    id: 't_postCostOfSale',
+    description: 'postCostOfSale: DR cogs / CR finished_goods con costo calculado',
+    fn: (ctx) => {
+      // PED-TEST: productId=p-test (cost=700) × qty=2 → COGS=1400
+      const r = postCostOfSale({ id: 'PED-TEST', orderId: 'PED-TEST', date: '2026-04-15' }, ctx);
+      assertOk(r);
+      assertBalanced(r);
+      assertHasLine(r, '612035', 'debit', 1400);
+      assertHasLine(r, '143005', 'credit', 1400);
+      assertEqual(r.journalEntry.source, 'cogs');
+      assertEqual(r.journalEntry.sourceId, 'PED-TEST');
+    },
+  },
+  {
+    id: 't_postCostOfSale_explicit_cost',
+    description: 'postCostOfSale acepta invoice.cost pre-calculado',
+    fn: (ctx) => {
+      const r = postCostOfSale(
+        { id: 'PED-TEST', orderId: 'PED-TEST', cost: 999, date: '2026-04-15' },
+        ctx,
+      );
+      assertOk(r);
+      assertHasLine(r, '612035', 'debit', 999);
+      assertHasLine(r, '143005', 'credit', 999);
+    },
+  },
+  {
+    id: 't_postCostOfSale_order_not_found',
+    description: 'postCostOfSale falla si orderId no existe y no hay invoice.cost',
+    fn: (ctx) => {
+      const r = postCostOfSale({ id: 'PED-MISSING', orderId: 'PED-MISSING' }, ctx);
+      assertError(r, 'order_not_found');
+    },
+  },
+
+  // emitNotaCredito / emitNotaDebito (§7.9 NC-2) ───────────────────────────
+  {
+    id: 't_emitNC_factura_total',
+    description: 'emitNotaCredito (factura, total): base+IVA balanceado',
+    fn: (ctx) => {
+      const invoice = { id: 'FAC-TEST', orderId: 'PED-TEST', type: 'factura', total: 1190, emitDate: '2026-04-10' };
+      const r = emitNotaCredito({ invoice, amount: 1190, ncNumber: 'NC-001', motivo: 'Devolución' }, ctx);
+      assertOk(r);
+      assertBalanced(r);
+      assertHasLine(r, '417505', 'debit', 1000);
+      assertHasLine(r, '240805', 'debit', 190);
+      assertHasLine(r, '130505', 'credit', 1190);
+      assertEqual(r.journalEntry.source, 'nota_credito');
+      assertEqual(r.journalEntry.sourceId, 'NC-001');
+    },
+  },
+  {
+    id: 't_emitNC_remision_sin_iva',
+    description: 'emitNotaCredito sobre remisión: sin línea de IVA',
+    fn: (ctx) => {
+      const invoice = { id: 'REM-TEST', orderId: 'PED-TEST', type: 'remisión', total: 1000, emitDate: '2026-04-10' };
+      const r = emitNotaCredito({ invoice, amount: 1000, ncNumber: 'NC-002', motivo: 'Anulación' }, ctx);
+      assertOk(r);
+      assertBalanced(r);
+      assertHasLine(r, '417505', 'debit', 1000);
+      assertHasLine(r, '130505', 'credit', 1000);
+      if (r.lines.find((l) => l.accountCode === '240805')) throw new Error('remisión no debería tener IVA');
+    },
+  },
+  {
+    id: 't_emitNC_periodo_cerrado_usa_hoy',
+    description: 'emitNotaCredito sobre factura en periodo cerrado usa today() (no rompe cierres)',
+    fn: (ctx) => {
+      const invoice = { id: 'FAC-OLD', orderId: 'PED-TEST', type: 'factura', total: 1190, emitDate: '2026-01-15' };
+      const r = emitNotaCredito({ invoice, amount: 1190, ncNumber: 'NC-003', motivo: 'Devolución tardía' }, ctx);
+      assertOk(r);
+      // No debe usar la fecha del periodo cerrado (2026-01)
+      if (r.journalEntry.date.startsWith('2026-01')) {
+        throw new Error('NC no debería contabilizarse en periodo cerrado');
+      }
+    },
+  },
+  {
+    id: 't_emitNC_amount_exceeds',
+    description: 'emitNotaCredito falla si monto > total de la factura',
+    fn: (ctx) => {
+      const invoice = { id: 'FAC-T', orderId: 'PED-TEST', type: 'factura', total: 1190, emitDate: '2026-04-10' };
+      const r = emitNotaCredito({ invoice, amount: 2000, ncNumber: 'NC-004', motivo: 'X' }, ctx);
+      assertError(r, 'amount_exceeds_invoice');
+    },
+  },
+  {
+    id: 't_emitND_balanced',
+    description: 'emitNotaDebito: DR receivable / CR revenue+IVA balanceado',
+    fn: (ctx) => {
+      const invoice = { id: 'FAC-T', orderId: 'PED-TEST', type: 'factura', total: 1190, emitDate: '2026-04-10' };
+      const r = emitNotaDebito({ invoice, amount: 238, ndNumber: 'ND-001', motivo: 'Intereses' }, ctx);
+      assertOk(r);
+      assertBalanced(r);
+      assertHasLine(r, '130505', 'debit', 238);
+      assertHasLine(r, '412035', 'credit', 200);
+      assertHasLine(r, '240805', 'credit', 38);
+    },
+  },
+
+  // Ciclo completo NC + reverso COGS (NC-3 + H2) ───────────────────────────
+  {
+    id: 't_cogs_reverso_proporcional',
+    description: 'postCostOfSaleReversal genera reverso COGS proporcional cuando hay JE de cogs previo',
+    fn: (ctx) => {
+      // 1) Postear COGS para PED-TEST (1400)
+      const cogs = postCostOfSale({ id: 'PED-TEST', orderId: 'PED-TEST', date: '2026-04-15' }, ctx);
+      assertOk(cogs);
+      const ctx2 = applyToCtx(ctx, cogs);
+      // 2) Simular NC parcial 50% → ratio=0.5 → reverso COGS=700
+      const invoice = { id: 'FAC-TEST', orderId: 'PED-TEST', type: 'factura', total: 1190 };
+      const rev = postCostOfSaleReversal({ invoice, ncNumber: 'NC-001', ratio: 0.5 }, ctx2);
+      assertOk(rev);
+      assertBalanced(rev);
+      assertHasLine(rev, '143005', 'debit', 700);
+      assertHasLine(rev, '612035', 'credit', 700);
+      assertEqual(rev.journalEntry.source, 'nota_credito_cogs');
+      assertEqual(rev.journalEntry.sourceId, 'NC-001');
+    },
+  },
+  {
+    id: 't_cogs_reverso_skip_si_no_hay_cogs',
+    description: 'postCostOfSaleReversal devuelve skip si no hay JE de cogs previo',
+    fn: (ctx) => {
+      const invoice = { id: 'FAC-TEST', orderId: 'PED-TEST', type: 'factura', total: 1190 };
+      const rev = postCostOfSaleReversal({ invoice, ncNumber: 'NC-001', ratio: 0.5 }, ctx);
+      if (rev.skip !== 'no_cogs_je') throw new Error(`expected skip='no_cogs_je', got ${JSON.stringify(rev)}`);
     },
   },
 ];

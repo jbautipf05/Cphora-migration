@@ -212,6 +212,65 @@ export function reverseJournalEntry(jeId, reason, ctx) {
 // ── postSale (versión simplificada) ─────────────────────────────────────────
 // invoice: { id, date, type:'factura'|'remisión', customerId, customerName, base, iva, total, costoVenta? }
 // Genera un asiento estándar: CxR DR / Ingresos CR / IVA CR  + (opcional) Costo DR / Inventario CR.
+// postCostOfSale(invoice, ctx) · H2 / TD-21
+// Reconoce el costo de venta: DR cogs / CR finished_goods. Costo = sum de
+// items[].qty × products[].cost (multi-ítem H-035) o productId/qty (plano).
+// El caller puede pasar invoice.cost ya pre-calculado y se usa directo.
+// source='cogs', sourceId=invoice.orderId — NC-3 lo busca con esa clave para
+// el reverso COGS automático en devoluciones.
+export function postCostOfSale(invoice, ctx) {
+  if (!invoice?.id) return { error: 'invalid_invoice', message: 'Factura inválida' };
+  const orderId = invoice.orderId || invoice.id;
+
+  let cost = +invoice.cost || 0;
+  if (cost <= 0) {
+    const order = (ctx?.orders || []).find((o) => o.id === orderId);
+    if (!order) return { error: 'order_not_found', message: `Pedido ${orderId} no existe` };
+    const products = ctx?.products || [];
+    const items = Array.isArray(order.items) && order.items.length ? order.items : null;
+    if (items) {
+      for (const it of items) {
+        const p = products.find((x) => x.id === it.productId);
+        if (p) cost += (+p.cost || 0) * (+it.qty || 0);
+      }
+    } else if (order.productId) {
+      const p = products.find((x) => x.id === order.productId);
+      if (p) cost = (+p.cost || 0) * (+order.qty || 0);
+    }
+  }
+
+  if (!(cost > 0)) return { error: 'no_cost', message: 'Costo de venta no resuelto' };
+
+  const m = ctx?.accountingMappings?.cogs_on_invoice || {
+    cogs: '612035',
+    finished_goods: '143005',
+  };
+
+  return postJournalEntry(
+    {
+      date: invoice.date || today(),
+      source: 'cogs',
+      sourceId: orderId,
+      concept: `COGS pedido ${orderId}`,
+      lines: [
+        {
+          accountCode: m.cogs,
+          debit: round(cost),
+          credit: 0,
+          description: `Costo de venta ${orderId}`,
+        },
+        {
+          accountCode: m.finished_goods,
+          debit: 0,
+          credit: round(cost),
+          description: `Salida PT ${orderId}`,
+        },
+      ],
+    },
+    ctx,
+  );
+}
+
 export function postSale(invoice, ctx) {
   if (!invoice || !invoice.id || !invoice.total)
     return { error: 'invalid_invoice', message: 'Factura incompleta' };

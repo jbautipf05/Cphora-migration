@@ -30,6 +30,7 @@ export default function Ventas() {
     update,
     nextId,
     postSale,
+    postCostOfSale,
     postCustomerCollection,
     emitNotaCredito,
     emitNotaDebito,
@@ -347,8 +348,16 @@ export default function Ventas() {
         id, date: orderDate, type: data.docType,
         customerId, customerName: clientName, total: data.total,
       });
-      if (sale?.ok) toast(`Asiento contable ${sale.journalEntry.id} generado`, 'ok');
-      else if (sale?.error) toast(`Aviso contable: ${sale.message || sale.error}`, 'warn');
+      // H2 (TD-21): reconocer COGS al facturar. Habilita el reverso COGS
+      // proporcional en NC (NC-3) — sin esto el reverso queda inerte.
+      const cogs = postCostOfSale({ id, orderId: id, date: orderDate });
+      if (sale?.ok && cogs?.ok) {
+        toast(`Asientos ${sale.journalEntry.id} (venta) + ${cogs.journalEntry.id} (COGS) generados`, 'ok');
+      } else if (sale?.ok) {
+        toast(`Asiento ${sale.journalEntry.id} generado. COGS: ${cogs?.message || cogs?.error || '—'}`, 'warn');
+      } else if (sale?.error) {
+        toast(`Aviso contable: ${sale.message || sale.error}`, 'warn');
+      }
     }
 
     closeSale();

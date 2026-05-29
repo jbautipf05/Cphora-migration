@@ -89,7 +89,7 @@ export const LEADS = [
 ];
 
 export const QUOTES = [
-  { id: 'COT-2001', leadId: 'L-102', clientName: 'Laura Mendoza', city: 'Medellín', channel: 'Pagina Web', items: [{ productId: 'p2', qty: 1, price: 4650000, desc: 'Sofá Emma 3 puestos' }, { productId: 'p1', qty: 2, price: 2850000, desc: 'Butaca Serenity' }, { productId: 'p3', qty: 4, price: 890000, desc: 'Silla Atlanta' }], discount: 10, vigenciaDias: 45, notes: 'Entrega en 45 días. 60% anticipo, 40% contraentrega.', asesor: 'Thalia Cifuentes', estado: 'enviada', createdAt: '2026-04-01', vigencia: '2026-05-01' },
+  { id: 'COT-2001', leadId: 'L-102', clientName: 'Laura Mendoza', city: 'Medellín', channel: 'Pagina Web', items: [{ productId: 'p2', qty: 1, price: 4650000, desc: 'Sofá Emma 3 puestos' }, { productId: 'p1', qty: 2, price: 2850000, desc: 'Butaca Serenity' }, { productId: 'p3', qty: 4, price: 890000, desc: 'Silla Atlanta' }], discount: 10, vigenciaDias: 45, notes: 'Entrega en 45 días. 60% anticipo, 40% contraentrega.', asesor: 'Thalia Cifuentes', estado: 'enviada', createdAt: '2026-05-01', vigencia: '2026-06-15' },
   { id: 'COT-2002', leadId: 'L-105', clientName: 'Carmiña Chapman', city: 'Cartagena', channel: 'WhatsApp', items: [{ productId: 'p6', qty: 1, price: 7400000, desc: 'Módulo Roma' }, { productId: 'p5', qty: 4, price: 650000, desc: 'Pouf Luna' }], discount: 15, vigenciaDias: 30, notes: 'Cliente VIP. Entrega 60 días.', asesor: 'Alexander Vivas', estado: 'aceptada', createdAt: '2026-03-25', vigencia: '2026-04-25' },
 ];
 
@@ -98,7 +98,7 @@ export const ORDERS = [
   { id: 'PED-1248', quoteId: null, customerId: 'C-001', clientName: 'Jose Ramírez', total: 7850000, paid: 100, tiempo: 30, orderDate: '2026-04-05', estado: 'entregado', area: 'Listo', asesor: 'Thalia Cifuentes', tipo: 'stock', docType: 'factura', deliveryAddress: 'Cra 50 # 80-10', verified: true, productId: 'p1', qty: 2, invoiced: true },
   { id: 'PED-1251', quoteId: null, customerId: 'C-002', clientName: 'María Delgado', total: 12200000, paid: 60, tiempo: 45, orderDate: '2026-03-05', estado: 'produccion', area: 'Ensamble', asesor: 'Alexander Vivas', tipo: 'produccion', docType: 'remisión', deliveryAddress: 'Cl 5 # 40-22', verified: true, productId: 'p2', qty: 2 },
   { id: 'PED-1252', quoteId: null, customerId: 'C-003', clientName: 'Adriano Villadiego', total: 18900000, paid: 60, tiempo: 60, orderDate: '2026-02-18', estado: 'produccion', area: 'Metal mecánica', asesor: 'Alexander Vivas', tipo: 'produccion', docType: 'factura', deliveryAddress: 'Cl 35 # 3-27', verified: true, productId: 'p6', qty: 1 },
-  { id: 'PED-1253', quoteId: null, customerId: 'C-001', clientName: 'Jose Ramírez', total: 3450000, paid: 50, tiempo: 0, orderDate: '2026-04-15', estado: 'pendiente_op', area: null, asesor: 'Thalia Cifuentes', tipo: 'produccion', docType: 'remisión', deliveryAddress: 'Cra 50 # 80-10', verified: false, productId: 'p3', qty: 4 },
+  { id: 'PED-1253', quoteId: null, customerId: 'C-001', clientName: 'Jose Ramírez', total: 3450000, paid: 50, tiempo: 30, orderDate: '2026-04-15', estado: 'pendiente_op', area: null, asesor: 'Thalia Cifuentes', tipo: 'produccion', docType: 'remisión', deliveryAddress: 'Cra 50 # 80-10', verified: false, productId: 'p3', qty: 4 },
 ];
 
 export const FINISHED_STOCK = [
@@ -106,7 +106,7 @@ export const FINISHED_STOCK = [
   { id: 'FS-002', productId: 'p2', orderId: null, warehouseId: 'W-C43', qty: 2, status: 'disponible', readyDate: '2026-04-08', notes: '' },
   { id: 'FS-003', productId: 'p6', orderId: 'PED-1245', warehouseId: 'W-CEDI', qty: 1, status: 'reservado', readyDate: '2026-04-14', notes: 'Pedido PED-1245 Carmiña Chapman — despacho programado' },
   { id: 'FS-004', productId: 'p7', orderId: null, warehouseId: 'W-VOL', qty: 2, status: 'disponible', readyDate: '2026-04-05', notes: '' },
-  { id: 'FS-005', productId: 'p8', orderId: null, warehouseId: 'W-CTG', qty: 1, status: 'en_transito', readyDate: '2026-04-15', notes: 'En ruta desde CEDI → Cartagena' },
+  { id: 'FS-005', productId: 'p8', orderId: null, warehouseId: 'W-CTG', qty: 1, status: 'disponible', readyDate: '2026-04-15', notes: '' },
   { id: 'FS-006', productId: 'p5', orderId: null, warehouseId: 'W-CEDI', qty: 8, status: 'disponible', readyDate: '2026-04-12', notes: '' },
 ];
 

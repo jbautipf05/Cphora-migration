@@ -58,12 +58,20 @@ export default function Auditoria() {
   const auditCreateOp = () => {
     const o = detail;
     const c = comment.trim();
+    // Paridad Demo6 línea 628: al promover a 'produccion' calcular dueDate si
+    // no existe. Si o.dueDate ya está seteado se respeta. Si falta orderDate o
+    // tiempo no setea nada (defensivo — el pedido podría venir de seed legacy).
+    const shouldSetDue = !o.dueDate && o.orderDate && o.tiempo;
+    const dueDatePatch = shouldSetDue
+      ? { dueDate: addDays(o.orderDate, Number(o.tiempo)) }
+      : {};
     update('orders', o.id, {
       verified: true,
       estado: 'produccion',
       area: 'Programación',
       opRejected: false,
       opRejectedReason: null,
+      ...dueDatePatch,
       ...(c ? { auditComment: c } : {}),
     });
     toast(`OP ${o.id} creada · área inicial: Programación`, 'ok');

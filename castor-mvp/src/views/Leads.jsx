@@ -179,6 +179,17 @@ export default function Leads() {
     else if (/[a-zA-Z]/.test(phone)) errs.phone = 'El teléfono no puede contener letras';
     else if (numDigits < 7) errs.phone = 'El teléfono debe tener al menos 7 dígitos';
     if (!f.asesor) errs.asesor = 'Selecciona un asesor';
+    // Paridad con validateCustomerDraft (Clientes.jsx:16-31): email/doc opcionales
+    // con formato si están informados; razón social y NIT obligatorios sólo si
+    // tipo === 'institucional'.
+    const email = (f.email || '').trim();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = 'Email inválido';
+    const doc = (f.doc || '').trim();
+    if (doc && doc.length < 5) errs.doc = 'Documento inválido (mínimo 5 caracteres)';
+    if (f.tipo === 'institucional') {
+      if (!f.razonSocial?.trim()) errs.razonSocial = 'La razón social es obligatoria';
+      if (!f.nit?.trim()) errs.nit = 'El NIT es obligatorio';
+    }
     return errs;
   }
 
@@ -756,8 +767,14 @@ export default function Leads() {
             </Field>
             {form.tipo === 'institucional' && (
               <>
-                <Field label="Razón social"><Input value={form.razonSocial} onChange={(e) => set('razonSocial', e.target.value)} /></Field>
-                <Field label="NIT"><Input value={form.nit} onChange={(e) => set('nit', e.target.value)} /></Field>
+                <Field label="Razón social">
+                  <Input value={form.razonSocial} onChange={(e) => set('razonSocial', e.target.value)} />
+                  {errors.razonSocial && <span className="mt-1 block text-xs text-red-400">{errors.razonSocial}</span>}
+                </Field>
+                <Field label="NIT">
+                  <Input value={form.nit} onChange={(e) => set('nit', e.target.value)} />
+                  {errors.nit && <span className="mt-1 block text-xs text-red-400">{errors.nit}</span>}
+                </Field>
                 <Field label="Contacto"><Input value={form.contacto} onChange={(e) => set('contacto', e.target.value)} /></Field>
               </>
             )}
@@ -765,8 +782,14 @@ export default function Leads() {
               <Input value={form.phone} onChange={(e) => set('phone', e.target.value)} />
               {errors.phone && <span className="mt-1 block text-xs text-red-400">{errors.phone}</span>}
             </Field>
-            <Field label="Email"><Input value={form.email} onChange={(e) => set('email', e.target.value)} /></Field>
-            <Field label="Documento"><Input value={form.doc} onChange={(e) => set('doc', e.target.value)} /></Field>
+            <Field label="Email">
+              <Input value={form.email} onChange={(e) => set('email', e.target.value)} />
+              {errors.email && <span className="mt-1 block text-xs text-red-400">{errors.email}</span>}
+            </Field>
+            <Field label="Documento">
+              <Input value={form.doc} onChange={(e) => set('doc', e.target.value)} />
+              {errors.doc && <span className="mt-1 block text-xs text-red-400">{errors.doc}</span>}
+            </Field>
             <Field label="Ciudad"><Combobox value={form.city} onChange={(e) => set('city', e.target.value)} /></Field>
             <Field label="Dirección" className="sm:col-span-2"><Input value={form.address} onChange={(e) => set('address', e.target.value)} /></Field>
             <Field label="Canal *">
